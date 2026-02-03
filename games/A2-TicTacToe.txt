@@ -1,0 +1,77 @@
+Tic Tac Toe is a game played on a 3x3 grid between two players who alternate placing their marks (usually 'X' and 'O') in empty cells.
+
+The objective of Tic Tac Toe is to be the first player to get three of their marks in a row (horizontally, vertically, or diagonally).
+
+If all cells are filled and no player has achieved three in a row, the game ends in a draw.
+
+You'll receive the game's source code, but the implementation of the TicTacToeAgent will be empty. Your task is to develop your own algorithms and strategies to build the TicTacToeAgent class. Your agent will compete head-to-head against another AI-generated agent. Ensure that your agent adheres to the game rules and is capable of playing effectively.
+
+IMPORTANT: Output ONLY the TicTacToeAgent class definition and any additional imports you need (beyond random which is already available). Do NOT output the entire game code.
+
+BOARD_SIZE = 3
+
+You are expected to write a working TicTacToeAgent code that plays is smartly.
+
+
+```python
+import random
+
+# --- Board Representations ---
+EMPTY = ' '
+X_MARK = 'X'
+O_MARK = 'O'
+
+class TicTacToeGame:
+    """ Manages the state and rules of the game. """
+    def __init__(self):
+        self.board = [EMPTY for _ in range(9)]
+        self.current_turn = X_MARK
+
+    def make_move(self, position):
+        if self.board[position] == EMPTY:
+            self.board[position] = self.current_turn
+            self.current_turn = O_MARK if self.current_turn == X_MARK else X_MARK
+            return True
+        return False
+
+    def check_winner(self):
+        win_conditions = [
+            (0, 1, 2), (3, 4, 5), (6, 7, 8), # Rows
+            (0, 3, 6), (1, 4, 7), (2, 5, 8), # Columns
+            (0, 4, 8), (2, 4, 6)             # Diagonals
+        ]
+        for combo in win_conditions:
+            if self.board[combo[0]] == self.board[combo[1]] == self.board[combo[2]] != EMPTY:
+                return self.board[combo[0]]
+        if EMPTY not in self.board:
+            return 'DRAW'
+        return None
+
+# -------------------------------------------------------------------------------
+class TicTacToeAgent:
+    """
+    Your agent implementation goes here.
+    Implement smart logic to beat your opponent.
+    """
+    def __init__(self, name, symbol):
+        self.name = name
+        self.symbol = symbol # 'X' or 'O'
+
+    def make_move(self, board):
+        """
+        Return the index (0-8) of the cell you want to mark.
+        board: List of 9 strings representing the current board state.
+        """
+        # TODO: Implement your strategy
+        available_moves = [i for i, spot in enumerate(board) if spot == EMPTY]
+        return random.choice(available_moves) if available_moves else None
+
+# -------------------------------------------------------------------------------
+```
+
+----
+Point: 4
+  - 1 point if agent runs without error
+  - +1 if win rate >= 40%
+  - +1 if win rate >= 50%
+  - +1 if win rate >= 75%

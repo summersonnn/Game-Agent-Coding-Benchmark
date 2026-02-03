@@ -1,0 +1,239 @@
+Wizard is a trick-taking card game for 3-6 players. In this competition, you will play with exactly 6 players (AI agents).
+
+## Game Overview
+
+The objective is to correctly bid the number of tricks you will win in each round, then play your cards strategically to achieve that exact number. Points are awarded for correct bids and subtracted for incorrect ones.
+
+## Deck Composition
+
+A Wizard deck consists of 60 cards:
+- 52 standard playing cards (ranks 2-10, Jack, Queen, King, Ace in four suits: Hearts, Diamonds, Clubs, Spades)
+- 4 Wizards (highest value, always trump)
+- 4 Jesters (lowest value, always lose)
+
+## Game Structure
+
+The game is played in 10 rounds (since 60 cards / 6 players = 10 rounds):
+- Round 1: Each player gets 1 card
+- Round 2: Each player gets 2 cards
+- ...
+- Round 10: Each player gets 10 cards
+
+Each round has three phases:
+1. **Dealing**: Cards are dealt, and the top card of the remaining deck determines trump suit
+2. **Bidding**: Each player bids how many tricks they expect to win (0 to number of cards dealt)
+3. **Playing**: Players play tricks, with the highest card winning each trick
+
+## Trump Suit Determination
+
+After dealing, the top card of the remaining deck is revealed:
+- If it's a **standard card**: That suit becomes trump for this round
+- If it's a **Jester**: No trump suit this round (only Wizards are trump)
+- If it's a **Wizard**: The dealer chooses the trump suit
+- If there are **no cards left** after dealing: No trump suit this round
+
+## Bidding Phase
+
+Starting with the player to the dealer's left, each player states how many tricks they believe they will win.
+
+**LEGAL BIDS**: Any integer from 0 to N, where N is the number of cards dealt this round.
+
+**THE HOOK RULE** (CRITICAL): The last player to bid (the dealer, Player-6) has one additional restriction:
+- They **CANNOT** bid a number that would make the sum of all bids equal the total number of tricks available.
+- Example: In Round 4 (4 tricks available), if the first 5 players bid [1, 0, 1, 1, 0] (sum = 3), then Player-6 **cannot** bid 1 (which would make the total 4). They must bid 0, 2, 3, or 4.
+- This rule ensures that at least one player will not make their bid exactly.
+- If you are the last bidder and your returned bid violates this rule, it will be replaced with a random valid bid.
+
+**IMPORTANT**: You must return exactly one integer. Invalid bids (non-integers, negative numbers, or numbers greater than cards dealt) will be replaced with a random valid bid.
+
+## Playing Phase
+
+Players take turns playing one card per trick. The player who played the highest card wins the trick and leads the next trick.
+
+### Card Hierarchy and Trick-Taking Rules
+
+**Card Values (lowest to highest)**:
+1. **Jester**: Always loses (unless all cards in the trick are Jesters, then first Jester wins)
+2. **Standard cards**: Ranked 2 (lowest) to Ace (highest)
+3. **Wizard**: Always wins (if multiple Wizards, first one wins)
+
+**Trump Suits**: Trump suit cards beat non-trump suit cards of the same type.
+
+**Following Suit Rules** (CRITICAL - READ CAREFULLY):
+
+1. **If the first card played is a Wizard**:
+   - No suit requirement - all players may play any card
+   
+2. **If the first card played is a Jester**:
+   - The first **standard card** played determines the suit that must be followed
+   - If all cards are Jesters, no suit requirement
+   
+3. **If the first card is a standard card**:
+   - That card's suit must be followed if possible
+   - **MUST FOLLOW SUIT**: If you have any standard cards in that suit, you must play one
+   - **Wizards and Jesters can ALWAYS be played** regardless of your hand
+   - If you have no cards in the led suit (and no Wizards/Jesters), you may play any card
+
+**LEGAL PLAYS**:
+- If suit was led and you have cards in that suit: Must play a card in that suit OR a Wizard/Jester
+- If suit was led and you have NO cards in that suit: May play any card
+- If no suit requirement (first card is Wizard or all Jesters): May play any card
+
+**ILLEGAL PLAYS** (will be replaced with random valid card):
+- Playing an off-suit standard card when you have cards in the led suit
+- Playing a card not in your hand
+- Not returning a valid card object
+
+### Trick Winner Determination
+
+1. If any **Wizards** were played: First Wizard wins
+2. If only **Jesters** were played: First Jester wins
+3. Otherwise: Highest trump suit card wins (if any trump was played)
+4. Otherwise: Highest card in the led suit wins
+
+## Scoring
+
+At the end of each round:
+- **Correct bid**: Score = 20 + (10 × tricks_won)
+- **Incorrect bid**: Score = -(10 × |bid - tricks_won|)
+
+Example:
+- Bid 3, won 3 tricks: +20 + 30 = +50 points
+- Bid 2, won 4 tricks: -10 × 2 = -20 points
+- Bid 0, won 0 tricks: +20 + 0 = +20 points
+
+## Implementation Task
+
+You will receive the game's source code, but the implementation of the WizardAgent will be empty. Your task is to develop your own algorithms and strategies to build the WizardAgent class. Your agent will compete against 5 other AI-generated agents in a 6-player game.
+
+**IMPORTANT**: Output ONLY the WizardAgent class definition and any additional imports you need (beyond random which is already available). Do NOT output the entire game code.
+
+## WizardAgent Interface
+
+```python
+import random
+
+class Card:
+    """Represents a single card in the Wizard deck."""
+    def __init__(self, card_type, suit=None, rank=None):
+        """
+        card_type: "wizard", "jester", or "standard"
+        suit: "Hearts", "Diamonds", "Clubs", "Spades" (only for standard cards)
+        rank: 2-14 where Jack=11, Queen=12, King=13, Ace=14 (only for standard cards)
+        """
+        self.card_type = card_type
+        self.suit = suit
+        self.rank = rank
+    
+    def __str__(self):
+        if self.card_type == "wizard":
+            return "Wizard"
+        elif self.card_type == "jester":
+            return "Jester"
+        else:
+            rank_str = {11: "J", 12: "Q", 13: "K", 14: "A"}.get(self.rank, str(self.rank))
+            suit_str = self.suit[0]  # H, D, C, S
+            return f"{rank_str}{suit_str}"
+    
+    def __eq__(self, other):
+        if not isinstance(other, Card):
+            return False
+        return (self.card_type == other.card_type and 
+                self.suit == other.suit and 
+                self.rank == other.rank)
+    
+    def __hash__(self):
+        return hash((self.card_type, self.suit, self.rank))
+
+# -------------------------------------------------------------------------------
+class WizardAgent:
+    """
+    Your agent implementation goes here.
+    Implement smart bidding and playing logic to maximize your score.
+    """
+    def __init__(self, name):
+        self.name = name
+        # TODO: Initialize your agent's state here
+    
+    def make_move(self, phase, game_state):
+        """
+        Called during both bidding and playing phases.
+        
+        Parameters:
+        -----------
+        phase : str
+            Either "bid" or "play"
+        
+        game_state : dict
+            Complete public game information containing:
+            {
+                "round_number": int (1-10),
+                "cards_this_round": int (same as round_number),
+                "trump_suit": str or None ("Hearts", "Diamonds", "Clubs", "Spades", or None),
+                "my_hand": [Card, ...] (your current cards),
+                "my_position": int (0-5, your seat position),
+                "current_trick": [(player_idx, Card), ...] (cards played in current trick),
+                "trick_leader": int or None (who led this trick, None if you're first),
+                "bids": [int or None, ...] (length 6, bids for all players, None if not yet bid),
+                "tricks_won": [int, ...] (length 6, tricks won by each player this round),
+                "scores": [int, ...] (length 6, total scores across all rounds),
+            }
+        
+        Returns:
+        --------
+        If phase == "bid":
+            Return an integer from 0 to game_state["cards_this_round"]
+        
+        If phase == "play":
+            Return a Card object from your hand that you want to play
+            Must be a valid card following the suit rules described above
+        """
+        if phase == "bid":
+            # TODO: Implement your bidding strategy
+            # You must return an integer from 0 to cards_this_round
+            cards_this_round = game_state["cards_this_round"]
+            return random.randint(0, cards_this_round)
+        
+        elif phase == "play":
+            # TODO: Implement your card-playing strategy
+            # You must return a Card object from your hand
+            # Remember to follow suit if required!
+            my_hand = game_state["my_hand"]
+            return random.choice(my_hand) if my_hand else None
+
+# -------------------------------------------------------------------------------
+```
+
+## Strategy Tips
+
+1. **Bidding**: Analyze your hand strength, considering:
+   - Number of Wizards (guaranteed wins)
+   - Number of high trump cards
+   - Number of Aces in other suits
+   - Void suits (you can trump in)
+
+2. **Playing**: 
+   - If trying to win a trick: Play high cards or Wizards
+   - If trying to avoid winning: Play Jesters or low cards
+   - Track which cards have been played
+   - Remember other players' bids to predict their strategy
+
+3. **Scoring**: Bidding 0 and achieving it gives 20 points - a safe strategy with weak hands
+
+4. **Trump Management**: Use trump cards wisely, especially when trying to fulfill your bid
+
+---
+
+**Competition Format**: 
+
+In this competition, 3 LLMs compete against each other. Each LLM's code will be used to create **2 agents** that play independently (using the same strategy but with different hands).
+
+- **Total Players**: 6 agents (Agent-1, Agent-2, Agent-3, Agent-4, Agent-5, Agent-6)
+- **Agent Assignment**: 
+  - Model 1 controls Agent-1 and Agent-2
+  - Model 2 controls Agent-3 and Agent-4
+  - Model 3 controls Agent-5 and Agent-6
+
+Multiple games will be played. Your final ranking is determined by the **combined total score** of both your agents across all games. This tests both strategy quality and consistency.
+
+**Point Allocation**: This is a ranking-based competition. Higher combined scores lead to better rankings.

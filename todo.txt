@@ -1,0 +1,5 @@
+Populate agents'ın tüm sorular için çalıştığına emin ol - ÇALIŞIYOR 
+Agents klasöründen doğru model ve run'ı seçip oyun başlatmayı dene
+İlk 3 oyun için oyunlar oynat, oyunun çalıştığına emin ol. Ligi düşünme.
+Diğer oyunları implement et (8e tamamla)
+Sonra lige dönüştürmek için her oyunu özel geliştir (h2h oyunları lige nasıl dönüştürürüz, veya wizard gibi 6 rakipli oyunları lige nasıl donustururuz vs.)

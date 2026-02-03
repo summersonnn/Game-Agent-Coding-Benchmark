@@ -1,0 +1,8 @@
+# Max token multipliers for different games.
+# These values are multiplied by MODEL_MAX_TOKENS from the .env file.
+# Format: GameID: Multiplier
+
+A1-Battleship: 4
+A2-TicTacToe: 1
+A3-Wizard: 4
+DEFAULT: 1
