@@ -1,0 +1,130 @@
+WordFinder is a 2-player word game where you must find a word that connects to the previous word.
+
+## Game Overview
+
+The game starts with a random word.
+Players take turns finding a new word based on the previous word.
+
+## Rules
+
+1. **Letter Constraint**: The new word must CONTAIN the **first** and **last** letters of the previous word.
+2. **Position Constraint**: The required letters (first/last of previous word) CANNOT be the first or last letters of the new word.
+   - Example: Previous word "PUSH" (starts with 'P', ends with 'H').
+   - You need a word containing 'P' and 'H'.
+   - 'P' cannot be the first or last letter of your new word.
+   - 'H' cannot be the first or last letter of your new word.
+   - Valid: "ACCOMPLISHMENT" (contains 'P' and 'H', neither is at start/end).
+   - Invalid: "POINT" (starts with 'P').
+   - Invalid: "HELP" (ends with 'P', starts with 'H').
+3. **Length Constraint**: Your word's length CANNOT equal the previous word's length.
+   - Example: If previous word is "TELEPHONE" (9 letters), you cannot use a 9-letter word.
+   - Valid: "ACCOMPLISHMENT" (14 letters ≠ 9).
+   - Invalid: "SUPERHERO" (9 letters = 9).
+4. **Uniqueness**: A word can never be repeated in the game (by either player).
+5. **Dictionary**: The word must be a valid English word (present in the game's dictionary).
+
+## Scoring
+
+- **Base Points**: You gain points equal to the **length** of your valid word.
+- **Hyphen Penalty**: Words containing a hyphen ("-") get **half points** (length ÷ 2).
+  - Example: "MOTHER-IN-LAW" (13 letters) = 13 ÷ 2 = **6 points**
+  - Avoid hyphens when possible!
+- **Consecutive Letter Bonus**: If the two required letters (first and last of the previous word) appear **consecutively** in your word, your points are **multiplied by 5**!
+  - Example: Previous word "PUSH" (requires 'P' and 'H').
+  - Word "SHEPHERD" contains "PH" consecutively → 8 letters × 5 = **40 points**
+  - Word "TELEPATHY" contains 'P' and 'H' but not consecutively → **9 points** (no bonus)
+  - The letters can appear in either order: "PH" or "HP" both trigger the bonus.
+  - **Note**: The 5x bonus is applied AFTER the hyphen penalty if applicable.
+- **Invalid Move**: If you make an invalid move (violating any rule), the game ends immediately. You keep your current score, but lose the opportunity to score more points.
+
+## Goal
+
+Your goal is to maximize your total score.
+- Find long valid words to get more points.
+- Try to choose words that make it difficult for your opponent to reply (strategic play).
+
+## Implementation Task
+
+You are implementing the `WordFinderAgent`.
+
+**IMPORTANT**: Output ONLY the WordFinderAgent class definition and any additional imports you need (random is already valid). Do NOT output the entire game code.
+
+## Accessing the Word Dictionary
+
+**CRITICAL**: The game environment provides a global function `load_words()` that returns a set of all valid words (lowercase).
+
+You MUST use this function to access the dictionary. Here's how:
+
+```python
+class WordFinderAgent:
+    def __init__(self, name):
+        self.name = name
+        self.history = set()
+        # Load the dictionary using the provided function
+        self.dictionary = load_words()  # Returns a set of lowercase words
+```
+
+**DO NOT** hardcode your own word list. **DO NOT** try to load from a file path yourself. The `load_words()` function is already available in the game environment and handles all dictionary loading for you.
+
+## WordFinderAgent Interface
+
+```python
+import random
+
+class WordFinderAgent:
+    """
+    Your agent implementation goes here.
+    """
+    def __init__(self, name):
+        """
+        Initialize your agent.
+        """
+        self.name = name
+        self.dictionary = load_words()  # Load the full word dictionary
+    
+    def make_move(self, current_word, word_history):
+        """
+        Called when it's your turn.
+        
+        Parameters:
+        -----------
+        current_word : str
+            The word played by the opponent (or the starting word).
+        
+        word_history : set
+            A set of all words that have been used so far in the game (by both players).
+            This includes the current_word and all previous words.
+            You MUST NOT return a word that is in this set.
+            
+        Returns:
+        --------
+        str
+            Your word choice.
+        """
+        # TODO: Implement your strategy
+        # 1. Find the required characters from current_word (first and last char)
+        # 2. Search for a valid word that:
+        #    - Contains those characters
+        #    - Does not have them at start or end
+        #    - Has a DIFFERENT length than current_word
+        #    - Is NOT in word_history (very important!)
+        #    - Is in self.dictionary
+        # 3. Optimize for length (points) and difficulty for opponent
+        
+        return "example"
+```
+
+## Strategy Tips
+
+1. **Maximize Length**: Longer words give more points.
+2. **Hunt for Bonuses**: Look for words with the required letters appearing consecutively - a 5x multiplier is huge! Even a short word with the bonus (e.g., 8 letters × 5 = 40 points) beats a long word without it (e.g., 15 letters = 15 points).
+3. **Avoid Hyphens**: Words with hyphens get only half points. When possible, choose non-hyphenated alternatives.
+4. **Defensive Play**: Avoid leaving the opponent with easy letters (common letters like 'E', 'S' at start/end of your word).
+5. **Offensive Play**: Try to force the opponent into a situation where they have to use difficult letters.
+6. **Use word_history**: The game provides you with the complete history of used words. Make sure to check against it to avoid penalties! 
+
+## Competition Format
+
+- 1 vs 1 Match.
+- Multiple games per match.
+- Cumulative score determines the winner.

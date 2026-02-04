@@ -1,2 +1,0 @@
-- Bi kelime verdim. Bas ve son harfini icinde barindiran (ama bas ve son harfi olmayan) baska bi kelime bulacak. Onun bulduğunu rakip kullanarak yeni kelime bulacak. Bulamayana kadar devam. Bulamayan kaybeder.
-Hem kodla hem.mantıkla oynanabilir
