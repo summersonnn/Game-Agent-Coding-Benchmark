@@ -37,18 +37,19 @@ Models are listed in `config/models.txt`. Lines starting with `!` are disabled.
 
 ## Tool: Agent Population (`populate_agents.py`)
 
-The `populate_agents.py` script prompts LLMs to generate agent implementations for specific games and saves them to the `agents/` directory. This avoids generating code on-the-fly for every match.
+The `populate_agents.py` script prompts LLMs to generate agent implementations for specific games and saves them to the `agents/` directory.
 
 ### Usage
 
 Run the script using `uv`:
 
 ```bash
-# Populate for all enabled models and all available games
+# Populate for all active models and all available games
 uv run python utils/populate_agents.py --all
 
-# Specify model indices (from models.txt)
-uv run python utils/populate_agents.py --model 0 2 5
+# Specify models by substring or index (from models.txt)
+# This also works for disabled models (starting with !)
+uv run python utils/populate_agents.py --model mistral deepseek 0
 
 # Filter by game prefix
 uv run python utils/populate_agents.py --games A1,A3
@@ -56,6 +57,10 @@ uv run python utils/populate_agents.py --games A1,A3
 # Override the default number of runs
 uv run python utils/populate_agents.py --all --runs 3
 ```
+
+- **Substring matching**: `--model mistral` matches any model name containing "mistral".
+- **Index matching**: `--model 0` selects the first model defined in `models.txt`.
+- **Disabled models**: You can select models marked with `!` by using their substring or index.
 
 ### Folder Structure
 
@@ -72,27 +77,52 @@ agents/
 
 ## Running Matches
 
-### Stored Agent Mode (Recommended)
+Matches are run using pre-generated agents from the `agents/` folder. The scripts match agents in pairs (for 2-player games) or groups of 6 (for Wizard).
 
-Use pre-generated agents from the `agents/` folder:
+### General Usage
+
+All match scripts use the `--agent` argument to specify which models and runs to use.
+
+**Format**: `--agent model_pattern[:run1:run2:...]`
+
+- `model_pattern`: A substring to match the model's folder name in `agents/`.
+- `run1:run2...`: Optional. Specific run numbers to use. If omitted, all available runs for that model are used.
+
+### Games
+
+#### 1. Wizard (6 Players)
+Requires a total number of agents that is a multiple of 6.
 
 ```bash
-# Run with 6 agents: 3 from mistral, 3 from fp8
-uv run python utils/wizard_match.py --stored --agents "mistral:1,mistral:2,mistral:3,fp8:1,fp8:2,fp8:3"
+# Use all runs from mistral and gpt-mini
+uv run python utils/wizard_match.py --agent mistral gpt-mini
+
+# Use specific runs
+uv run python utils/wizard_match.py --agent mistral:1:2:3 gpt-mini:1:2:3
 ```
 
-Format: `--agents model_pattern:run_number,...` (must specify exactly 6 agents)
-
-- Model patterns are partial matches (e.g., `mistral` matches `mistral-large-2512`)
-- If a pattern matches multiple folders, a warning is shown and the first match is used
-
-### On-the-Fly Mode
-
-Prompt models in real-time (requires API calls):
+#### 2. Battleship (2 Players)
+Matches agents from two models head-to-head.
 
 ```bash
-uv run python utils/wizard_match.py
-uv run python utils/battleship_match.py
+# Match first N runs of mistral against first N runs of deepseek
+uv run python utils/battleship_match.py --agent mistral deepseek
+
+# Match specific runs
+uv run python utils/battleship_match.py --agent mistral:1:2 deepseek:3:4
+```
+
+#### 3. Tic Tac Toe (2 Players)
+Matches agents from two models head-to-head.
+
+```bash
+uv run python utils/tictactoe_match.py --agent mistral deepseek
+```
+
+### Debug Mode
+For Wizard, you can enable interactive debug mode:
+```bash
+uv run python utils/wizard_match.py --agent mistral:1 --debug
 ```
 
 ## Project Structure

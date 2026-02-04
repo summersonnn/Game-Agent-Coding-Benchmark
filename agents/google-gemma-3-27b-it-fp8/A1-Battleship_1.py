@@ -1,33 +1,13 @@
-Battleship is played in two main phases: ship placement and bombing.
+"""
+Agent Code: A1-Battleship
+Model: google/gemma-3-27b-it@preset/fp8
+Run: 1
+Generated: 2026-02-04 16:47:48
+"""
 
-During the placement phase, players position their ships on the grid. Ships can only be placed either horizontally or vertically—diagonal or intersecting placements are not allowed.
-
-Once both players have set their ships, the bombing phase begins.
-
-The maximum number of moves in a match is equal to the area of the game board multiplied by 2 (e.g., for an 8x8 board, the limit is 128 moves). If the match does not end within this limit, it results in a draw, and half points (0.5) are awarded to each side.
-
-Players take turns guessing the coordinates of the opponent’s ships. If a shot misses, the turn passes to the other player. If it hits, the player gets another attempt. The game ends when one player loses all their ships, making the opponent the winner, or when the move limit is reached.
-
-A key part of the game’s strategy lies in making smart bombing decisions. For instance, after scoring a hit, it’s wise to target adjacent cells—but do so with awareness that ships are always in straight lines, not crosses or irregular shapes.
-
-Additionally, because the number and sizes of the ships are known before the bombing phase begins, players can deduce which ships have been sunk based on hit patterns. They can also avoid targeting certain grid areas when it's clear no remaining ship can logically fit there. And obviously, keep track of the missed shots so not to wasting any other shot later in the game on the same target. The best way to do this is too add all the possible moves at the start of the game to a data structure and remove the fired target from it as soon as we fire at it. It must be removed regardless of the outcome.
-
-You'll receive the game's source code, but the implementation of the BattleshipAgent will be empty. Your task is to develop your own algorithms and strategies to build the BattleshipAgent class. Your agent will compete head-to-head against another AI-generated agent. Ensure that your agent adheres to the game rules and is capable of playing effectively.
-
-IMPORTANT: Output ONLY the BattleshipAgent class definition and any additional imports you need (beyond random and collections which are already available). Do NOT output the entire game code.
-
-Certain pieces of information are essential for your agent, such as:
-
-BOARD_SIZE = 8
-
-SHIPS = [5, 4, 3]
-
-This indicates that the game board is a 8x8 grid, and each player has three  ships: one of length 5, one of length 4 and another of length 3. These variables are sent as parameters to your BattleshipAgent agent when constructing.
-
-You are expected to write a working BattleshipAgent code that plays is smartly.
-
-
-```
+import os
+import time
+from collections import deque
 
 import random
 import os
@@ -123,7 +103,9 @@ class BattleshipAgent:
         self.name = name
         self.board_size = board_size
         self.ships_config = ships_config
-        # TODO: Initialize your agent's state here
+        self.possible_moves = deque([(r, c) for r in range(board_size) for c in range(board_size)])
+        self.last_hit = None
+        self.hit_streak = 0
 
     def make_move(self, last_shot_result=None, last_shot_coord=None):
         """
@@ -134,9 +116,35 @@ class BattleshipAgent:
         last_shot_result: 'HIT' or 'MISS' from your previous shot (None on first turn)
         last_shot_coord: (row, col) of your previous shot (None on first turn)
         """
-        # TODO: Implement your bombing strategy
-        row, col = random.randint(0, self.board_size-1), random.randint(0, self.board_size-1)
-        return (row, col), []
+        if last_shot_result == 'HIT':
+            self.hit_streak += 1
+            row, col = last_shot_coord
+            
+            # Check adjacent cells
+            possible_directions = []
+            if row > 0: possible_directions.append((row - 1, col))
+            if row < self.board_size - 1: possible_directions.append((row + 1, col))
+            if col > 0: possible_directions.append((row, col - 1))
+            if col < self.board_size - 1: possible_directions.append((row, col + 1))
+
+            valid_moves = [move for move in possible_directions if move in self.possible_moves]
+
+            if valid_moves:
+                return random.choice(valid_moves), []
+            else:
+                self.hit_streak = 0  # Reset streak if no adjacent hits
+                self.last_hit = None
+                
+        else:
+            self.hit_streak = 0
+            self.last_hit = None
+            
+        # If no hit streak, choose a random move
+        if self.possible_moves:
+            move = self.possible_moves.pop()
+            return move, []
+        else:
+            return None, []  # No moves left
 
 # -------------------------------------------------------------------------------
         
@@ -233,12 +241,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-```
-
-----
-Point: 4
-  - 1 point if agent runs without error
-  - +1 if win rate >= 40%
-  - +1 if win rate >= 50%
-  - +1 if win rate >= 75%

@@ -6,6 +6,7 @@ them to TicTacToeAgent_1 and TicTacToeAgent_2, runs games, and reports
 win/loss statistics.
 """
 
+import argparse
 import asyncio
 from datetime import datetime
 import os
@@ -27,8 +28,16 @@ logger = setup_logging(__name__)
 load_dotenv()
 
 # Configuration
-NUM_RUNS = int(os.getenv("NUM_RUNS", "4"))
-NUM_ROUNDS_PER_TICTACTOE_MATCH = 10
+try:
+    NUM_ROUNDS_PER_TICTACTOE_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
+except (ValueError, TypeError):
+    NUM_ROUNDS_PER_TICTACTOE_MATCH = 100
+
+try:
+    MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
+except (ValueError, TypeError):
+    MOVE_TIME_LIMIT = 1.0
+
 BOARD_SIZE = 3
 
 # Results directories
@@ -36,14 +45,23 @@ TICTACTOE_RESULTS_DIR = Path(__file__).parent.parent / "results" / "tictactoe"
 GAME_LOGS_DIR = TICTACTOE_RESULTS_DIR / "game_logs"
 MODEL_RESPONSES_DIR = TICTACTOE_RESULTS_DIR / "model_responses"
 
+# Stored agents directory
+AGENTS_DIR = Path(__file__).parent.parent / "agents"
+GAME_NAME = "A2-TicTacToe"
+
 # The game code template with placeholders for agent implementations
 GAME_CODE_TEMPLATE = '''
 import sys
 import random
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-
+import signal
 # Move timeout in seconds
-MOVE_TIMEOUT = 1.0
+MOVE_TIMEOUT = {move_timeout}
+
+class MoveTimeoutException(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise MoveTimeoutException("Move timeout")
 
 # --- Board Representations ---
 EMPTY = ' '
@@ -146,13 +164,15 @@ def play_game(game_num):
         
         move = None
         try:
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(current_agent.make_move, game.board[:])
-                try:
-                    move = future.result(timeout=MOVE_TIMEOUT)
-                except FuturesTimeoutError:
-                    if current_name == "Agent-1": stats["r1_timeout"] += 1
-                    else: stats["r2_timeout"] += 1
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(int(MOVE_TIMEOUT)) # signal.alarm requires integer
+            try:
+                move = current_agent.make_move(game.board[:])
+            finally:
+                signal.alarm(0)
+        except MoveTimeoutException:
+            if current_name == "Agent-1": stats["r1_timeout"] += 1
+            else: stats["r2_timeout"] += 1
         except Exception:
             if current_name == "Agent-1": stats["r1_crash"] += 1
             else: stats["r2_crash"] += 1
@@ -211,59 +231,86 @@ def load_prompt() -> str:
         raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
     return prompt_path.read_text()
 
-def select_models(api: ModelAPI) -> tuple[str, str]:
-    print("\n" + "=" * 60)
-    print("TIC TAC TOE MATCH - MODEL SELECTION")
-    print("=" * 60)
-    print("\nAvailable models:")
-    for i, model in enumerate(api.models):
-        print(f"  [{i}] {model}")
-
-    print()
-    while True:
-        try:
-            idx1 = int(input("Select Model 1 (index): ").strip())
-            if 0 <= idx1 < len(api.models): break
-            print(f"Invalid index. Must be 0-{len(api.models) - 1}")
-        except ValueError: print("Please enter a number.")
-
-    while True:
-        try:
-            idx2 = int(input("Select Model 2 (index): ").strip())
-            if 0 <= idx2 < len(api.models): break
-            print(f"Invalid index. Must be 0-{len(api.models) - 1}")
-        except ValueError: print("Please enter a number.")
-
-    return api.models[idx1], api.models[idx2]
-
-async def prompt_model(api: ModelAPI, model_name: str, prompt: str, run_id: int) -> tuple[int, str, str]:
-    try:
-        max_tokens = api.get_max_tokens("A2-TicTacToe")
-        response = await api.call(prompt, model_name=model_name, reasoning=True, max_tokens=max_tokens)
-        return run_id, model_name, response.choices[0].message.content or ""
-    except Exception as e:
-        logger.error("Error prompting %s: %s", model_name, e)
-        return run_id, model_name, ""
-
-def extract_agent_code(response: str, class_name: str) -> tuple[str, str]:
-    blocks = re.findall(r"```(?:python)?\s*(.*?)```", response, re.DOTALL)
-    code = ""
-    for b in blocks:
-        if "class TicTacToeAgent" in b:
-            code = b
-            break
-    if not code and "class TicTacToeAgent" in response:
-        match = re.search(r"(class TicTacToeAgent.*?)(?=\nclass\s|\ndef\s|$|if __name__)", response, re.DOTALL)
-        if match: code = match.group(1)
+def find_model_folder(pattern: str) -> str | None:
+    """Find a model folder matching the given pattern."""
+    if not AGENTS_DIR.exists():
+        logger.error("Agents directory not found: %s", AGENTS_DIR)
+        return None
     
-    if not code: return "", ""
-    code = re.sub(r"class\s+TicTacToeAgent\b", f"class {class_name}", code)
+    matches = [
+        d.name for d in AGENTS_DIR.iterdir()
+        if d.is_dir() and pattern.lower() in d.name.lower()
+    ]
     
+    if not matches:
+        logger.error("No model folder matches pattern '%s'", pattern)
+        return None
+    
+    if len(matches) > 1:
+        return ModelAPI.resolve_model_interactive(pattern, matches, context="folder")
+    
+    return matches[0]
+
+
+def get_available_runs(model_folder: str, game: str) -> list[int]:
+    """Get list of available run IDs for a model and game."""
+    model_dir = AGENTS_DIR / model_folder
+    runs = []
+    pattern = re.compile(rf"^{re.escape(game)}_(\d+)\.py$")
+    
+    for file in model_dir.glob(f"{game}_*.py"):
+        match = pattern.match(file.name)
+        if match:
+            runs.append(int(match.group(1)))
+    
+    return sorted(runs)
+
+
+def load_stored_agent(model_folder: str, game: str, run: int, agent_idx: int) -> tuple[str, str]:
+    """Load agent code from a stored file and rename the class."""
+    agent_file = AGENTS_DIR / model_folder / f"{game}_{run}.py"
+    
+    if not agent_file.exists():
+        logger.error("Agent file not found: %s", agent_file)
+        return "", ""
+    
+    content = agent_file.read_text()
+    lines = content.split("\n")
+    
+    # Skip the header docstring
+    code_start = 0
+    in_docstring = False
+    for i, line in enumerate(lines):
+        if '"""' in line:
+            if in_docstring:
+                code_start = i + 1
+                break
+            else:
+                in_docstring = True
+    
+    code_lines = lines[code_start:]
+    
+    # Extract imports
     imports = []
-    for line in response.split("\n"):
-        if (line.startswith("import ") or line.startswith("from ")) and "random" not in line:
-            imports.append(line.strip())
+    for line in code_lines:
+        stripped = line.strip()
+        if stripped.startswith("import ") or stripped.startswith("from "):
+            if "random" not in stripped:
+                imports.append(stripped)
+    
+    code = "\n".join(code_lines)
+    # Rename TicTacToeAgent to TicTacToeAgent_{agent_idx}
+    code = re.sub(r"class\s+TicTacToeAgent\b", f"class TicTacToeAgent_{agent_idx}", code)
+    
     return code.strip(), "\n".join(imports)
+
+
+def parse_agent_spec(spec: str) -> tuple[str, list[int]]:
+    """Parse agent spec (model:run1:run2) into model pattern and list of runs."""
+    parts = spec.split(":")
+    model_pattern = parts[0]
+    runs = [int(r) for r in parts[1:]]
+    return model_pattern, runs
 
 def run_match(game_code: str):
     temp_file = os.path.join(tempfile.gettempdir(), f"ttt_{uuid.uuid4().hex[:8]}.py")
@@ -276,76 +323,121 @@ def run_match(game_code: str):
     finally:
         if os.path.exists(temp_file): os.remove(temp_file)
 
-async def match_coordinator(m1_queue, m2_queue, results, num_runs, log_f, resp_f):
-    for i in range(num_runs):
-        id1, name1, res1 = await m1_queue.get()
-        id2, name2, res2 = await m2_queue.get()
-        
-        code1, imp1 = extract_agent_code(res1, "TicTacToeAgent_1")
-        code2, imp2 = extract_agent_code(res2, "TicTacToeAgent_2")
-        
-        with open(resp_f, "a") as f:
-            f.write(f"--- RUN {i+1} ---\nModel 1: {res1}\nModel 2: {res2}\n\n")
+async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int], log_f: Path, folder1: str, folder2: str):
+    """Run a single match and return the score."""
+    output = await asyncio.get_event_loop().run_in_executor(None, run_match, game_code)
+    
+    with open(log_f, "a") as f:
+        f.write(f"--- Match {match_id}: {folder1} ({run_ids[0]}) vs {folder2} ({run_ids[1]}) ---\n")
+        f.write(output)
+        f.write("-" * 40 + "\n\n")
 
+    res_match = re.search(r"RESULT:Agent-1=([\d.]+),Agent-2=([\d.]+)", output)
+    if res_match:
+        a1, a2 = float(res_match.group(1)), float(res_match.group(2))
+        return {"success": True, "a1": a1, "a2": a2, "match_id": match_id}
+    else:
+        return {"success": False, "error": "Result parsing failed", "match_id": match_id}
+
+
+async def main_async():
+    parser = argparse.ArgumentParser(description="Run Tic-Tac-Toe matches between stored AI agents")
+    parser.add_argument("--agent", nargs="+", help="Agent specs: model1[:run1:run2] model2[:run3:run4]")
+    args = parser.parse_args()
+
+    if not args.agent or len(args.agent) != 2:
+        print("ERROR: Need exactly 2 agent specifications.")
+        print("Example: --agent mistral:1:2 gpt-5-mini:1:4")
+        sys.exit(1)
+
+    # Parse and load agents
+    model1_pattern, runs1 = parse_agent_spec(args.agent[0])
+    model2_pattern, runs2 = parse_agent_spec(args.agent[1])
+
+    folder1 = find_model_folder(model1_pattern)
+    folder2 = find_model_folder(model2_pattern)
+
+    if not folder1 or not folder2:
+        sys.exit(1)
+
+    # Infer runs if not specified
+    if not runs1:
+        runs1 = get_available_runs(folder1, GAME_NAME)
+    if not runs2:
+        runs2 = get_available_runs(folder2, GAME_NAME)
+
+    # Match the number of runs
+    num_matches = min(len(runs1), len(runs2))
+    if len(runs1) != len(runs2):
+        logger.warning("Number of runs for %s (%d) and %s (%d) don't match. Using first %d.", 
+                       folder1, len(runs1), folder2, len(runs2), num_matches)
+    
+    runs1 = runs1[:num_matches]
+    runs2 = runs2[:num_matches]
+
+    print("\n" + "=" * 60)
+    print("TIC TAC TOE MATCH - STORED AGENTS")
+    print("=" * 60)
+    print(f"Model 1: {folder1} ({len(runs1)} runs)")
+    print(f"Model 2: {folder2} ({len(runs2)} runs)")
+    print(f"Total Matches: {num_matches}")
+    print("=" * 60)
+
+    TICTACTOE_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_f = GAME_LOGS_DIR / f"{ts}_match.txt"
+
+    match_tasks = []
+    
+    for i in range(num_matches):
+        run1 = runs1[i]
+        run2 = runs2[i]
+        
+        code1, imp1 = load_stored_agent(folder1, GAME_NAME, run1, 1)
+        code2, imp2 = load_stored_agent(folder2, GAME_NAME, run2, 2)
+        
         if not code1 or not code2:
-            results.append({"success": False, "error": "Code extraction failed"})
+            print(f"  FAILED to prepare match {i+1}: Could not load agent code.")
             continue
 
         game_code = GAME_CODE_TEMPLATE.format(
             extra_imports="\n".join(set(imp1.split("\n") + imp2.split("\n"))),
             agent1_code=code1,
             agent2_code=code2,
-            num_games=NUM_ROUNDS_PER_TICTACTOE_MATCH
+            num_games=NUM_ROUNDS_PER_TICTACTOE_MATCH,
+            move_timeout=MOVE_TIME_LIMIT
         )
         
-        output = await asyncio.get_event_loop().run_in_executor(None, run_match, game_code)
-        
-        with open(log_f, "a") as f:
-            f.write(f"--- Run {i+1} ---\n")
-            f.write(output)
-            f.write("-" * 40 + "\n\n")
+        match_tasks.append(run_match_async(game_code, i + 1, (run1, run2), log_f, folder1, folder2))
 
-        res_match = re.search(r"RESULT:Agent-1=([\d.]+),Agent-2=([\d.]+)", output)
-        if res_match:
-            a1, a2 = float(res_match.group(1)), float(res_match.group(2))
-            results.append({"success": True, "a1": a1, "a2": a2})
-            print(f"  Run {i+1} complete: {a1} - {a2}")
+    if not match_tasks:
+        print("No valid matches to run.")
+        return
+
+    print(f"\nRunning {len(match_tasks)} matches in parallel...")
+    results = await asyncio.gather(*match_tasks)
+    
+    # Sort results by match_id for consistent output
+    results.sort(key=lambda x: x["match_id"])
+    
+    total1, total2 = 0.0, 0.0
+    for res in results:
+        m_id = res["match_id"]
+        r1, r2 = runs1[m_id-1], runs2[m_id-1]
+        if res["success"]:
+            a1, a2 = res["a1"], res["a2"]
+            total1 += a1
+            total2 += a2
+            print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): {a1} - {a2}")
         else:
-            results.append({"success": False, "error": "Result parsing failed"})
+            print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): FAILED - {res.get('error')}")
 
-async def main_async():
-    api = ModelAPI()
-    m1, m2 = select_models(api)
-    prompt = load_prompt()
-    
-    q1, q2 = asyncio.Queue(), asyncio.Queue()
-    results = []
-    
-    TICTACTOE_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    MODEL_RESPONSES_DIR.mkdir(parents=True, exist_ok=True)
-    
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_f = GAME_LOGS_DIR / f"{ts}_match.txt"
-    resp_f = MODEL_RESPONSES_DIR / f"{ts}_responses.txt"
-
-    tasks = []
-    for i in range(1, NUM_RUNS + 1):
-        tasks.append(asyncio.create_task(prompt_model(api, m1, prompt, i)))
-        tasks.append(asyncio.create_task(prompt_model(api, m2, prompt, i)))
-    
-    p_results = await asyncio.gather(*tasks)
-    for i, res in enumerate(p_results):
-        if i % 2 == 0: await q1.put(res)
-        else: await q2.put(res)
-        
-    await match_coordinator(q1, q2, results, NUM_RUNS, log_f, resp_f)
-    
     print("\nFINAL RESULTS:")
-    total1 = sum(r["a1"] for r in results if r["success"])
-    total2 = sum(r["a2"] for r in results if r["success"])
-    print(f"Agent-1 Total: {total1}")
-    print(f"Agent-2 Total: {total2}")
+    print(f"  {folder1}: {total1}")
+    print(f"  {folder2}: {total2}")
+    print(f"\nLogs saved to: {log_f}")
 
 if __name__ == "__main__":
     asyncio.run(main_async())

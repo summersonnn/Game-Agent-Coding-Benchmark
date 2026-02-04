@@ -38,12 +38,15 @@ class ModelAPI:
         
         # Load models from file
         self.models: List[str] = []
+        self.all_models: List[str] = []
         if os.path.exists(models_path):
             with open(models_path, "r") as f:
-                self.models = [
-                    line.strip() for line in f 
-                    if line.strip() and not line.strip().startswith("!")
-                ]
+                for line in f:
+                    stripped = line.strip()
+                    if stripped:
+                        self.all_models.append(stripped)
+                        if not stripped.startswith("!"):
+                            self.models.append(stripped)
         
         # Common parameters
         try:
@@ -214,6 +217,32 @@ class ModelAPI:
         )
         
         return mock_response
+    @staticmethod
+    def resolve_model_interactive(query: str, matches: List[str], context: str = "model") -> str | None:
+        """
+        Interactively let the user choose between multiple matches.
+        
+        Args:
+            query: The search string that resulted in multiple matches.
+            matches: The list of matching strings.
+            context: Description for the prompt (e.g., "model", "folder").
+            
+        Returns:
+            The selected match or None if ignored.
+        """
+        print(f"\nSubstring '{query}' matches multiple {context}s:")
+        for i, match in enumerate(matches):
+            print(f"  [{i}] {match}")
+        
+        while True:
+            choice = input(f"Select a {context} index (0-{len(matches)-1}) or press Enter to skip: ").strip()
+            if not choice:
+                return None
+            if choice.isdigit():
+                idx = int(choice)
+                if 0 <= idx < len(matches):
+                    return matches[idx]
+            print(f"Invalid choice. Please enter a number between 0 and {len(matches)-1}.")
 
 
 

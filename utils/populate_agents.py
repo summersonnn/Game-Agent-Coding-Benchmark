@@ -320,23 +320,45 @@ Generated: {timestamp}
 
 
 def select_models_interactive(api: ModelAPI) -> list[str]:
-    """Interactive model selection."""
-    print("\nAvailable models:")
-    for i, model in enumerate(api.models):
+    """Interactive model selection using substring matching."""
+    print("\nAvailable models (including disabled ones marked with !):")
+    for i, model in enumerate(api.all_models):
         print(f"  [{i}] {model}")
     
-    print("\nEnter model indices (space-separated), or 'all' for all models:")
-    choice = input("> ").strip()
+    print("\nEnter model substrings (space-separated), indices, or 'all' for all active models:")
+    choice = input("> ").strip().lower()
     
-    if choice.lower() == "all":
+    if choice == "all":
         return api.models[:]
     
-    try:
-        indices = [int(x) for x in choice.split()]
-        return [api.models[i] for i in indices if 0 <= i < len(api.models)]
-    except ValueError:
-        print("Invalid input. Using all models.")
-        return api.models[:]
+    selected_models = []
+    queries = choice.split()
+    
+    for query in queries:
+        # Check if it's an index
+        if query.isdigit():
+            idx = int(query)
+            if 0 <= idx < len(api.all_models):
+                model = api.all_models[idx]
+                selected_models.append(model.lstrip("!"))
+            else:
+                print(f"WARNING: Model index {idx} out of range, skipping")
+            continue
+            
+        # Otherwise, treat as substring
+        matches = [m for m in api.all_models if query in m.lower()]
+        if not matches:
+            print(f"WARNING: No model matches substring '{query}', skipping")
+            continue
+        
+        if len(matches) > 1:
+            selected_model = api.resolve_model_interactive(query, matches)
+            if selected_model:
+                selected_models.append(selected_model.lstrip("!"))
+        else:
+            selected_models.append(matches[0].lstrip("!"))
+    
+    return list(dict.fromkeys(selected_models)) # Preserve order, remove duplicates
 
 
 def main():
@@ -351,9 +373,9 @@ def main():
     )
     parser.add_argument(
         "--model",
-        type=int,
+        type=str,
         nargs="+",
-        help="Model indices to use (e.g., --model 0 1 2)"
+        help="Model substrings or indices to use (e.g., --model mistral gpt-5)"
     )
     parser.add_argument(
         "--games",
@@ -381,11 +403,33 @@ def main():
         models = api.models[:]
     elif args.model is not None:
         models = []
-        for idx in args.model:
-            if 0 <= idx < len(api.models):
-                models.append(api.models[idx])
+        for query in args.model:
+            # Check if it's an index
+            if query.isdigit():
+                idx = int(query)
+                if 0 <= idx < len(api.all_models):
+                    model = api.all_models[idx]
+                    models.append(model.lstrip("!"))
+                else:
+                    print(f"WARNING: Model index {idx} out of range, skipping")
+                continue
+
+            # Substring matching
+            matches = [m for m in api.all_models if query.lower() in m.lower()]
+            if not matches:
+                print(f"WARNING: No model matches substring '{query}', skipping")
+                continue
+            
+            if len(matches) > 1:
+                selected_model = api.resolve_model_interactive(query, matches)
+                if selected_model:
+                    models.append(selected_model.lstrip("!"))
             else:
-                print(f"WARNING: Model index {idx} out of range, skipping")
+                models.append(matches[0].lstrip("!"))
+        
+        # Remove duplicates while preserving order
+        models = list(dict.fromkeys(models))
+        
         if not models:
             print("ERROR: No valid models selected")
             sys.exit(1)

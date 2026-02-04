@@ -31,6 +31,15 @@ NUM_PLAYERS = 6
 NUM_MODELS = 3  # 3 models, each prompted twice
 NUM_PROMPTS_PER_MODEL = 2  # Each model generates 2 agents
 NUM_ROUNDS = 10  # 60 cards / 6 players = 10 rounds
+try:
+    NUM_GAMES_IN_WIZARD_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
+except (ValueError, TypeError):
+    NUM_GAMES_IN_WIZARD_MATCH = 100
+
+try:
+    MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
+except (ValueError, TypeError):
+    MOVE_TIME_LIMIT = 1.0
 
 # Results directories
 WIZARD_RESULTS_DIR = Path(__file__).parent.parent / "results" / "wizard"
@@ -45,13 +54,19 @@ GAME_NAME = "A3-Wizard"  # Default game for stored agents
 GAME_CODE_TEMPLATE = '''
 import sys
 import random
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-
+import signal
 # Move timeout in seconds
-MOVE_TIMEOUT = 2.0
+MOVE_TIMEOUT = {move_timeout}
+
+class MoveTimeoutException(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise MoveTimeoutException("Move timeout")
 
 NUM_PLAYERS = {num_players}
 NUM_ROUNDS = {num_rounds}
+NUM_GAMES = {num_games}
 DEBUG_MODE = {debug_mode}
 
 {extra_imports}
@@ -83,13 +98,15 @@ def call_agent_with_timeout(agent, phase, game_state):
     stat_prefix = f"p{{agent_idx}}"
     
     try:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(agent.make_move, phase, game_state)
-            try:
-                return future.result(timeout=MOVE_TIMEOUT)
-            except FuturesTimeoutError:
-                stats[f"{{stat_prefix}}_timeout"] += 1
-                return None
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(int(MOVE_TIMEOUT))
+        try:
+            return agent.make_move(phase, game_state)
+        finally:
+            signal.alarm(0)
+    except MoveTimeoutException:
+        stats[f"{{stat_prefix}}_timeout"] += 1
+        return None
     except Exception:
         stats[f"{{stat_prefix}}_crash"] += 1
         return None
@@ -223,10 +240,11 @@ def main():
     """Main function to run the Wizard simulation."""
     total_scores = [0] * NUM_PLAYERS
     
-    success = play_game(1, total_scores)
-    if not success:
-        print("ERROR: Game failed to complete")
-        return
+    for i in range(NUM_GAMES):
+        success = play_game(i + 1, total_scores)
+        if not success:
+            print(f"ERROR: Game {{i+1}} failed to complete")
+            break
     
     # Final results
     result_str = "RESULT:"
@@ -546,8 +564,7 @@ def find_model_folder(pattern: str) -> str | None:
         return None
     
     if len(matches) > 1:
-        print(f"WARNING: Pattern '{pattern}' matches multiple folders: {matches}")
-        print(f"         Using first match: {matches[0]}")
+        return ModelAPI.resolve_model_interactive(pattern, matches, context="folder")
     
     return matches[0]
 
@@ -788,10 +805,12 @@ async def run_single_game(responses, log_f, resp_f, models, debug_mode=False):
     game_code = GAME_CODE_TEMPLATE.format(
         num_players=NUM_PLAYERS,
         num_rounds=NUM_ROUNDS,
+        num_games=NUM_GAMES_IN_WIZARD_MATCH,
         debug_mode=str(debug_mode),
         extra_imports=extra_imports,
         card_class=CARD_CLASS,
         agent_code=combined_agent_code,
+        move_timeout=MOVE_TIME_LIMIT,
         game_class=GAME_CLASS
     )
         
@@ -920,10 +939,12 @@ def run_stored_game(agent_codes: list[tuple[int, str, str]], imports: list[str],
     game_code = GAME_CODE_TEMPLATE.format(
         num_players=NUM_PLAYERS,
         num_rounds=NUM_ROUNDS,
+        num_games=NUM_GAMES_IN_WIZARD_MATCH,
         debug_mode=str(debug_mode),
         extra_imports=extra_imports,
         card_class=CARD_CLASS,
         agent_code=combined_agent_code,
+        move_timeout=MOVE_TIME_LIMIT,
         game_class=GAME_CLASS
     )
     
@@ -1027,22 +1048,172 @@ def main_stored(agents_str: str, game: str, debug_mode: bool = False):
     print(f"\nGame log saved to: {log_f}")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Wizard card game matches between AI agents")
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode with detailed output and step-by-step execution")
+def get_available_runs(model_folder: str, game: str) -> list[int]:
+    """Get list of available run IDs for a model and game."""
+    model_dir = AGENTS_DIR / model_folder
+    runs = []
+    pattern = re.compile(rf"^{re.escape(game)}_(\d+)\.py$")
     
-    # Stored agent mode arguments
-    parser.add_argument("--stored", action="store_true", help="Use stored agents from agents/ folder instead of prompting models")
-    parser.add_argument("--agents", type=str, help="Agent specs for stored mode: model1:run1,model1:run2,... (need 6 total)")
-    parser.add_argument("--game", type=str, default=GAME_NAME, help=f"Game name for stored agents (default: {GAME_NAME})")
+    for file in model_dir.glob(f"{game}_*.py"):
+        match = pattern.match(file.name)
+        if match:
+            runs.append(int(match.group(1)))
     
+    return sorted(runs)
+
+
+def parse_agent_spec(spec: str) -> tuple[str, list[int]]:
+    """Parse agent spec (model:run1:run2) into model pattern and list of runs."""
+    parts = spec.split(":")
+    model_pattern = parts[0]
+    runs = [int(r) for r in parts[1:]]
+    return model_pattern, runs
+
+
+async def run_game_async(game_id: int, game_agents: list[tuple[str, int]], log_f: Path, debug_mode: bool = False):
+    """Run a single 6-player Wizard game and return the results."""
+    loaded_agents = []
+    all_imports = []
+    
+    for idx, (folder, run) in enumerate(game_agents, 1):
+        code, imports = load_stored_agent(folder, GAME_NAME, run, idx)
+        if not code:
+            return {"success": False, "error": f"Failed to load agent {idx}", "game_id": game_id}
+        loaded_agents.append((idx, folder, code))
+        if imports:
+            all_imports.extend(imports.split("\n"))
+
+    result = await asyncio.get_event_loop().run_in_executor(None, run_stored_game, loaded_agents, list(set(all_imports)), debug_mode)
+    
+    with open(log_f, "a") as f:
+        f.write(f"--- Game {game_id} ---\n")
+        for idx, (folder, run) in enumerate(game_agents, 1):
+            f.write(f"Slot {idx}: {folder} (run {run})\n")
+        f.write(f"Result: {result}\n")
+        f.write("-" * 40 + "\n\n")
+        
+    result["game_id"] = game_id
+    result["game_agents"] = game_agents
+    return result
+
+
+async def main_async():
+    parser = argparse.ArgumentParser(description="Run Wizard matches between stored AI agents")
+    parser.add_argument("--agent", nargs="+", help="Agent specs: model1[:run1:run2] model2[:run3:run4] ...")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
+
+    if not args.agent:
+        print("ERROR: Need agent specifications.")
+        print("Example: --agent mistral:1:2 gpt-mini:1:2 gemma:1:2")
+        sys.exit(1)
+
+    # Group agent runs by model folder
+    runs_by_model = {} # folder -> list of runs
     
-    if args.stored:
-        if not args.agents:
-            print("ERROR: --stored mode requires --agents argument")
-            print("Example: --agents mistral:1,mistral:2,mistral:3,fp8:1,fp8:2,fp8:3")
+    for spec in args.agent:
+        model_pattern, runs = parse_agent_spec(spec)
+        folder = find_model_folder(model_pattern)
+        if not folder:
             sys.exit(1)
-        main_stored(args.agents, args.game, debug_mode=args.debug)
-    else:
-        asyncio.run(main_async(debug_mode=args.debug))
+            
+        if not runs:
+            runs = get_available_runs(folder, GAME_NAME)
+            
+        if folder not in runs_by_model:
+            runs_by_model[folder] = []
+        runs_by_model[folder].extend(runs)
+
+    folders = list(runs_by_model.keys())
+    num_models = len(folders)
+    
+    if num_models == 0:
+        print("ERROR: No valid models found.")
+        sys.exit(1)
+
+    # Calculate slots per model for a 6-player game
+    # Distribute 6 slots as evenly as possible
+    base_slots = 6 // num_models
+    remainder = 6 % num_models
+    slots_per_model = {folder: base_slots for folder in folders}
+    for i in range(remainder):
+        slots_per_model[folders[i]] += 1
+
+    # How many games can we run?
+    # Based on the limiting model's available runs
+    num_games = 1000000 # Large initial value
+    for folder in folders:
+        possible = len(runs_by_model[folder]) // slots_per_model[folder]
+        num_games = min(num_games, possible)
+    
+    if num_games == 0:
+        print(f"ERROR: Not enough runs to fill slots for {num_models} models.")
+        for folder in folders:
+            print(f"  {folder}: slots required={slots_per_model[folder]}, available={len(runs_by_model[folder])}")
+        sys.exit(1)
+
+    print("\n" + "=" * 60)
+    print("WIZARD MATCH - STORED AGENTS")
+    print("=" * 60)
+    print(f"Total Models: {num_models}")
+    for folder in folders:
+        print(f"  {folder}: {len(runs_by_model[folder])} runs, {slots_per_model[folder]} slots/game")
+    print(f"Total Games: {num_games}")
+    print("=" * 60)
+
+    WIZARD_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_f = GAME_LOGS_DIR / f"{ts}_match.txt"
+
+    print(f"\nRunning {num_games} games in parallel...")
+    game_tasks = []
+    
+    for i in range(num_games):
+        game_agents = []
+        for folder in folders:
+            num_slots = slots_per_model[folder]
+            # Take consecutive runs for this game
+            for j in range(num_slots):
+                run_idx = i * num_slots + j
+                game_agents.append((folder, runs_by_model[folder][run_idx]))
+        
+        # Ensure we have exactly 6 agents
+        if len(game_agents) != 6:
+            logger.error("Game %d has %d agents instead of 6", i + 1, len(game_agents))
+            continue
+            
+        game_tasks.append(run_game_async(i + 1, game_agents, log_f, args.debug))
+
+    results = await asyncio.gather(*game_tasks)
+    
+    total_stats = {} # model_folder -> total_score
+    
+    # Sort results for display
+    results.sort(key=lambda x: x["game_id"])
+
+    for res in results:
+        game_id = res["game_id"]
+        game_agents = res["game_agents"]
+        print(f"\nGame {game_id}:")
+        
+        if res["success"]:
+            scores = res["scores"]
+            for idx, (folder, run) in enumerate(game_agents, 1):
+                p_key = f"P{idx}"
+                score = scores.get(p_key, 0)
+                total_stats[folder] = total_stats.get(folder, 0) + score
+                print(f"  Slot {idx}: {folder} (run {run}) -> {score}")
+        else:
+            print(f"  FAILED: {res.get('error', 'Unknown error')}")
+
+    print("\nFINAL RESULTS (Aggregated Scores):")
+    sorted_ranks = sorted(total_stats.items(), key=lambda x: x[1], reverse=True)
+    for rank, (folder, score) in enumerate(sorted_ranks, 1):
+        print(f"  {rank}. {folder}: {score}")
+    print(f"\nLogs saved to: {log_f}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main_async())
