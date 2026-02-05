@@ -2,87 +2,137 @@
 Agent Code: A4-WordFinder
 Model: mistralai/mistral-large-2512
 Run: 2
-Generated: 2026-02-05 00:14:02
+Generated: 2026-02-05 21:09:40
 """
 
-
+from collections import defaultdict
 
 import random
+from collections import defaultdict
 
 class WordFinderAgent:
     def __init__(self, name):
         self.name = name
         self.dictionary = load_words()
-        self.cache = {}  # Cache for faster lookups of valid words by first/last letters
+        self.history = set()
 
-    def make_move(self, current_word, word_history):
-        first_char = current_word[0].lower()
-        last_char = current_word[-1].lower()
-        current_length = len(current_word)
-        required_chars = {first_char, last_char}
-        required_pairs = {first_char + last_char, last_char + first_char}
-
-        # Initialize cache if not already done
-        if (first_char, last_char) not in self.cache:
-            self.cache[(first_char, last_char)] = self._find_valid_words(first_char, last_char)
-
-        valid_words = self.cache[(first_char, last_char)]
-
-        # Filter words based on game constraints
-        candidates = []
-        for word in valid_words:
-            if (word in word_history or
-                len(word) == current_length or
-                word[0].lower() in required_chars or
-                word[-1].lower() in required_chars):
-                continue
-
-            # Check for consecutive bonus
-            has_bonus = False
-            for pair in required_pairs:
-                if pair in word.lower():
-                    has_bonus = True
-                    break
-
-            # Calculate score potential
-            length = len(word)
-            if '-' in word:
-                score = length / 2
-            else:
-                score = length
-
-            if has_bonus:
-                score *= 5
-
-            candidates.append((score, word, has_bonus))
-
-        if not candidates:
-            return None  # No valid move, game ends
-
-        # Sort by score descending, then by length descending (to maximize points)
-        candidates.sort(key=lambda x: (-x[0], -len(x[1])))
-
-        # Select the best candidate
-        best_word = candidates[0][1]
-
-        return best_word
-
-    def _find_valid_words(self, first_char, last_char):
-        """Precompute all valid words containing the required letters not at start/end"""
-        valid_words = []
-        required_chars = {first_char, last_char}
+        # Pre-process the dictionary for fast lookups
+        self.letter_pair_index = defaultdict(set)
+        self.length_index = defaultdict(set)
+        self.consecutive_bonus_index = defaultdict(set)
 
         for word in self.dictionary:
-            word_lower = word.lower()
-            # Skip words that don't contain both required letters
-            if not (first_char in word_lower and last_char in word_lower):
+            if len(word) < 3:  # Words must have at least 3 letters to satisfy position constraints
                 continue
 
-            # Skip words where required letters are at start/end
-            if (word_lower[0] in required_chars or
-                word_lower[-1] in required_chars):
+            # Index by length
+            self.length_index[len(word)].add(word)
+
+            # Get all possible letter pairs (excluding first and last letters)
+            first_char = word[0]
+            last_char = word[-1]
+
+            # Find all unique pairs of letters in the word (excluding first/last positions)
+            for i in range(1, len(word)-1):
+                for j in range(i+1, len(word)):
+                    char1, char2 = sorted((word[i], word[j]))
+                    pair = (char1, char2)
+                    self.letter_pair_index[pair].add(word)
+
+                    # Check for consecutive letters (bonus)
+                    if abs(i - j) == 1:
+                        self.consecutive_bonus_index[pair].add(word)
+
+    def make_move(self, current_word, word_history):
+        # Update history
+        self.history = word_history
+
+        # Get required letters
+        first_char = current_word[0].lower()
+        last_char = current_word[-1].lower()
+        required_pair = tuple(sorted((first_char, last_char)))
+        current_length = len(current_word)
+
+        # Try to find a word with both letters (consecutive bonus first)
+        candidates = []
+
+        # 1. Check for words with consecutive letters (bonus)
+        if required_pair in self.consecutive_bonus_index:
+            candidates = self.consecutive_bonus_index[required_pair] - word_history
+            # Filter by length and position constraints
+            valid_candidates = []
+            for word in candidates:
+                if len(word) == current_length:
+                    continue
+                # Check position constraints
+                first_pos = word.find(first_char)
+                last_pos = word.find(last_char)
+                if (first_pos > 0 and first_pos < len(word)-1 and
+                    last_pos > 0 and last_pos < len(word)-1):
+                    valid_candidates.append(word)
+            if valid_candidates:
+                # Sort by length (descending) to maximize points
+                valid_candidates.sort(key=lambda x: -len(x))
+                return valid_candidates[0]
+
+        # 2. Check for words with both letters (non-consecutive)
+        if required_pair in self.letter_pair_index:
+            candidates = self.letter_pair_index[required_pair] - word_history
+            # Filter by length and position constraints
+            valid_candidates = []
+            for word in candidates:
+                if len(word) == current_length:
+                    continue
+                # Check position constraints
+                first_pos = word.find(first_char)
+                last_pos = word.find(last_char)
+                if (first_pos > 0 and first_pos < len(word)-1 and
+                    last_pos > 0 and last_pos < len(word)-1):
+                    valid_candidates.append(word)
+            if valid_candidates:
+                # Sort by length (descending) to maximize points
+                valid_candidates.sort(key=lambda x: -len(x))
+                return valid_candidates[0]
+
+        # 3. Partial move fallback - try with just one letter
+        # Try first_char first
+        partial_candidates = []
+        for length in sorted(self.length_index.keys(), reverse=True):
+            if length == current_length:
                 continue
+            for word in self.length_index[length]:
+                if word in word_history:
+                    continue
+                pos = word.find(first_char)
+                if pos > 0 and pos < len(word)-1:
+                    partial_candidates.append(word)
+                    break  # Just take one per length
 
-            valid_words.append(word)
+        if partial_candidates:
+            # Return the longest possible partial move
+            partial_candidates.sort(key=lambda x: -len(x))
+            return partial_candidates[0]
 
-        return valid_words
+        # Try last_char if first_char didn't work
+        partial_candidates = []
+        for length in sorted(self.length_index.keys(), reverse=True):
+            if length == current_length:
+                continue
+            for word in self.length_index[length]:
+                if word in word_history:
+                    continue
+                pos = word.find(last_char)
+                if pos > 0 and pos < len(word)-1:
+                    partial_candidates.append(word)
+                    break
+
+        if partial_candidates:
+            partial_candidates.sort(key=lambda x: -len(x))
+            return partial_candidates[0]
+
+        # If absolutely no options, return a random word (will lose)
+        # This should theoretically never happen with a proper dictionary
+        unused_words = self.dictionary - word_history
+        if unused_words:
+            return random.choice(list(unused_words))
+        return "surrender"  # Last resort

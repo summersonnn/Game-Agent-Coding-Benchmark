@@ -8,8 +8,8 @@ Game Rules: (2 Players)
     - Does NOT have those letters at start or end.
     - Has not been used yet.
     - Is in dictionary.
-3. Scoring: Points = length of word.
-4. Penalty: Invalid move -> Halve total score and GAME OVER.
+3. Scoring: Points = (length of word) / (seconds taken for move).
+4. Penalty: Invalid move -> GAME OVER.
 """
 
 import argparse
@@ -42,12 +42,9 @@ except (ValueError, TypeError):
     NUM_GAMES_PER_MATCH = 10
 
 try:
-    MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
+    MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0")) * 5
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
-
-# WordFinder needs more time due to dictionary loading and search
-MOVE_TIME_LIMIT = MOVE_TIME_LIMIT * 3
 
 # Results directories
 RESULTS_DIR = Path(__file__).parent.parent / "results" / "word_finder"
@@ -82,6 +79,9 @@ def timeout_handler(signum, frame):
 # --- Game Configuration ---
 NUM_GAMES = {num_games}
 WORDS_FILE_PATH = r"{words_file_path}"
+AGENT1_INFO = "{agent1_info}"
+AGENT2_INFO = "{agent2_info}"
+TIME_SENSITIVITY = 100000  # Scales microsecond response times to meaningful score differences
 
 {extra_imports}
 
@@ -97,7 +97,7 @@ class WordFinderGame:
         self.words_set = words_set
         self.history = set()
         self.current_word = ""
-        self.scores = {{ "Agent-1": 0, "Agent-2": 0 }}
+        self.scores = {{ "Agent-1": 0.0, "Agent-2": 0.0 }}
         self.game_over = False
         self.winner = None
         self.loser = None # For penalty application
@@ -117,78 +117,115 @@ class WordFinderGame:
 
     def is_valid_move(self, new_word, input_word):
         """
-        Check rule compliance.
+        Check rule compliance. Returns (status, reason) where status is:
+        - "valid": Perfect move with both required letters
+        - "partial": Contains only ONE required letter (not at start/end) - game continues with penalty
+        - "invalid": Doesn't meet basic requirements - game ends
+
+        Rules for valid:
         1. new_word must be in dictionary
         2. new_word must contain input_word[0] and input_word[-1]
         3. new_word[0] != input_word[0] and new_word[0] != input_word[-1]
         4. new_word[-1] != input_word[0] and new_word[-1] != input_word[-1]
         5. new_word not in history
         6. len(new_word) != len(input_word)
+
+        Rules for partial (fallback when no valid word exists):
+        - Must pass rules 1, 5, 6
+        - Must contain at least ONE of input_word[0] or input_word[-1]
+        - That letter must NOT be at start or end of new_word
         """
         nw = new_word.lower()
-        
+
         # 0. Basic sanity
-        if not nw: return False, "Empty word"
-        
+        if not nw:
+            return "invalid", "Empty word"
+
         # 1. Dictionary check
         if nw not in self.words_set:
-            return False, f"Word '{{nw}}' not in dictionary"
-            
+            return "invalid", f"Word '{{nw}}' not in dictionary"
+
         # 2. History check
         if nw in self.history:
-            return False, f"Word '{{nw}}' already used"
-            
+            return "invalid", f"Word '{{nw}}' already used"
+
         # 3. Letter constraints
         p_start = input_word[0].lower()
         p_end = input_word[-1].lower()
-        
-        # Must contain p_start and p_end
-        if p_start not in nw or p_end not in nw:
-            return False, f"Must contain '{{p_start}}' and '{{p_end}}'"
-            
-        # Start/End chars of NEW word cannot be p_start or p_end
         n_start = nw[0]
         n_end = nw[-1]
-        
-        if n_start == p_start or n_start == p_end:
-            return False, f"Start letter '{{n_start}}' cannot be '{{p_start}}' or '{{p_end}}'"
-            
-        if n_end == p_start or n_end == p_end:
-            return False, f"End letter '{{n_end}}' cannot be '{{p_start}}' or '{{p_end}}'"
-        
+
+        has_p_start = p_start in nw
+        has_p_end = p_end in nw
+
+        # Check if required letters are at forbidden positions (start/end of new word)
+        p_start_at_boundary = (n_start == p_start or n_end == p_start)
+        p_end_at_boundary = (n_start == p_end or n_end == p_end)
+
         # 4. Length constraint - cannot match previous word length
         if len(nw) == len(input_word):
-            return False, f"Word length {{len(nw)}} cannot equal previous word length {{len(input_word)}}"
-            
-        return True, "Valid"
+            return "invalid", f"Word length {{len(nw)}} cannot equal previous word length {{len(input_word)}}"
 
-    def apply_move(self, agent_name, new_word, input_word):
-        """Apply the move and calculate points with potential bonus and hyphen penalty."""
+        # Check for VALID move (both letters present, neither at boundary)
+        if has_p_start and has_p_end and not p_start_at_boundary and not p_end_at_boundary:
+            return "valid", "Valid"
+
+        # Check for PARTIAL move (only one letter, not at boundary)
+        # This is the fallback when agent believes no valid word exists
+        has_valid_p_start = has_p_start and not p_start_at_boundary
+        has_valid_p_end = has_p_end and not p_end_at_boundary
+
+        if has_valid_p_start and not has_p_end:
+            return "partial", f"Partial move: contains '{{p_start}}' but missing '{{p_end}}'"
+        if has_valid_p_end and not has_p_start:
+            return "partial", f"Partial move: contains '{{p_end}}' but missing '{{p_start}}'"
+
+        # If we have one letter but it's at boundary, or neither letter properly placed
+        if has_p_start and p_start_at_boundary:
+            return "invalid", f"Letter '{{p_start}}' cannot be at start or end of word"
+        if has_p_end and p_end_at_boundary:
+            return "invalid", f"Letter '{{p_end}}' cannot be at start or end of word"
+
+        # Neither letter present at all
+        return "invalid", f"Must contain at least one of '{{p_start}}' or '{{p_end}}' (not at start/end)"
+
+    def apply_move(self, agent_name, new_word, input_word, elapsed_time, is_partial=False):
+        """Apply the move and calculate points with potential bonus, hyphen penalty, and time division.
+
+        For partial moves (is_partial=True), the agent receives NEGATIVE points.
+        """
         base_points = len(new_word)
-        
+
         # Check for hyphen penalty (words with "-" get half points)
         has_hyphen = '-' in new_word
         if has_hyphen:
             base_points = base_points // 2  # Integer division for half points
-        
-        # Check for consecutive letter bonus
+
+        # Check for consecutive letter bonus (only applies to valid moves, not partial)
         p_start = input_word[0].lower()
         p_end = input_word[-1].lower()
         nw = new_word.lower()
-        
+
         # Check if required letters appear consecutively (in either order)
         consecutive = (p_start + p_end in nw) or (p_end + p_start in nw)
-        
-        if consecutive:
-            points = base_points * 5  # 5x multiplier!
+
+        if consecutive and not is_partial:
+            points = base_points * 2  # 2x multiplier!
         else:
             points = base_points
-            
-        self.scores[agent_name] += points
+
+        # Divide points by (1 + scaled_time) - TIME_SENSITIVITY scales microseconds to meaningful values
+        time_adjusted_points = points / (1 + elapsed_time * TIME_SENSITIVITY)
+
+        # For partial moves, negate the points (penalty)
+        if is_partial:
+            time_adjusted_points = -time_adjusted_points
+
+        self.scores[agent_name] += time_adjusted_points
         self.history.add(new_word.lower())
         self.current_word = new_word
-        
-        return points, consecutive, has_hyphen  # Return points awarded, bonus status, and hyphen penalty
+
+        return time_adjusted_points, consecutive, has_hyphen, elapsed_time, is_partial
         
     def penalize_and_end(self, agent_name):
         """End the game without halving points (penalty is losing the opportunity to score more)."""
@@ -200,12 +237,11 @@ class WordFinderGame:
 
 # --- Stats ---
 stats = {{
-    "normal_end": 0, # Should be 0 usually as game ends on invalid? 
-                     # Actually user says "Agents will gain points each round... as long as possible"
-                     # and "If a word does not adhere... game ends".
-                     # So game ONLY ends on invalid word/timeout/crash.
-    "p1_penalty": 0,
+    "normal_end": 0,
+    "p1_penalty": 0,      # Illegal moves (game-ending)
     "p2_penalty": 0,
+    "p1_partial": 0,      # Partial moves (game continues with negative points)
+    "p2_partial": 0,
     "p1_timeout": 0,
     "p2_timeout": 0,
     "p1_crash": 0,
@@ -235,8 +271,8 @@ def load_words(subset=None):
             # Load all valid words (only alphabetical + hyphens)
             all_words = {{line.strip().lower() for line in f if line.strip() and is_valid_word(line.strip())}}
         
-        if len(all_words) > 10000:
-            return set(random.sample(list(all_words), 10000))
+        if len(all_words) > 100000:
+            return set(random.sample(list(all_words), 100000))
         else:
             return all_words
     except Exception as e:
@@ -262,8 +298,8 @@ def play_game(game_num, total_scores):
     # Filter to ensure we only use valid words
     valid_words = [w for w in full_dictionary if is_valid_word(w)]
     
-    if len(valid_words) >= 10000:
-        shared_word_subset = set(random.sample(valid_words, 10000))
+    if len(valid_words) >= 100000:
+        shared_word_subset = set(random.sample(valid_words, 100000))
     else:
         shared_word_subset = set(valid_words)
     
@@ -284,10 +320,12 @@ def play_game(game_num, total_scores):
         
     current_agent_obj, other_agent_obj = (agent1, agent2) if random.random() < 0.5 else (agent2, agent1)
     
-    # Print game header
+    # Print game header with agent info
     print()
     print("=" * 60)
     print(f"GAME {{game_num}}")
+    print(f"Agent-1: {{AGENT1_INFO}}")
+    print(f"Agent-2: {{AGENT2_INFO}}")
     print("=" * 60)
     
     # Start
@@ -295,37 +333,44 @@ def play_game(game_num, total_scores):
     print(f"Starting random word: {{start_word}}")
     
     end_reason = "Game completed normally"
-    
+    end_reason_type = "normal"  # Types: normal, illegal_move, timeout, crash
+
     while not game.game_over:
         stats["turns"] += 1
         
-        # Get Move with timeout
+        # Get Move with timeout and time tracking
         new_word = None
-        
+        move_start_time = time.time()
+
         try:
             signal.signal(signal.SIGALRM, timeout_handler)
             signal.alarm(max(1, int(MOVE_TIMEOUT)))
-            
+
             try:
                 # Pass the current word and the history of all used words
                 new_word = current_agent_obj.make_move(game.current_word, game.history)
+                move_elapsed_time = time.time() - move_start_time
             finally:
                 signal.alarm(0)
                 
         except MoveTimeoutException:
-            # Timeout -> End game (no score penalty)
+            # Timeout -> End game with 25% point reduction
+            move_elapsed_time = time.time() - move_start_time
             game.penalize_and_end(current_agent_obj.name)
             end_reason = f"{{current_agent_obj.name}} exceeded time limit"
-            print(f"{{current_agent_obj.name}}: TIMEOUT (final score: {{game.scores[current_agent_obj.name]}})")
+            end_reason_type = "timeout"
+            print(f"{{current_agent_obj.name}}: TIMEOUT")
             if current_agent_obj.name == "Agent-1": stats["p1_timeout"] += 1
             else: stats["p2_timeout"] += 1
             break
-            
+
         except Exception as e:
-            # Crash -> End game (no score penalty)
+            # Crash -> End game (treated as illegal move - automatic loss)
+            move_elapsed_time = time.time() - move_start_time
             game.penalize_and_end(current_agent_obj.name)
             end_reason = f"{{current_agent_obj.name}} crashed: {{str(e)[:50]}}"
-            print(f"{{current_agent_obj.name}}: CRASH ({{e}}) (final score: {{game.scores[current_agent_obj.name]}})")
+            end_reason_type = "crash"
+            print(f"{{current_agent_obj.name}}: CRASH ({{e}})")
             if current_agent_obj.name == "Agent-1": stats["p1_crash"] += 1
             else: stats["p2_crash"] += 1
             break
@@ -334,71 +379,127 @@ def play_game(game_num, total_scores):
         if not isinstance(new_word, str):
             game.penalize_and_end(current_agent_obj.name)
             end_reason = f"{{current_agent_obj.name}} returned invalid output type"
+            end_reason_type = "illegal_move"
             detail = f"returned {{type(new_word).__name__}}: {{new_word}}" if new_word is not None else "returned None"
-            print(f"{{current_agent_obj.name}}: INVALID_OUTPUT ({{detail}}) (final score: {{game.scores[current_agent_obj.name]}})")
+            print(f"{{current_agent_obj.name}}: INVALID_OUTPUT ({{detail}})")
             if current_agent_obj.name == "Agent-1": stats["p1_crash"] += 1
             else: stats["p2_crash"] += 1
             break
-            
+
         new_word = new_word.strip()
-        is_valid, reason = game.is_valid_move(new_word, game.current_word)
-        
-        if is_valid:
-            points_awarded, got_bonus, has_hyphen = game.apply_move(current_agent_obj.name, new_word, game.current_word)
-            bonus_text = " [5x BONUS!]" if got_bonus else ""
-            hyphen_text = " [hyphen: -50%]" if has_hyphen else ""
-            print(f"{{current_agent_obj.name}}: {{new_word}} (got {{points_awarded}} points{{bonus_text}}{{hyphen_text}}, total: {{game.scores[current_agent_obj.name]}})")
+        move_status, reason = game.is_valid_move(new_word, game.current_word)
+
+        if move_status == "valid":
+            # Perfect move - both required letters present
+            points_awarded, got_bonus, has_hyphen, time_taken, _ = game.apply_move(
+                current_agent_obj.name, new_word, game.current_word, move_elapsed_time, is_partial=False
+            )
+            bonus_str = "2x" if got_bonus else "None"
+            penalty_str = "-50% (hyphen)" if has_hyphen else "None"
+            print(f"{{current_agent_obj.name}}: {{new_word}} --> Word length: {{len(new_word)}}, Bonus: {{bonus_str}}, Penalty: {{penalty_str}}, Time: {{time_taken:.6f}} sec, Points: +{{points_awarded:.2f}}")
             # Swap turn
             current_agent_obj, other_agent_obj = other_agent_obj, current_agent_obj
+
+        elif move_status == "partial":
+            # Partial move - only one required letter present (fallback when no valid word exists)
+            # Game continues but agent gets NEGATIVE points
+            points_awarded, _, has_hyphen, time_taken, _ = game.apply_move(
+                current_agent_obj.name, new_word, game.current_word, move_elapsed_time, is_partial=True
+            )
+            penalty_str = "-50% (hyphen)" if has_hyphen else "None"
+            print(f"{{current_agent_obj.name}}: {{new_word}} --> PARTIAL MOVE ({{reason}}), Word length: {{len(new_word)}}, Hyphen: {{penalty_str}}, Time: {{time_taken:.6f}} sec, Points: {{points_awarded:.2f}} (PENALTY)")
+            if current_agent_obj.name == "Agent-1": stats["p1_partial"] += 1
+            else: stats["p2_partial"] += 1
+            # Swap turn - game continues
+            current_agent_obj, other_agent_obj = other_agent_obj, current_agent_obj
+
         else:
-            # Invalid -> End game (no score penalty)
+            # Invalid -> End game (illegal move = automatic loss)
             game.penalize_and_end(current_agent_obj.name)
             end_reason = f"{{current_agent_obj.name}} played invalid word: {{reason}}"
-            print(f"{{current_agent_obj.name}}: {{new_word}} (invalid due to {{reason}}, final score: {{game.scores[current_agent_obj.name]}})")
+            end_reason_type = "illegal_move"
+            print(f"{{current_agent_obj.name}}: {{new_word}} (ILLEGAL MOVE: {{reason}})")
             if current_agent_obj.name == "Agent-1": stats["p1_penalty"] += 1
             else: stats["p2_penalty"] += 1
             break
             
     # Game Over
-    # Update total scores
-    total_scores["Agent-1"] += game.scores["Agent-1"]
-    total_scores["Agent-2"] += game.scores["Agent-2"]
-    
-    # Print game summary
+    # Print game summary header
     print()
     print(f"GAME {{game_num}} ENDED")
     print(f"Reason: {{end_reason}}")
-    print(f"Final Scores - Agent-1: {{game.scores['Agent-1']}} | Agent-2: {{game.scores['Agent-2']}}")
-    
-    # Determine winner of this specific game
-    if game.scores["Agent-1"] > game.scores["Agent-2"]:
-        winner = "Agent-1"
-        print(f"Winner: Agent-1")
-    elif game.scores["Agent-2"] > game.scores["Agent-1"]:
-        winner = "Agent-2"
-        print(f"Winner: Agent-2")
+    print(f"Scores Before Penalties - Agent-1: {{game.scores['Agent-1']:.2f}} | Agent-2: {{game.scores['Agent-2']:.2f}}")
+
+    # Apply penalty rules based on end reason type
+    loser = game.loser
+    if loser:
+        other_agent = "Agent-2" if loser == "Agent-1" else "Agent-1"
+
+        if end_reason_type in ("illegal_move", "crash", "timeout"):
+            # Illegal move, crash, or timeout = automatic loss regardless of points
+            # If the offender has more points, swap scores so they lose
+            reason_desc = "timed out" if end_reason_type == "timeout" else "made an illegal move/crash"
+            print(f"PENALTY: {{loser}} {{reason_desc}} - automatic loss!")
+            if game.scores[loser] >= game.scores[other_agent]:
+                # Swap scores so loser has fewer points
+                old_loser_score = game.scores[loser]
+                old_winner_score = game.scores[other_agent]
+                # Set loser's score to be less than winner's (swap them)
+                game.scores[loser] = old_winner_score - 0.01 if old_winner_score > 0 else 0.0
+                game.scores[other_agent] = old_loser_score
+                print(f"SCORE SWAP: {{loser}} score adjusted from {{old_loser_score:.2f}} to {{game.scores[loser]:.2f}}")
+                print(f"SCORE SWAP: {{other_agent}} score adjusted from {{old_winner_score:.2f}} to {{game.scores[other_agent]:.2f}}")
+            winner = other_agent
+        else:
+            # Normal end - determine winner by scores
+            if game.scores["Agent-1"] > game.scores["Agent-2"]:
+                winner = "Agent-1"
+            elif game.scores["Agent-2"] > game.scores["Agent-1"]:
+                winner = "Agent-2"
+            else:
+                winner = "DRAW"
     else:
-        winner = "DRAW"
+        # No loser recorded - determine winner by scores
+        if game.scores["Agent-1"] > game.scores["Agent-2"]:
+            winner = "Agent-1"
+        elif game.scores["Agent-2"] > game.scores["Agent-1"]:
+            winner = "Agent-2"
+        else:
+            winner = "DRAW"
+
+    # Print final scores after penalties
+    print(f"Final Scores After Penalties - Agent-1: {{game.scores['Agent-1']:.2f}} | Agent-2: {{game.scores['Agent-2']:.2f}}")
+
+    # Update total scores with penalty-adjusted values
+    total_scores["Agent-1"] += game.scores["Agent-1"]
+    total_scores["Agent-2"] += game.scores["Agent-2"]
+
+    # Print winner
+    if winner == "DRAW":
         print(f"Result: DRAW")
-    
-    print(f"Running Total - Agent-1: {{total_scores['Agent-1']}} | Agent-2: {{total_scores['Agent-2']}}")
+    else:
+        print(f"Winner: {{winner}}")
+
+    print(f"Running Total - Agent-1: {{total_scores['Agent-1']:.2f}} | Agent-2: {{total_scores['Agent-2']:.2f}}")
     print("=" * 60)
     print()
     sys.stdout.flush()
-    
+
     return winner
 
 def main():
-    total_scores = {{"Agent-1": 0, "Agent-2": 0}}
-    
+    total_scores = {{"Agent-1": 0.0, "Agent-2": 0.0}}
+
     for i in range(NUM_GAMES):
         play_game(i+1, total_scores)
         sys.stdout.flush()
-        
-    print(f"RESULT:Agent-1={{total_scores['Agent-1']}},Agent-2={{total_scores['Agent-2']}}")
+
+    print(f"RESULT:Agent-1={{total_scores['Agent-1']:.2f}},Agent-2={{total_scores['Agent-2']:.2f}}")
     print("--- MATCH STATISTICS ---")
-    print(f"Agent-1 Rule Violations: {{stats['p1_penalty']}}")
-    print(f"Agent-2 Rule Violations: {{stats['p2_penalty']}}")
+    print(f"Agent-1 Illegal Moves (game-ending): {{stats['p1_penalty']}}")
+    print(f"Agent-2 Illegal Moves (game-ending): {{stats['p2_penalty']}}")
+    print(f"Agent-1 Partial Moves (negative points): {{stats['p1_partial']}}")
+    print(f"Agent-2 Partial Moves (negative points): {{stats['p2_partial']}}")
     print(f"Agent-1 Timeouts: {{stats['p1_timeout']}}")
     print(f"Agent-2 Timeouts: {{stats['p2_timeout']}}")
     print(f"Agent-1 Crashes/Invalid Outputs: {{stats['p1_crash']}}")
@@ -538,6 +639,8 @@ def build_game_code(
     num_games: int,
     words_file_path: str,
     move_timeout: float,
+    agent1_info: str,
+    agent2_info: str,
 ) -> str:
     """Build the complete game code with both agent implementations."""
     return GAME_CODE_TEMPLATE.format(
@@ -547,6 +650,8 @@ def build_game_code(
         extra_imports=extra_imports,
         agent1_code=agent1_code,
         agent2_code=agent2_code,
+        agent1_info=agent1_info,
+        agent2_info=agent2_info,
     )
 
 
@@ -570,13 +675,13 @@ def run_match(game_code: str, match_id: int, run_ids: tuple[int, int], timeout: 
                 "agent1_run_id": run_ids[0],
                 "agent2_run_id": run_ids[1],
                 "success": False,
-                "agent1_score": 0,
-                "agent2_score": 0,
+                "agent1_score": 0.0,
+                "agent2_score": 0.0,
                 "error": result.stderr[:500],
             }
 
-        # Parse results
-        match = re.search(r"RESULT:Agent-1=(\d+),Agent-2=(\d+)", result.stdout)
+        # Parse results (scores are now floats)
+        match = re.search(r"RESULT:Agent-1=([\d.]+),Agent-2=([\d.]+)", result.stdout)
         
         stats_block = ""
         if "--- MATCH STATISTICS ---" in result.stdout:
@@ -587,7 +692,7 @@ def run_match(game_code: str, match_id: int, run_ids: tuple[int, int], timeout: 
             log_lines = []
             for line in result.stdout.splitlines():
                 if line.startswith(("Starting random word:", "Agent-1:", "Agent-2:",
-                                   "GAME ", "Reason:", "Final Scores", "Winner:", "Result:", 
+                                   "GAME ", "Reason:", "Final Scores", "Winner:", "Result:",
                                    "Running Total", "==========")) or line.strip() == "":
                     log_lines.append(line)
 
@@ -596,8 +701,8 @@ def run_match(game_code: str, match_id: int, run_ids: tuple[int, int], timeout: 
                 "agent1_run_id": run_ids[0],
                 "agent2_run_id": run_ids[1],
                 "success": True,
-                "agent1_score": int(match.group(1)),
-                "agent2_score": int(match.group(2)),
+                "agent1_score": float(match.group(1)),
+                "agent2_score": float(match.group(2)),
                 "error": None,
                 "stats_block": stats_block,
                 "log": "\n".join(log_lines),
@@ -608,8 +713,8 @@ def run_match(game_code: str, match_id: int, run_ids: tuple[int, int], timeout: 
             "agent1_run_id": run_ids[0],
             "agent2_run_id": run_ids[1],
             "success": False,
-            "agent1_score": 0,
-            "agent2_score": 0,
+            "agent1_score": 0.0,
+            "agent2_score": 0.0,
             "error": "Could not parse results from output:\n" + result.stdout[:200],
         }
 
@@ -619,8 +724,8 @@ def run_match(game_code: str, match_id: int, run_ids: tuple[int, int], timeout: 
             "agent1_run_id": run_ids[0],
             "agent2_run_id": run_ids[1],
             "success": False,
-            "agent1_score": 0,
-            "agent2_score": 0,
+            "agent1_score": 0.0,
+            "agent2_score": 0.0,
             "error": str(e),
         }
     finally:
@@ -691,8 +796,13 @@ async def main_async():
         all_imports = set(imp1.split("\n") + imp2.split("\n"))
         extra_imports = "\n".join(imp for imp in all_imports if imp.strip())
 
+        # Create agent info strings for logging
+        agent1_info = f"{folder1} (Run {run1})"
+        agent2_info = f"{folder2} (Run {run2})"
+
         game_code = build_game_code(
-            code1, code2, extra_imports, NUM_GAMES_PER_MATCH, str(WORDS_FILE), MOVE_TIME_LIMIT
+            code1, code2, extra_imports, NUM_GAMES_PER_MATCH, str(WORDS_FILE), MOVE_TIME_LIMIT,
+            agent1_info, agent2_info
         )
         
         match_tasks.append(run_match_async(game_code, i + 1, (run1, run2)))
@@ -704,8 +814,8 @@ async def main_async():
     print(f"\nRunning {len(match_tasks)} matches in parallel...")
     results = await asyncio.gather(*match_tasks)
     
-    total1, total2 = 0, 0
-    
+    total1, total2 = 0.0, 0.0
+
     with open(log_f, "w") as f:
         f.write(f"WordFinder Match - {ts}\n")
         f.write("=" * 60 + "\n\n")
@@ -716,7 +826,7 @@ async def main_async():
                 s1, s2 = result["agent1_score"], result["agent2_score"]
                 total1 += s1
                 total2 += s2
-                status = f"Result: {s1} - {s2}"
+                status = f"Result: {s1:.2f} - {s2:.2f}"
                 game_log = result.get("log", "")
                 if game_log:
                     status += f"\n{game_log}\n"
@@ -732,8 +842,8 @@ async def main_async():
                 f.write("-" * 60 + "\n\n")
 
     print("\nFINAL RESULTS (Total Score):")
-    print(f"  {folder1}: {total1}")
-    print(f"  {folder2}: {total2}")
+    print(f"  {folder1}: {total1:.2f}")
+    print(f"  {folder2}: {total2:.2f}")
     print(f"\nLogs saved to: {log_f}")
 
 if __name__ == "__main__":

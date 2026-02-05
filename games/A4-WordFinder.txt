@@ -26,22 +26,67 @@ Players take turns finding a new word based on the previous word.
 ## Scoring
 
 - **Base Points**: You gain points equal to the **length** of your valid word.
-- **Hyphen Penalty**: Words containing a hyphen ("-") get **half points** (length ÷ 2).
-  - Example: "MOTHER-IN-LAW" (13 letters) = 13 ÷ 2 = **6 points**
+- **Hyphen Penalty**: Words containing a hyphen ("-") get **half points** (length / 2).
+  - Example: "MOTHER-IN-LAW" (13 letters) = 13 / 2 = **6 base points**
   - Avoid hyphens when possible!
-- **Consecutive Letter Bonus**: If the two required letters (first and last of the previous word) appear **consecutively** in your word, your points are **multiplied by 5**!
+- **Consecutive Letter Bonus**: If the two required letters (first and last of the previous word) appear **consecutively** in your word, your base points are **multiplied by 2**!
   - Example: Previous word "PUSH" (requires 'P' and 'H').
-  - Word "SHEPHERD" contains "PH" consecutively → 8 letters × 5 = **40 points**
-  - Word "TELEPATHY" contains 'P' and 'H' but not consecutively → **9 points** (no bonus)
+  - Word "SHEPHERD" contains "PH" consecutively -> 8 letters x 2 = **16 base points**
+  - Word "TELEPATHY" contains 'P' and 'H' but not consecutively -> **9 base points** (no bonus)
   - The letters can appear in either order: "PH" or "HP" both trigger the bonus.
-  - **Note**: The 5x bonus is applied AFTER the hyphen penalty if applicable.
-- **Invalid Move**: If you make an invalid move (violating any rule), the game ends immediately. You keep your current score, but lose the opportunity to score more points.
+  - **Note**: The 2x bonus is applied AFTER the hyphen penalty if applicable.
+- **TIME MATTERS**: Response time factors into your final score. Faster responses earn more points.
+  - The scoring formula rewards speed - even small time differences can significantly impact your score.
+  - A quick answer with a shorter word can outscore a slow answer with a longer word.
+  - **Optimize your code for speed!**
+- **Invalid Move**: If you make an invalid move (violating any rule), **you automatically lose the game** regardless of your current score. The other player wins even if they have fewer points.
+- **Timeout**: If you exceed the time limit, **you automatically lose the game** (same as invalid move).
+
+## Partial Move (Last Resort)
+
+If you believe there is NO valid word that contains BOTH required letters, you have a fallback option:
+
+- **Partial Move**: Play a word that contains only ONE of the required letters (not at start/end position).
+  - The game continues (does NOT end).
+  - You receive **NEGATIVE points** (a penalty based on word length and time taken).
+  - Example: Previous word "QUIZ" (requires 'Q' and 'Z'). No word has both? Play "LIQUID" (contains 'Q' but not 'Z').
+    - You lose points, but the game continues.
+
+**IMPORTANT**:
+- This is a LAST RESORT when no valid word exists.
+- If you play a partial move when a valid word WAS available, you're throwing away points unnecessarily.
+- If your word contains NEITHER required letter (or has them at start/end), it's an INVALID move and you lose.
 
 ## Goal
 
 Your goal is to maximize your total score.
-- Find long valid words to get more points.
+- Find valid words QUICKLY - speed is a major factor in scoring!
+- Avoid invalid moves and timeouts at all costs (automatic loss).
+- Use partial moves only as a last resort when no valid word exists.
 - Try to choose words that make it difficult for your opponent to reply (strategic play).
+
+## Performance Warning
+
+**YOUR CODE EFFICIENCY DIRECTLY AFFECTS YOUR SCORE!**
+
+Since points are divided by time, slow code will lose to fast code even with better word choices. You MUST:
+
+1. **Pre-process in `__init__`**: Build all indexes, lookup tables, and data structures during initialization (called once).
+2. **Minimize `make_move` work**: The move function is timed. Do as little computation as possible here.
+3. **Use O(1) lookups**: Build dictionaries/sets indexed by required letter pairs instead of filtering on every move.
+4. **Avoid redundant iterations**: Never iterate through the full dictionary during `make_move` if you can pre-filter.
+
+Example efficient pattern:
+```python
+def __init__(self, name):
+    self.name = name
+    self.dictionary = load_words()
+    # Pre-build index: for each (char1, char2) pair, store valid candidate words
+    self.pair_index = {}
+    for word in self.dictionary:
+        # Index words by letter pairs they contain (excluding first/last positions)
+        # This allows O(1) lookup during make_move
+```
 
 ## Implementation Task
 
@@ -116,12 +161,18 @@ class WordFinderAgent:
 
 ## Strategy Tips
 
-1. **Maximize Length**: Longer words give more points.
-2. **Hunt for Bonuses**: Look for words with the required letters appearing consecutively - a 5x multiplier is huge! Even a short word with the bonus (e.g., 8 letters × 5 = 40 points) beats a long word without it (e.g., 15 letters = 15 points).
-3. **Avoid Hyphens**: Words with hyphens get only half points. When possible, choose non-hyphenated alternatives.
-4. **Defensive Play**: Avoid leaving the opponent with easy letters (common letters like 'E', 'S' at start/end of your word).
-5. **Offensive Play**: Try to force the opponent into a situation where they have to use difficult letters.
-6. **Use word_history**: The game provides you with the complete history of used words. Make sure to check against it to avoid penalties! 
+1. **SPEED IS CRITICAL**: Time significantly impacts your score! Fast code wins.
+   - Pre-process your dictionary in `__init__` - build indexes, group words by letters, etc.
+   - Avoid iterating through the entire dictionary on every move.
+   - Use efficient data structures (sets for O(1) lookups, pre-built dictionaries for letter filtering).
+2. **Balance Length vs Speed**: A longer word found slowly may score less than a shorter word found quickly!
+3. **Hunt for Bonuses**: Look for words with the required letters appearing consecutively - a 2x multiplier is huge!
+4. **Avoid Hyphens**: Words with hyphens get only half points.
+5. **Pre-compute When Possible**: Build lookup tables in `__init__` (runs once) rather than computing during `make_move` (runs every turn).
+6. **Use word_history**: The game provides you with the complete history of used words. Check against it to avoid penalties.
+7. **Defensive Play**: Avoid leaving the opponent with easy letters (common letters like 'E', 'S' at start/end of your word).
+8. **Offensive Play**: Try to force the opponent into a situation where they have to use difficult letters.
+9. **Partial Move Fallback**: If absolutely NO valid word exists, use a partial move (one required letter) to avoid losing. It costs negative points but keeps you in the game. 
 
 ## Competition Format
 
