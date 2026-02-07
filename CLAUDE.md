@@ -27,6 +27,8 @@ uv run python utils/battleship_match.py --agent model1:1 model2:1
 uv run python utils/tictactoe_match.py --agent model1:1:2 model2:1
 uv run python utils/wizard_match.py --agent model1:1 model2:1 model3:1
 uv run python utils/word_finder_match.py --agent model1:1 model2:1
+uv run python utils/word_matrix_match.py --agent model1:1 model2:1
+uv run python utils/word_matrix_match.py --human
 ```
 
 ## Key Modules
@@ -61,7 +63,8 @@ uv run python utils/word_finder_match.py --agent model1:1 model2:1
 | A2 | TicTacToe | 2 | Playable |
 | A3 | Wizard | 6 | Playable |
 | A4 | WordFinder | 2 | Playable |
-| A5-A8 | (Placeholders) | - | Not implemented |
+| A6 | WordMatrixGame | 2 | Playable |
+| A5,A7-A8 | (Placeholders) | - | Not implemented |
 
 ## Agent File Convention
 

@@ -1,0 +1,240 @@
+WordMatrixGame is a 2-player word game on a 4x4 letter matrix. Players select paths on the board, provide matching words, and score by clearing cells.
+
+## Game Overview
+
+The game is played on a 4x4 grid filled with random lowercase letters. On your turn, you select a path of adjacent cells and provide a word that uses those letters as a subsequence. Letters from the path get consumed, extra letters in your word fill some path cells, and leftover cells are cleared (scoring you points). The goal is to maximize your score by clearing as many cells as possible.
+
+## Board
+
+- 4x4 grid of lowercase letters (`'a'`-`'z'`).
+- Empty cells are represented as `""` (empty string).
+- Cells are addressed as `(row, col)` with `(0,0)` at top-left.
+
+## Turn Flow
+
+Each turn gives you up to **3 attempts** to make a valid move:
+
+1. **Attempt 1**: You receive the board, scores, and `feedback=None`. You may return a move `(path, word)`, `"PASS"`, or `"CANCEL"`.
+2. **Attempt 2-3 (retries)**: If your previous attempt had an invalid path or word, you are called again with a `feedback` dict containing the error details. You may return a move `(path, word)` or `"CANCEL"`. Returning `"PASS"` during a retry is treated as an invalid message (-50 penalty, turn ends).
+3. If all 3 attempts produce invalid paths/words, the turn ends with accumulated penalties.
+
+**Outcomes per attempt:**
+- **Valid move**: Board updates, you score points. Any accumulated penalties from earlier failed attempts this turn still apply.
+- **Invalid path or word**: -25 penalty. You get another attempt (if retries remain).
+- **PASS** (first attempt only): No penalty. Turn ends. Counts toward pass limit.
+- **CANCEL** (any attempt): -10 penalty. Turn ends. Counts toward pass limit.
+- **Timeout or crash**: -50 penalty. Turn ends immediately (no retry). Counts toward pass limit.
+- **Invalid message** (bad return type, or PASS during retry): -50 penalty. Turn ends immediately (no retry). Counts toward pass limit.
+
+A valid move resets the pass counter. All other outcomes increment it.
+
+## Penalty Summary
+
+| Outcome | Penalty | Ends Turn? | Retryable? |
+|---------|---------|------------|------------|
+| Valid move | 0 (but prior attempt penalties persist) | Yes | N/A |
+| Invalid path/word | -25 | No (if retries remain) | Yes |
+| PASS (1st attempt) | 0 | Yes | N/A |
+| CANCEL | -10 | Yes | N/A |
+| Timeout / Crash | -50 | Yes | No |
+| Invalid message | -50 | Yes | No |
+
+## Path Rules
+
+1. **Minimum length**: Path must contain at least 2 cells.
+2. **Adjacency**: Each consecutive cell in the path must be horizontally or vertically adjacent (Manhattan distance = 1). Diagonal moves are NOT allowed.
+3. **No revisits**: Each cell can appear at most once in the path.
+4. **Non-empty cells only**: All cells in the path must contain a letter (not empty).
+5. **Bounds**: All coordinates must be within the 4x4 grid (row 0-3, col 0-3).
+
+## Word Rules
+
+1. **Subsequence requirement**: The letters along your path must appear as a **subsequence** of your word, in order. Every path letter must be matched.
+   - Example: Path letters `['c', 'a', 't']` -> word `"coat"` is valid (`c`...`o`...`a`...`t` -- the `c`, `a`, `t` appear in order as a subsequence).
+   - Example: Path letters `['c', 'a', 't']` -> word `"taco"` is INVALID (`t` comes before `c` and `a`).
+2. **Length constraint**: `len(path) <= len(word) <= 2 * len(path)`. Your word cannot be shorter than the path or more than twice the path length.
+3. **Dictionary**: The word must exist in the game's dictionary (see "Accessing the Dictionary" below).
+
+## Error Codes
+
+When your move is invalid, the `feedback` dict on retry contains an `error_code`. Reference:
+
+### Path Errors
+| Code | Meaning |
+|------|---------|
+| `INVALID_PATH_TOO_SHORT` | Path has fewer than 2 cells |
+| `INVALID_PATH_BAD_CELL` | A cell is not a valid `(row, col)` pair |
+| `INVALID_PATH_OOB` | A cell is out of bounds |
+| `INVALID_PATH_REVISIT` | A cell appears twice in the path |
+| `INVALID_PATH_EMPTY` | A cell on the path is empty |
+| `INVALID_PATH_NOT_ADJACENT` | Consecutive cells are not adjacent |
+
+### Word Errors
+| Code | Meaning |
+|------|---------|
+| `INVALID_WORD_EMPTY` | Word is empty or not a string |
+| `INVALID_WORD_TOO_LONG` | Word length exceeds `2 * path_length` |
+| `INVALID_WORD_TOO_SHORT` | Word length is less than `path_length` |
+| `INVALID_WORD_SUBSEQUENCE` | Path letters are not a subsequence of the word |
+| `INVALID_WORD_NOT_IN_DICT` | Word is not in the dictionary |
+
+## Board Update Mechanics
+
+When you play a valid path + word:
+
+1. The game walks through your word character by character with a pointer into the path letters.
+2. If the current word character matches the current path letter, that path letter is **consumed** (pointer advances).
+3. If it doesn't match, the character is an **extra letter**.
+4. After the walk, all path letters must have been consumed (guaranteed by validation).
+
+Then the board updates:
+1. The path cell indices are shuffled randomly.
+2. The first `N` shuffled cells (where `N` = number of extra letters) receive the extra letters.
+3. The remaining path cells are **cleared** (set to `""`).
+
+**Example**:
+- Path: `(0,0), (0,1), (0,2)` -> path letters: `['c', 'a', 't']`
+- Word: `"coat"`
+- Subsequence walk: `c` matches path[0] (consumed), `o` is extra, `a` matches path[1] (consumed), `t` matches path[2] (consumed).
+- Extra letters: `['o']` (1 extra)
+- 3 path cells, 1 gets `'o'`, 2 are cleared.
+- Points: `10 + 10 * 2 = 30` (10 base + 10 per cleared cell)
+
+## Scoring
+
+- **Valid move**: `10 + 10 * cleared_cells` points. Where `cleared_cells = path_length - num_extra_letters`.
+  - Equivalently: `10 + 10 * (2 * path_length - word_length)` since `num_extra_letters = word_length - path_length`.
+  - Minimum: path_length == word_length (0 cleared cells) -> 10 points.
+  - Maximum: word == path letters exactly (all cells cleared) -> `10 + 10 * path_length` points.
+- **Invalid path or word**: -25 points per attempt.
+- **Timeout / Crash / Invalid message**: -50 points, turn ends immediately.
+- **CANCEL**: -10 points.
+
+## PASS
+
+- Return `"PASS"` to skip your turn (only valid on the first attempt of a turn).
+- No point penalty.
+- Counts toward the 6-pass game-end limit (across both players). A valid move resets the counter.
+
+## CANCEL
+
+- Return `"CANCEL"` to abandon your turn at any point (valid on any attempt).
+- -10 point penalty. Plus any accumulated -25 penalties from earlier failed attempts this turn.
+- Counts toward the 6-pass limit.
+
+## Timeout / Crash
+
+- If your agent times out or crashes, -50 penalty and the turn ends immediately (no retry).
+- Counts toward the 6-pass limit.
+
+## Game End
+
+The game ends when EITHER:
+1. **No valid path exists** on the board (no two adjacent non-empty cells remain), OR
+2. **6 consecutive passes** have been accumulated (across both players, including forced passes from timeouts/crashes/cancels). A valid move resets the pass counter.
+
+The player with the higher score wins.
+
+## Performance Warning
+
+**YOUR CODE EFFICIENCY DIRECTLY AFFECTS YOUR COMPETITIVENESS!**
+
+Dictionary operations are expensive. You MUST:
+
+1. **Pre-process in `__init__`**: Build all indexes, lookup tables, and data structures during initialization.
+2. **Minimize `make_move` work**: Do as little computation as possible in the timed move function.
+3. **Pre-build subsequence indexes**: Index your dictionary by letter sequences so you can quickly find words matching a given path.
+
+## Accessing the Dictionary
+
+The game environment provides a global function `load_words()` that returns a **set** of all valid English words (lowercase, alphabetic only -- no hyphens). This is the full dictionary (~466k words).
+
+You MUST use this function. **DO NOT** hardcode your own word list or try to load from a file path.
+
+```python
+class WordMatrixAgent:
+    def __init__(self, name):
+        self.name = name
+        self.dictionary = load_words()  # Returns set of ~466k lowercase words
+```
+
+## WordMatrixAgent Interface
+
+```python
+import random
+
+class WordMatrixAgent:
+    """
+    Your agent implementation goes here.
+    """
+    def __init__(self, name):
+        """
+        Initialize your agent.
+        Pre-process the dictionary here for fast lookups during make_move.
+        """
+        self.name = name
+        self.dictionary = load_words()
+
+    def make_move(self, board, scores, feedback=None):
+        """
+        Called when it's your turn. May be called multiple times per turn
+        if previous attempts were invalid (up to 3 attempts total).
+
+        Parameters:
+        -----------
+        board : list[list[str]]
+            4x4 grid. Each cell is a lowercase letter ('a'-'z') or '' (empty).
+            Example: [['c','a','t','s'], ['d','o','g',''], ['','r','u','n'], ['h','e','l','p']]
+
+        scores : dict
+            Current scores. Example: {"Agent-1": 30, "Agent-2": 10}
+
+        feedback : dict or None
+            None on the first attempt. On retries, contains:
+            {
+                "error_code": str,       # error code for the most recent failure
+                "error_message": str,    # human-readable description
+                "failed_attempts": [     # all failed attempts this turn
+                    {
+                        "path": [...],
+                        "word": "...",
+                        "error_code": "...",
+                        "error_message": "..."
+                    },
+                ]
+            }
+
+        Returns:
+        --------
+        tuple[list[tuple[int,int]], str] or str
+            - A tuple of (path, word) where path is a list of (row, col) tuples
+              and word is a string.
+            - OR the string "PASS" to skip your turn (first attempt only, no penalty).
+            - OR the string "CANCEL" to abandon the turn (-10 penalty).
+
+        Examples:
+            return ([(0,0), (0,1), (0,2)], "coat")   # play a word
+            return "PASS"                               # skip turn (1st attempt only)
+            return "CANCEL"                             # abandon turn
+        """
+        return "PASS"
+```
+
+**IMPORTANT**: Output ONLY the WordMatrixAgent class definition and any additional imports you need (random is already available). Do NOT output the entire game code.
+
+## Strategy Tips
+
+1. **Maximize path length**: Longer paths mean more potential cells to clear and more points.
+2. **Minimize word length relative to path**: The closer your word length is to the path length, the more cells you clear. Ideal: word length == path length (all cells cleared).
+3. **Pre-build lookup structures**: Index words by their letter sets/sequences. For each possible path, you need to quickly find a dictionary word that contains the path letters as a subsequence with `len(word) <= 2 * len(path)`.
+4. **Consider board state**: Clearing cells strategically can limit your opponent's options.
+5. **Path finding**: Look for long paths through the board. Use DFS/BFS to enumerate valid paths.
+6. **Subsequence matching**: A word `w` contains path letters `p` as a subsequence if you can find indices `i1 < i2 < ... < ik` in `w` such that `w[i1] == p[0], w[i2] == p[1], ..., w[ik] == p[k-1]`.
+7. **Handle retries**: When `feedback` is not None, your previous attempt failed. Use the error code and message to adjust your strategy. Avoid repeating the same invalid move.
+8. **Use CANCEL wisely**: If you detect that no valid move exists from your analysis, return `"CANCEL"` (-10) rather than risking another -25 invalid attempt.
+
+## Competition Format
+
+- 1 vs 1 Match.
+- Multiple games per match.
+- Cumulative score determines the winner.
