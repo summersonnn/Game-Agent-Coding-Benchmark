@@ -27,6 +27,9 @@ from pathlib import Path
 import logging
 from dotenv import load_dotenv
 
+# Add utils directory to sys.path
+sys.path.append(str(Path(__file__).parent.parent / "utils"))
+
 from model_api import ModelAPI
 from logging_config import setup_logging
 
@@ -82,12 +85,57 @@ WORDS_FILE_PATH = r"{words_file_path}"
 AGENT1_INFO = "{agent1_info}"
 AGENT2_INFO = "{agent2_info}"
 TIME_SENSITIVITY = 100000  # Scales microsecond response times to meaningful score differences
+HUMAN_MODE = {human_mode}
 
 {extra_imports}
 
 {agent1_code}
 
 {agent2_code}
+
+class RandomAgent:
+    def __init__(self, name):
+        self.name = name
+        self.words = None
+
+    def make_move(self, current_word, history):
+        if self.words is None:
+            self.words = list(load_words())
+        
+        p_start = current_word[0].lower()
+        p_end = current_word[-1].lower()
+        
+        candidates = []
+        # Try to find valid words
+        for w in self.words:
+             if w in history: continue
+             if len(w) == len(current_word): continue
+             
+             # Check constraints loosely
+             if p_start in w and p_end in w:
+                 if w[0] == p_start or w[0] == p_end: continue
+                 if w[-1] == p_start or w[-1] == p_end: continue
+                 candidates.append(w)
+        
+        if candidates:
+            return random.choice(candidates)
+        # Fallback to random word (likely invalid)
+        return random.choice(self.words)
+
+class HumanAgent:
+    def __init__(self, name):
+        self.name = name
+
+    def make_move(self, current_word, history):
+        print(f"\\nCurrent Word: {{current_word}}")
+        print(f"Required: Must contain '{{current_word[0]}}' and '{{current_word[-1]}}'")
+        print(f"Forbidden: Cannot start/end with '{{current_word[0]}}' or '{{current_word[-1]}}'")
+        print("WARNING: Invalid move ends game instantly!")
+        while True:
+            try:
+                w = input(f"Enter word: ").strip().lower()
+                if w: return w
+            except EOFError: return "quit"
 
 
 class WordFinderGame:
@@ -308,16 +356,20 @@ def play_game(game_num, total_scores):
     _SHARED_WORD_SUBSET = shared_word_subset
     
     # Initialize agents
-    try:
-        agent1 = WordFinderAgent_1("Agent-1")
-    except Exception as e:
-        return ("Agent-2", "Crash init A1")
-        
-    try:
-        agent2 = WordFinderAgent_2("Agent-2")
-    except Exception as e:
-        return ("Agent-1", "Crash init A2")
-        
+    if HUMAN_MODE:
+        agent1 = HumanAgent("Agent-1")
+        agent2 = RandomAgent("Agent-2")
+    else:
+        try:
+            agent1 = WordFinderAgent_1("Agent-1")
+        except Exception as e:
+            return ("Agent-2", "Crash init A1")
+            
+        try:
+            agent2 = WordFinderAgent_2("Agent-2")
+        except Exception as e:
+            return ("Agent-1", "Crash init A2")
+            
     current_agent_obj, other_agent_obj = (agent1, agent2) if random.random() < 0.5 else (agent2, agent1)
     
     # Print game header with agent info
@@ -641,6 +693,7 @@ def build_game_code(
     move_timeout: float,
     agent1_info: str,
     agent2_info: str,
+    human_mode: bool = False,
 ) -> str:
     """Build the complete game code with both agent implementations."""
     return GAME_CODE_TEMPLATE.format(
@@ -652,6 +705,7 @@ def build_game_code(
         agent2_code=agent2_code,
         agent1_info=agent1_info,
         agent2_info=agent2_info,
+        human_mode=human_mode,
     )
 
 
@@ -732,6 +786,14 @@ def run_match(game_code: str, match_id: int, run_ids: tuple[int, int], timeout: 
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
+def run_match_human(game_code: str) -> None:
+    temp_file = os.path.join(tempfile.gettempdir(), f"wordfinder_human_{{uuid.uuid4().hex[:8]}}.py")
+    try:
+        with open(temp_file, "w") as f: f.write(game_code)
+        subprocess.call(["python", temp_file])
+    finally:
+        if os.path.exists(temp_file): os.remove(temp_file)
+
 
 async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int]) -> dict:
     loop = asyncio.get_event_loop()
@@ -741,7 +803,26 @@ async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int
 async def main_async():
     parser = argparse.ArgumentParser(description="Run WordFinder matches")
     parser.add_argument("--agent", nargs="+", help="Agent specs: model1[:run1:run2] model2[:run3:run4]")
+    parser.add_argument("--human", action="store_true", help="Play interactively against a random bot")
     args = parser.parse_args()
+
+    if args.human:
+        print("\n" + "=" * 60)
+        print("WORDFINDER HUMAN MODE")
+        print("You are playing against a RandomBot.")
+        print("=" * 60)
+        
+        game_code = build_game_code(
+            "", "", "", 
+            num_games=1, 
+            words_file_path=WORDS_FILE,
+            move_timeout=99999,
+            agent1_info="Human",
+            agent2_info="RandomBot",
+            human_mode=True
+        )
+        run_match_human(game_code)
+        return
 
     if not args.agent or len(args.agent) != 2:
         print("ERROR: Need exactly 2 agent specifications.")

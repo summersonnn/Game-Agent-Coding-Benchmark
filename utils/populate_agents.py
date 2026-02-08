@@ -159,6 +159,15 @@ def extract_agent_code(response: str, game_name: str) -> tuple[str, str]:
     elif "WordMatrix" in game_name:
         class_pattern = r"class\s+WordMatrixAgent"
         class_search = "class WordMatrixAgent"
+    elif "Connect4" in game_name:
+        class_pattern = r"class\s+Connect4Agent"
+        class_search = "class Connect4Agent"
+    elif "1D_Chess" in game_name:
+        class_pattern = r"class\s+OneDChessAgent"
+        class_search = "class OneDChessAgent"
+    elif "SurroundMorris" in game_name:
+        class_pattern = r"class\s+SurroundMorrisAgent"
+        class_search = "class SurroundMorrisAgent"
     else:
         # Generic fallback
         class_pattern = r"class\s+\w+Agent"

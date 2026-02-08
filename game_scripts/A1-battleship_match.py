@@ -18,6 +18,9 @@ from pathlib import Path
 import logging
 from dotenv import load_dotenv
 
+# Add utils directory to sys.path
+sys.path.append(str(Path(__file__).parent.parent / "utils"))
+
 from model_api import ModelAPI
 from logging_config import setup_logging
 
@@ -57,6 +60,7 @@ from collections import deque
 
 # Move timeout in seconds
 MOVE_TIMEOUT = {move_timeout}
+HUMAN_MODE = {human_mode}
 
 class MoveTimeoutException(Exception):
     pass
@@ -81,6 +85,44 @@ MISS = 'M'
 {agent1_code}
 
 {agent2_code}
+
+class RandomAgent:
+    def __init__(self, name, board_size, ships):
+        self.name = name
+        self.board_size = board_size
+        self.ships = ships
+        self.shots = set()
+
+    def make_move(self, last_shot_result, last_shot_coord):
+        while True:
+            r = random.randint(0, self.board_size - 1)
+            c = random.randint(0, self.board_size - 1)
+            if (r, c) not in self.shots:
+                self.shots.add((r, c))
+                return (r, c)
+
+class HumanAgent:
+    def __init__(self, name, board_size, ships):
+        self.name = name
+        self.board_size = board_size
+        self.ships = ships
+
+    def make_move(self, last_shot_result, last_shot_coord):
+        while True:
+            try:
+                user_input = input(f"Enter move (row col) [0-{{self.board_size-1}}]: ").strip()
+                if not user_input: continue
+                parts = user_input.split()
+                if len(parts) != 2:
+                    print("Invalid format. Use 'row col' (e.g., '0 0').")
+                    continue
+                r, c = map(int, parts)
+                if 0 <= r < self.board_size and 0 <= c < self.board_size:
+                    return (r, c)
+                else:
+                    print("Coordinates out of bounds.")
+            except ValueError:
+                print("Invalid input. Please enter integers.")
 
 
 class BattleshipGame:
@@ -138,15 +180,26 @@ def play_game(game_num, scores):
     game = BattleshipGame(BOARD_SIZE, SHIPS)
     
     # Try to initialize agents - if one fails, the other wins
-    try:
-        agent1 = BattleshipAgent_1("Agent-1", BOARD_SIZE, SHIPS)
-    except Exception as e:
-        return ("Agent-2", "Crash during init (Agent-1): " + str(e)[:100])
-    
-    try:
-        agent2 = BattleshipAgent_2("Agent-2", BOARD_SIZE, SHIPS)
-    except Exception as e:
-        return ("Agent-1", "Crash during init (Agent-2): " + str(e)[:100])
+    # Try to initialize agents
+    if HUMAN_MODE:
+        try:
+            agent1 = HumanAgent("Human", BOARD_SIZE, SHIPS)
+        except Exception as e:
+            return ("Agent-2", "Crash during init (Human): " + str(e)[:100])
+        try:
+            agent2 = RandomAgent("RandomBot", BOARD_SIZE, SHIPS)
+        except Exception as e:
+            return ("Agent-1", "Crash during init (RandomBot): " + str(e)[:100])
+    else:
+        try:
+            agent1 = BattleshipAgent_1("Agent-1", BOARD_SIZE, SHIPS)
+        except Exception as e:
+            return ("Agent-2", "Crash during init (Agent-1): " + str(e)[:100])
+        
+        try:
+            agent2 = BattleshipAgent_2("Agent-2", BOARD_SIZE, SHIPS)
+        except Exception as e:
+            return ("Agent-1", "Crash during init (Agent-2): " + str(e)[:100])
     
     p1_active_board = [row[:] for row in game.player1_ships_board]
     p2_active_board = [row[:] for row in game.player2_ships_board]
@@ -162,10 +215,55 @@ def play_game(game_num, scores):
     last_shot_coord, last_shot_result = None, None
     turn_continues = False
     move_count = 0
-    max_moves = BOARD_SIZE * BOARD_SIZE * 2  # Max moves before draw
+    # --- HUMAN MODE VISUALIZATION HELPER ---
+    def print_state(player_agent, opponent_agent, players):
+        if player_agent.name != "Human":
+             return # Only show for human
 
+        p_data = players[player_agent]
+        opp_data = players[opponent_agent]
+        
+        # We want to show:
+        # 1. Human's hits/misses on enemy (guess_board)
+        # 2. Human's ships and enemy hits on them (opponent_ships_board for the enemy is current agent's ships?)
+        # Wait. 
+        # players[current] has 'opponent_ships_board' (the board they are shooting AT)
+        # players[opponent] has 'opponent_ships_board' (the board the opponent is shooting AT -> which is CURRENT agent's ships)
+        
+        my_ships = players[opponent_agent]['opponent_ships_board'] 
+        my_guesses = players[player_agent]['guess_board']
+        
+        # Also, for full state, we might want to see the ENEMY ships (cheating/debug mode) as requested: "full state info"
+        enemy_ships = players[player_agent]['opponent_ships_board'] 
+
+        print(f"")
+        print(f"--- Turn: {{player_agent.name}} ---")
+        print("   YOUR SHIPS (S=Ship, X=Hit, O=Empty)       YOUR GUESSES (X=Hit, M=Miss, #=Sunk)")
+        print("   0 1 2 3 4 5 6 7                           0 1 2 3 4 5 6 7")
+        for r in range(BOARD_SIZE):
+            # Your ships
+            row1 = []
+            for c in range(BOARD_SIZE):
+                cell = my_ships[r][c]
+                row1.append(cell)
+            
+            # Your guesses
+            row2 = []
+            for c in range(BOARD_SIZE):
+                cell = my_guesses[r][c]
+                row2.append(cell) # X, M, # or O (empty)
+
+            print(f"{{r}}  {{' '.join(row1)}}                         {{r}}  {{' '.join(row2)}}")
+
+
+    max_moves = BOARD_SIZE * BOARD_SIZE * 2
+    
     while True:
         move_count += 1
+        
+        if HUMAN_MODE:
+             print_state(current_agent, opponent_agent, players)
+
         if move_count > max_moves:
             # Game exceeded max moves - return draw
             stats["draw"] += 1
@@ -437,6 +535,7 @@ def build_game_code(
     board_size: int = BOARD_SIZE,
     ships_config: list[int] = SHIPS,
     move_timeout: float = MOVE_TIME_LIMIT,
+    human_mode: bool = False,
 ) -> str:
     """Build the complete game code with both agent implementations."""
     return GAME_CODE_TEMPLATE.format(
@@ -447,6 +546,7 @@ def build_game_code(
         extra_imports=extra_imports,
         agent1_code=agent1_code,
         agent2_code=agent2_code,
+        human_mode=human_mode,
     )
 
 
@@ -546,6 +646,25 @@ def run_match(game_code: str, match_id: int, run_ids: tuple[int, int], timeout: 
             os.remove(temp_file)
 
 
+def run_match_human(game_code: str) -> None:
+    """Run a match in human mode (interactive)."""
+    temp_file = os.path.join(tempfile.gettempdir(), f"battleship_human_match.py")
+    debug_file = "/tmp/debug_battleship.py"
+    try:
+        with open(temp_file, "w") as f:
+            f.write(game_code)
+        
+        # Copy to debug file for inspection
+        with open(debug_file, "w") as f:
+            f.write(game_code)
+            
+        # Run interactively - result will be printed to stdout by the game script itself
+        subprocess.call(["python", temp_file])
+    finally:
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+
+
 async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int]) -> dict:
     """Run a match in a thread pool to avoid blocking the event loop."""
     loop = asyncio.get_event_loop()
@@ -555,7 +674,26 @@ async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int
 async def main_async():
     parser = argparse.ArgumentParser(description="Run Battleship matches between stored AI agents")
     parser.add_argument("--agent", nargs="+", help="Agent specs: model1[:run1:run2] model2[:run3:run4]")
+    parser.add_argument("--human", action="store_true", help="Play interactively against a random bot")
     args = parser.parse_args()
+
+    if args.human:
+        print("\n" + "=" * 60)
+        print("BATTLESHIP HUMAN MODE")
+        print("You are playing against a RandomBot.")
+        print("=" * 60)
+        
+        # We don't need real agents, just placeholders
+        game_code = build_game_code(
+            "", "", "", 
+            num_games=1, 
+            board_size=BOARD_SIZE, 
+            ships_config=SHIPS, 
+            move_timeout=99999, # Unlimited time for human
+            human_mode=True
+        )
+        run_match_human(game_code)
+        return
 
     if not args.agent or len(args.agent) != 2:
         print("ERROR: Need exactly 2 agent specifications.")

@@ -18,6 +18,9 @@ from pathlib import Path
 import logging
 from dotenv import load_dotenv
 
+# Add utils directory to sys.path
+sys.path.append(str(Path(__file__).parent.parent / "utils"))
+
 from model_api import ModelAPI
 from logging_config import setup_logging
 
@@ -68,6 +71,7 @@ NUM_PLAYERS = {num_players}
 NUM_ROUNDS = {num_rounds}
 NUM_GAMES = {num_games}
 DEBUG_MODE = {debug_mode}
+HUMAN_MODE = {human_mode}
 
 {extra_imports}
 
@@ -137,12 +141,14 @@ def play_game(game_num, total_scores):
         print(f"\\n--- Round {{round_num}} ({{round_num}} cards each) ---")
         print(f"Trump: {{game.trump_suit if game.trump_suit else 'None'}}")
         
-        if DEBUG_MODE:
-            print("\\n[DEBUG] Cards dealt:")
+        if DEBUG_MODE or HUMAN_MODE:
+            print(f"\\n[DEBUG] Cards dealt:")
             for i in range(NUM_PLAYERS):
+                if HUMAN_MODE and i != 0: continue # Only show Human's cards or debug all
                 hand_str = ", ".join([str(card) for card in game.hands[i]])
                 print(f"  Player-{{i+1}}: {{hand_str}}")
-            debug_wait("Cards dealt. Press Enter to start bidding...")
+            if DEBUG_MODE:
+                debug_wait("Cards dealt. Press Enter to start bidding...")
         
         # Bidding phase
         for i, agent in enumerate(agents):
@@ -168,6 +174,8 @@ def play_game(game_num, total_scores):
             
             if DEBUG_MODE:
                 print(f"  Player-{{i+1}} bids: {{bid}}")
+        
+        print(f"Bids: {{game.bids}}")
         
         print(f"Bids: {{game.bids}}")
         
@@ -766,10 +774,18 @@ def run_match(game_code: str, debug_mode: bool = False) -> str:
             result = subprocess.run(["python", temp_file], capture_output=True, text=True, timeout=600)
         return result.stdout
     except Exception as e:
-        return f"ERROR: {e}"
+        return f"ERROR: {{e}}"
     finally:
         if os.path.exists(temp_file):
             os.remove(temp_file)
+
+def run_match_human(game_code: str) -> None:
+    temp_file = os.path.join(tempfile.gettempdir(), f"wizard_human_{{uuid.uuid4().hex[:8]}}.py")
+    try:
+        with open(temp_file, "w") as f: f.write(game_code)
+        subprocess.call(["python", temp_file])
+    finally:
+        if os.path.exists(temp_file): os.remove(temp_file)
 
 
 async def run_single_game(responses, log_f, resp_f, models, debug_mode=False):
@@ -1101,7 +1117,77 @@ async def main_async():
     parser = argparse.ArgumentParser(description="Run Wizard matches between stored AI agents")
     parser.add_argument("--agent", nargs="+", help="Agent specs: model1[:run1:run2] model2[:run3:run4] ...")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--human", action="store_true", help="Play interactively against random bots")
     args = parser.parse_args()
+
+    if args.human:
+        print("\n" + "=" * 60)
+        print("WIZARD HUMAN MODE")
+        print("You are playing against 5 RandomBots.")
+        print("=" * 60)
+        
+        # Build agent aliases code
+        agent_code = """
+class RandomAgent:
+    def __init__(self, name):
+        self.name = name
+
+    def make_move(self, phase, game_state):
+        if phase == "bid":
+            return random.randint(0, game_state['cards_this_round'])
+        else: # play
+            return random.choice(game_state['my_hand'])
+
+class HumanAgent:
+    def __init__(self, name):
+        self.name = name
+
+    def make_move(self, phase, game_state):
+        print(f"\\n--- YOUR TURN ({phase}) ---")
+        if phase == "bid":
+             print(f"Round: {game_state['round_number']} ({game_state['cards_this_round']} cards)")
+             print(f"Trump: {game_state['trump_suit']}")
+             print(f"Hand: {[str(c) for c in game_state['my_hand']]}")
+             while True:
+                try:
+                    bid = int(input(f"Enter Bid [0-{game_state['cards_this_round']}]: ").strip())
+                    if 0 <= bid <= game_state['cards_this_round']: return bid
+                    print("Invalid bid.")
+                except ValueError: print("Enter a number.")
+        else:
+             print(f"Trick so far: {[(i+1, str(c)) for i,c in game_state['current_trick']]}")
+             # trick_leader is player index. Derived led suit is implicit.
+             print(f"Hand: {[(i, str(c)) for i,c in enumerate(game_state['my_hand'])]}")
+             while True:
+                try:
+                    idx = int(input(f"Select Card Index [0-{len(game_state['my_hand'])-1}]: ").strip())
+                    if 0 <= idx < len(game_state['my_hand']):
+                        return game_state['my_hand'][idx]
+                    print("Invalid index.")
+                except ValueError: print("Enter a number.")
+
+class WizardAgent_1(HumanAgent): pass
+class WizardAgent_2(RandomAgent): pass
+class WizardAgent_3(RandomAgent): pass
+class WizardAgent_4(RandomAgent): pass
+class WizardAgent_5(RandomAgent): pass
+class WizardAgent_6(RandomAgent): pass
+"""
+        
+        game_code = GAME_CODE_TEMPLATE.format(
+            num_players=NUM_PLAYERS,
+            num_rounds=NUM_ROUNDS,
+            num_games=1,
+            debug_mode=False,
+            human_mode=True,
+            extra_imports="",
+            card_class=CARD_CLASS,
+            agent_code=agent_code,
+            game_class=GAME_CLASS,
+            move_timeout=99999
+        )
+        run_match_human(game_code)
+        return
 
     if not args.agent:
         print("ERROR: Need agent specifications.")

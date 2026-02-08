@@ -1,0 +1,170 @@
+Connect4RandomStart is a variation of the classic 2-player Connect 4 strategy game where the first move (Player 1) is chosen randomly by the game engine.
+
+## Game Overview
+
+The objective is to connect four of your colored discs (Red or Yellow) in a row—vertically, horizontally, or diagonally—before your opponent does. The game is played on a 6-row by 7-column grid.
+
+## Random Start
+
+To prevent deterministic play giving Player 1 too much advantage, the **first move** for Player 1 (Red) is selected randomly by the engine. This means:
+1.  The game starts with one Red piece already placed in a random column on the bottom row.
+2.  The first *decision* is made by Player 2 (Yellow).
+3.  Play then alternates normally.
+
+## Rules
+
+1.  **Grid**: 6 Rows (height) x 7 Columns (width).
+2.  **Turn**: Players drop a disc into one of the 7 columns.
+3.  **Gravity**: The disc falls to the lowest available empty slot in that column.
+4.  **Win Condition**: Connect 4 discs of your color vertically, horizontally, or diagonally.
+5.  **Draw**: If the board fills up with no winner, the game is a draw.
+6.  **Invalid Move**: If a player attempts to drop a disc into a full column or an invalid column index, they forfeit their turn (or lose immediately depending on implementation strictness; assume immediate loss for this agent).
+
+## Game Interface
+
+Your agent must implement the following class structure:
+
+```python
+class Connect4Agent:
+    def __init__(self, name, symbol):
+        """
+        Initialize the agent.
+        name: str - The name of the agent.
+        symbol: str - The character representing the agent's disc ('R' or 'Y').
+        """
+        self.name = name
+        self.symbol = symbol
+
+    def make_move(self, board):
+        """
+        Decide the next move based on the current board state.
+        
+        Args:
+            board: A list of lists representing the 6x7 grid.
+                   board[row][col] contains 'R', 'Y', or ' ' (empty).
+                   Row 0 is the top, Row 5 is the bottom.
+                   
+        Returns:
+            int: The column index (0-6) where the agent wants to drop a disc.
+        """
+        # TODO: Implement your strategy here
+        return 0
+```
+
+## Game Engine Implementation
+
+The following code is the official game engine. You can use it to test your agent.
+
+```python
+import random
+
+class Connect4Game:
+    ROWS = 6
+    COLS = 7
+    EMPTY = ' '
+    RED = 'R'
+    YELLOW = 'Y'
+
+    def __init__(self):
+        self.board = [[self.EMPTY for _ in range(self.COLS)] for _ in range(self.ROWS)]
+        self.winner = None
+        # Random start logic:
+        # 1. Place Red piece in a random column
+        start_col = random.randint(0, self.COLS - 1)
+        self.drop_disc(start_col, self.RED)
+        # 2. Set current turn to Yellow (since Red "moved")
+        self.current_turn = self.YELLOW
+
+    def drop_disc(self, col, disc):
+        """Drop a disc into a column. Returns (row, col) or None if full."""
+        if not (0 <= col < self.COLS):
+            return None
+        
+        for r in range(self.ROWS - 1, -1, -1):
+            if self.board[r][col] == self.EMPTY:
+                self.board[r][col] = disc
+                return r, col
+        return None
+
+    def check_winner(self):
+        """Check for 4 in a row."""
+        # Horizontal
+        for r in range(self.ROWS):
+            for c in range(self.COLS - 3):
+                if self.board[r][c] != self.EMPTY and \
+                   self.board[r][c] == self.board[r][c+1] == self.board[r][c+2] == self.board[r][c+3]:
+                    return self.board[r][c]
+
+        # Vertical
+        for r in range(self.ROWS - 3):
+            for c in range(self.COLS):
+                if self.board[r][c] != self.EMPTY and \
+                   self.board[r][c] == self.board[r+1][c] == self.board[r+2][c] == self.board[r+3][c]:
+                    return self.board[r][c]
+
+        # Diagonal /
+        for r in range(3, self.ROWS):
+            for c in range(self.COLS - 3):
+                if self.board[r][c] != self.EMPTY and \
+                   self.board[r][c] == self.board[r-1][c+1] == self.board[r-2][c+2] == self.board[r-3][c+3]:
+                    return self.board[r][c]
+
+        # Diagonal \
+        for r in range(self.ROWS - 3):
+            for c in range(self.COLS - 3):
+                if self.board[r][c] != self.EMPTY and \
+                   self.board[r][c] == self.board[r+1][c+1] == self.board[r+2][c+2] == self.board[r+3][c+3]:
+                    return self.board[r][c]
+
+        return None
+
+    def is_full(self):
+        return all(self.board[0][c] != self.EMPTY for c in range(self.COLS))
+
+    def play_game(self, agent_red, agent_yellow):
+        """
+        Run a game between two agents.
+        Remember: Game starts with one Red piece already placed (randomly).
+        So the first call is to agent_yellow.
+        """
+        agents = {self.RED: agent_red, self.YELLOW: agent_yellow}
+        
+        while True:
+            current_agent = agents[self.current_turn]
+            # Copy board to prevent agents from modifying state
+            board_copy = [row[:] for row in self.board]
+            
+            try:
+                col = current_agent.make_move(board_copy)
+                result = self.drop_disc(col, self.current_turn)
+                
+                if result is None:
+                    # Invalid move (column full or out of bounds)
+                    # Opponent wins
+                    return self.YELLOW if self.current_turn == self.RED else self.RED
+                
+                winner = self.check_winner()
+                if winner:
+                    return winner
+                
+                if self.is_full():
+                    return "DRAW"
+                
+                # Switch turn
+                self.current_turn = self.YELLOW if self.current_turn == self.RED else self.RED
+
+            except Exception as e:
+                # Crash means automatic loss
+                print(f"Agent {self.current_turn} crashed: {e}")
+                return self.YELLOW if self.current_turn == self.RED else self.RED
+```
+
+## Competition Format
+
+-   **1 vs 1 Match**: Two agents compete.
+-   **Multiple Rounds**: Agents play multiple games, swapping colors (Red/Yellow) to ensure fairness, though the "Random Start" mechanic inherently reduces first-mover advantage bias.
+-   **Scoring**:
+    -   Win: 1 Point
+    -   Draw: 0.5 Points
+    -   Loss: 0 Points
+

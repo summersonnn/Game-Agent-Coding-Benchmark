@@ -7,6 +7,7 @@ Game Rules: (2 Players)
    whose letters contain the path letters as a subsequence.
 3. Valid moves clear cells and score 10 + 10 * cleared_cells.
 4. Invalid path/word: -25 per attempt, up to 3 attempts per turn with error feedback.
+   Valid path + invalid word locks the path; subsequent retries only accept a word string.
 5. CANCEL: -10, ends turn. Timeout/crash/invalid message: -50, ends turn (no retry).
 6. Game ends when no valid path exists or 6 total passes accumulate.
 """
@@ -25,6 +26,9 @@ import signal
 from pathlib import Path
 import logging
 from dotenv import load_dotenv
+
+# Add utils directory to sys.path
+sys.path.append(str(Path(__file__).parent.parent / "utils"))
 
 from model_api import ModelAPI
 from logging_config import setup_logging
@@ -141,7 +145,10 @@ class WordMatrixGame:
             if not isinstance(cell, (list, tuple)) or len(cell) != 2:
                 return False, f"Cell {{i}} is not a valid (row, col) pair", "INVALID_PATH_BAD_CELL"
 
-            r, c = int(cell[0]), int(cell[1])
+            try:
+                r, c = int(cell[0]), int(cell[1])
+            except (ValueError, TypeError):
+                return False, f"Cell {{i}} has non-integer coordinates", "INVALID_PATH_BAD_CELL"
 
             if not (0 <= r < 4 and 0 <= c < 4):
                 return False, f"Cell ({{}},{{}}) is out of bounds".format(r, c), "INVALID_PATH_OOB"
@@ -277,6 +284,8 @@ stats = {{
     "p2_timeout": 0,
     "p1_crash": 0,
     "p2_crash": 0,
+    "p1_invalid_message": 0,
+    "p2_invalid_message": 0,
     "p1_pass": 0,
     "p2_pass": 0,
     "p1_cancel": 0,
@@ -332,6 +341,7 @@ def play_game(game_num, total_scores):
         failed_attempts = []
         turn_penalty = 0
         turn_resolved = False
+        locked_path = None
 
         for attempt in range(MAX_ATTEMPTS):
             feedback = None
@@ -340,6 +350,7 @@ def play_game(game_num, total_scores):
                     "error_code": failed_attempts[-1]["error_code"],
                     "error_message": failed_attempts[-1]["error_message"],
                     "failed_attempts": list(failed_attempts),
+                    "locked_path": [list(cell) for cell in locked_path] if locked_path else None,
                 }}
 
             # Get move with timeout
@@ -349,7 +360,7 @@ def play_game(game_num, total_scores):
                 signal.alarm(max(1, int(MOVE_TIMEOUT)))
                 try:
                     move = current_agent.make_move(
-                        game.board_copy(), dict(game.scores), feedback
+                        game.board_copy(), dict(game.scores), game.total_passes, feedback
                     )
                 finally:
                     signal.alarm(0)
@@ -380,22 +391,78 @@ def play_game(game_num, total_scores):
                     game.apply_pass()
                 else:
                     print(f"{{agent_name}}: PASS during retry (invalid) (-{{PENALTY_FATAL}})")
-                    stats[f"{{p_prefix}}_crash"] += 1
+                    stats[f"{{p_prefix}}_invalid_message"] += 1
                     turn_penalty += PENALTY_FATAL
                     game.apply_penalty(agent_name, turn_penalty)
                     game.apply_pass()
                 turn_resolved = True
                 break
 
-            # Handle CANCEL
+            # Handle CANCEL (only valid during retries)
             if isinstance(move, str) and move.strip().upper() == "CANCEL":
-                print(f"{{agent_name}}: CANCEL (-{{PENALTY_CANCEL}})")
-                stats[f"{{p_prefix}}_cancel"] += 1
-                turn_penalty += PENALTY_CANCEL
-                game.apply_penalty(agent_name, turn_penalty)
-                game.apply_pass()
+                if attempt > 0:
+                    # Valid CANCEL during retry
+                    print(f"{{agent_name}}: CANCEL (-{{PENALTY_CANCEL}})")
+                    stats[f"{{p_prefix}}_cancel"] += 1
+                    turn_penalty += PENALTY_CANCEL
+                    game.apply_penalty(agent_name, turn_penalty)
+                    game.apply_pass()
+                else:
+                    # Invalid: CANCEL on first attempt
+                    print(f"{{agent_name}}: CANCEL on first attempt (invalid) (-{{PENALTY_FATAL}})")
+                    stats[f"{{p_prefix}}_invalid_message"] += 1
+                    turn_penalty += PENALTY_FATAL
+                    game.apply_penalty(agent_name, turn_penalty)
+                    game.apply_pass()
                 turn_resolved = True
                 break
+
+            # Locked-path retry: agent must return a word string or CANCEL
+            if locked_path is not None:
+                if not isinstance(move, str):
+                    print(
+                        f"{{agent_name}}: INVALID OUTPUT during locked-path retry "
+                        f"(expected word string or 'CANCEL', "
+                        f"got {{type(move).__name__}}) (-{{PENALTY_FATAL}})"
+                    )
+                    stats[f"{{p_prefix}}_invalid_message"] += 1
+                    turn_penalty += PENALTY_FATAL
+                    game.apply_penalty(agent_name, turn_penalty)
+                    game.apply_pass()
+                    turn_resolved = True
+                    break
+
+                word = move.strip()
+                word_ok, word_reason, extra_letters, word_error_code = game.validate_word(word, locked_path)
+                if word_ok:
+                    if turn_penalty > 0:
+                        game.apply_penalty(agent_name, turn_penalty)
+                    stats[f"{{p_prefix}}_retry_success"] += 1
+                    path_str = " -> ".join(f"({{int(r)}},{{int(c)}})" for r, c in locked_path)
+                    points, cleared = game.apply_move(agent_name, locked_path, word)
+                    penalty_note = f" (penalty: -{{turn_penalty}})" if turn_penalty > 0 else ""
+                    print(
+                        f"{{agent_name}}: path=[{{path_str}}] word='{{word}}' "
+                        f"cleared={{cleared}} points=+{{points}}{{penalty_note}}"
+                    )
+                    game.display_board()
+                    turn_resolved = True
+                    break
+                else:
+                    turn_penalty += PENALTY_INVALID
+                    stats[f"{{p_prefix}}_invalid_word"] += 1
+                    failed_attempts.append({{
+                        "path": [list(cell) for cell in locked_path],
+                        "word": word,
+                        "error_code": word_error_code,
+                        "error_message": word_reason,
+                    }})
+                    remaining = MAX_ATTEMPTS - attempt - 1
+                    print(
+                        f"{{agent_name}}: INVALID WORD '{{word_reason}}' "
+                        f"(-{{PENALTY_INVALID}}, {{remaining}} retries left)"
+                    )
+                    continue
 
             # Validate move structure
             if not isinstance(move, (tuple, list)) or len(move) != 2:
@@ -404,7 +471,7 @@ def play_game(game_num, total_scores):
                     f"(expected (path, word), 'PASS', or 'CANCEL', "
                     f"got {{type(move).__name__}}) (-{{PENALTY_FATAL}})"
                 )
-                stats[f"{{p_prefix}}_crash"] += 1
+                stats[f"{{p_prefix}}_invalid_message"] += 1
                 turn_penalty += PENALTY_FATAL
                 game.apply_penalty(agent_name, turn_penalty)
                 game.apply_pass()
@@ -419,7 +486,7 @@ def play_game(game_num, total_scores):
                 turn_penalty += PENALTY_INVALID
                 stats[f"{{p_prefix}}_invalid_path"] += 1
                 failed_attempts.append({{
-                    "path": path,
+                    "path": [list(cell) for cell in path] if isinstance(path, (list, tuple)) else str(path),
                     "word": word if isinstance(word, str) else str(word),
                     "error_code": path_error_code,
                     "error_message": path_reason,
@@ -436,6 +503,7 @@ def play_game(game_num, total_scores):
             if not word_ok:
                 turn_penalty += PENALTY_INVALID
                 stats[f"{{p_prefix}}_invalid_word"] += 1
+                locked_path = path
                 failed_attempts.append({{
                     "path": [list(cell) for cell in path],
                     "word": word if isinstance(word, str) else str(word),
@@ -529,6 +597,8 @@ def main():
     print(f"Agent-2 Timeouts: {{stats['p2_timeout']}}")
     print(f"Agent-1 Crashes: {{stats['p1_crash']}}")
     print(f"Agent-2 Crashes: {{stats['p2_crash']}}")
+    print(f"Agent-1 Invalid Messages: {{stats['p1_invalid_message']}}")
+    print(f"Agent-2 Invalid Messages: {{stats['p2_invalid_message']}}")
     print(f"Agent-1 Passes: {{stats['p1_pass']}}")
     print(f"Agent-2 Passes: {{stats['p2_pass']}}")
     print(f"Agent-1 Cancels: {{stats['p1_cancel']}}")
@@ -690,12 +760,18 @@ class WordMatrixGame:
 class HumanAgent:
     def __init__(self, name):
         self.name = name
-        self.dictionary = load_words()
 
-    def make_move(self, board, scores):
+    def make_move(self, board, scores, total_passes=0, feedback=None):
         print(f"\\nYour turn ({{self.name}})")
         print(f"Scores: {{scores}}")
-        print(f"Passes remaining: {{6 - sum(1 for _ in [])}}")
+        print(f"Passes remaining: {{6 - total_passes}}")
+
+        if feedback:
+            print()
+            print(f"  Last error: [{{feedback['error_code']}}] {{feedback['error_message']}}")
+            for i, fa in enumerate(feedback["failed_attempts"]):
+                print(f"  Attempt {{i + 1}}: path={{fa['path']}} word='{{fa['word']}}' -> {{fa['error_code']}}")
+
         print()
 
         # Display board
@@ -709,41 +785,51 @@ class HumanAgent:
             print(f"{{r}} |{{row_str}}")
         print()
 
-        while True:
+        # Locked-path retry: path is fixed, only prompt for word
+        if feedback and feedback.get("locked_path"):
+            lp = feedback["locked_path"]
+            path_letters = [board[int(r)][int(c)] for r, c in lp if 0 <= int(r) < 4 and 0 <= int(c) < 4 and board[int(r)][int(c)]]
+            path_str = " -> ".join(f"({{int(r)}},{{int(c)}})" for r, c in lp)
+            print(f"  Path LOCKED: [{{path_str}}]")
+            print(f"  Path letters: {{path_letters}}")
+            print()
+            word_input = input("Enter word for locked path (or CANCEL): ").strip()
+            if word_input.upper() == "CANCEL":
+                return "CANCEL"
+            return word_input.lower()
+
+        if feedback:
+            path_input = input("Enter path (e.g., '0,0 0,1 1,1') or CANCEL: ").strip()
+        else:
             path_input = input("Enter path (e.g., '0,0 0,1 1,1') or PASS: ").strip()
 
-            if path_input.upper() == "PASS":
-                return "PASS"
+        if path_input.upper() == "PASS":
+            return "PASS"
 
-            # Parse path
-            try:
-                cells = path_input.split()
-                path = []
-                for cell_str in cells:
-                    parts = cell_str.split(",")
-                    path.append((int(parts[0]), int(parts[1])))
-            except (ValueError, IndexError):
-                print("Invalid format. Use 'row,col row,col ...' (e.g., '0,0 0,1 1,1')")
-                continue
+        if path_input.upper() == "CANCEL":
+            return "CANCEL"
 
-            # Show path letters
-            path_letters = [board[r][c] for r, c in path if 0 <= r < 4 and 0 <= c < 4 and board[r][c]]
-            print(f"Path letters: {{path_letters}}")
+        # Parse path — format failures return invalid move for game engine to penalize
+        try:
+            cells = path_input.split()
+            path = []
+            for cell_str in cells:
+                parts = cell_str.split(",")
+                path.append((int(parts[0]), int(parts[1])))
+        except (ValueError, IndexError):
+            print("Invalid format. Use 'row,col row,col ...' (e.g., '0,0 0,1 1,1')")
+            return ([], "")
 
-            while True:
-                word_input = input("Enter word (or CANCEL to re-enter path): ").strip()
+        # Show path letters (raw, pre-validation)
+        path_letters = [board[r][c] for r, c in path if 0 <= r < 4 and 0 <= c < 4 and board[r][c]]
+        print(f"Path letters: {{path_letters}}")
 
-                if word_input.upper() == "CANCEL":
-                    break
+        word_input = input("Enter word (or CANCEL): ").strip()
 
-                word = word_input.lower()
+        if word_input.upper() == "CANCEL":
+            return "CANCEL"
 
-                # Local dictionary check for human convenience
-                if word not in self.dictionary:
-                    print(f"Word '{{word}}' not found in dictionary. Try again.")
-                    continue
-
-                return (path, word)
+        return (path, word_input.lower())
 
 
 class BotAgent:
@@ -751,7 +837,7 @@ class BotAgent:
     def __init__(self, name):
         self.name = name
 
-    def make_move(self, board, scores):
+    def make_move(self, board, scores, total_passes=0, feedback=None):
         return "PASS"
 
 
@@ -771,50 +857,198 @@ def main():
 
     game.display_board()
 
+    MAX_ATTEMPTS = 3
+    PENALTY_INVALID = 25
+    PENALTY_CANCEL = 10
+    PENALTY_FATAL = 50
+
     while not game.is_game_over():
         agent_name = current_agent.name
 
         if isinstance(current_agent, BotAgent):
             print(f"{{agent_name}}: PASS")
             game.apply_pass()
+            print(f"Scores: {{game.scores}}")
             current_agent, other_agent = other_agent, current_agent
             continue
 
-        move = current_agent.make_move(game.board_copy(), dict(game.scores))
+        failed_attempts = []
+        turn_penalty = 0
+        turn_resolved = False
+        locked_path = None
 
-        if isinstance(move, str) and move.strip().upper() == "PASS":
-            print(f"{{agent_name}}: PASS")
+        for attempt in range(MAX_ATTEMPTS):
+            feedback = None
+            if attempt > 0:
+                feedback = {{
+                    "error_code": failed_attempts[-1]["error_code"],
+                    "error_message": failed_attempts[-1]["error_message"],
+                    "failed_attempts": list(failed_attempts),
+                    "locked_path": [list(cell) for cell in locked_path] if locked_path else None,
+                }}
+
+            print(f"\\n--- Attempt {{attempt + 1}}/{{MAX_ATTEMPTS}} | Penalty so far: -{{turn_penalty}} ---")
+
+            move = current_agent.make_move(
+                game.board_copy(), dict(game.scores), game.total_passes, feedback
+            )
+
+            # Handle PASS (only valid on first attempt)
+            if isinstance(move, str) and move.strip().upper() == "PASS":
+                if attempt == 0:
+                    print(f"{{agent_name}}: PASS")
+                    game.apply_pass()
+                else:
+                    print(f"{{agent_name}}: PASS during retry (invalid) (-{{PENALTY_FATAL}})")
+                    turn_penalty += PENALTY_FATAL
+                    game.apply_penalty(agent_name, turn_penalty)
+                    game.apply_pass()
+                print(f"Scores: {{game.scores}}")
+                turn_resolved = True
+                break
+
+            # Handle CANCEL (only valid during retries)
+            if isinstance(move, str) and move.strip().upper() == "CANCEL":
+                if attempt > 0:
+                    # Valid CANCEL during retry
+                    turn_penalty += PENALTY_CANCEL
+                    print(f"{{agent_name}}: CANCEL (-{{PENALTY_CANCEL}})")
+                    game.apply_penalty(agent_name, turn_penalty)
+                    game.apply_pass()
+                else:
+                    # Invalid: CANCEL on first attempt
+                    print(f"{{agent_name}}: CANCEL on first attempt (invalid) (-{{PENALTY_FATAL}})")
+                    turn_penalty += PENALTY_FATAL
+                    game.apply_penalty(agent_name, turn_penalty)
+                    game.apply_pass()
+                print(f"Scores: {{game.scores}}")
+                turn_resolved = True
+                break
+
+            # Locked-path retry: agent must return a word string or CANCEL
+            if locked_path is not None:
+                if not isinstance(move, str):
+                    print(
+                        f"{{agent_name}}: INVALID OUTPUT during locked-path retry "
+                        f"(expected word string or 'CANCEL', "
+                        f"got {{type(move).__name__}}) (-{{PENALTY_FATAL}})"
+                    )
+                    turn_penalty += PENALTY_FATAL
+                    game.apply_penalty(agent_name, turn_penalty)
+                    game.apply_pass()
+                    print(f"Scores: {{game.scores}}")
+                    turn_resolved = True
+                    break
+
+                word = move.strip()
+                word_ok, word_reason, extra_letters, word_error_code = game.validate_word(word, locked_path)
+                if word_ok:
+                    if turn_penalty > 0:
+                        game.apply_penalty(agent_name, turn_penalty)
+                    path_str = " -> ".join(f"({{int(r)}},{{int(c)}})" for r, c in locked_path)
+                    points, cleared = game.apply_move(agent_name, locked_path, word)
+                    penalty_note = f" (penalty: -{{turn_penalty}})" if turn_penalty > 0 else ""
+                    print(
+                        f"\\n{{agent_name}}: path=[{{path_str}}] word='{{word}}' "
+                        f"cleared={{cleared}} points=+{{points}}{{penalty_note}}"
+                    )
+                    print(f"Scores: {{game.scores}}")
+                    print()
+                    game.display_board()
+                    turn_resolved = True
+                    break
+                else:
+                    turn_penalty += PENALTY_INVALID
+                    failed_attempts.append({{
+                        "path": [list(cell) for cell in locked_path],
+                        "word": word,
+                        "error_code": word_error_code,
+                        "error_message": word_reason,
+                    }})
+                    remaining = MAX_ATTEMPTS - attempt - 1
+                    print(
+                        f"INVALID WORD: {{word_reason}} "
+                        f"(-{{PENALTY_INVALID}}, {{remaining}} retries left)"
+                    )
+                    print(f"Scores: {{game.scores}}")
+                    continue
+
+            # Validate move structure
+            if not isinstance(move, (tuple, list)) or len(move) != 2:
+                print(
+                    f"{{agent_name}}: INVALID OUTPUT "
+                    f"(expected (path, word), 'PASS', or 'CANCEL', "
+                    f"got {{type(move).__name__}}) (-{{PENALTY_FATAL}})"
+                )
+                turn_penalty += PENALTY_FATAL
+                game.apply_penalty(agent_name, turn_penalty)
+                game.apply_pass()
+                print(f"Scores: {{game.scores}}")
+                turn_resolved = True
+                break
+
+            path, word = move[0], move[1]
+
+            # Validate path
+            path_ok, path_reason, path_error_code = game.validate_path(path)
+            if not path_ok:
+                turn_penalty += PENALTY_INVALID
+                failed_attempts.append({{
+                    "path": [list(cell) for cell in path],
+                    "word": word if isinstance(word, str) else str(word),
+                    "error_code": path_error_code,
+                    "error_message": path_reason,
+                }})
+                remaining = MAX_ATTEMPTS - attempt - 1
+                print(
+                    f"INVALID PATH: {{path_reason}} "
+                    f"(-{{PENALTY_INVALID}}, {{remaining}} retries left)"
+                )
+                print(f"Scores: {{game.scores}}")
+                continue
+
+            # Validate word
+            word_ok, word_reason, extra_letters, word_error_code = game.validate_word(word, path)
+            if not word_ok:
+                turn_penalty += PENALTY_INVALID
+                locked_path = path
+                failed_attempts.append({{
+                    "path": [list(cell) for cell in path],
+                    "word": word if isinstance(word, str) else str(word),
+                    "error_code": word_error_code,
+                    "error_message": word_reason,
+                }})
+                remaining = MAX_ATTEMPTS - attempt - 1
+                print(
+                    f"INVALID WORD: {{word_reason}} "
+                    f"(-{{PENALTY_INVALID}}, {{remaining}} retries left)"
+                )
+                print(f"Scores: {{game.scores}}")
+                continue
+
+            # Valid move — apply accumulated penalty then score
+            if turn_penalty > 0:
+                game.apply_penalty(agent_name, turn_penalty)
+            path_str = " -> ".join(f"({{int(r)}},{{int(c)}})" for r, c in path)
+            points, cleared = game.apply_move(agent_name, path, word)
+            penalty_note = f" (penalty: -{{turn_penalty}})" if turn_penalty > 0 else ""
+            print(
+                f"\\n{{agent_name}}: path=[{{path_str}}] word='{{word}}' "
+                f"cleared={{cleared}} points=+{{points}}{{penalty_note}}"
+            )
+            print(f"Scores: {{game.scores}}")
+            print()
+            game.display_board()
+            turn_resolved = True
+            break
+
+        # Loop exhausted (3 invalid attempts, no break)
+        if not turn_resolved:
+            print(f"{{agent_name}}: 3 failed attempts (-{{turn_penalty}})")
+            game.apply_penalty(agent_name, turn_penalty)
             game.apply_pass()
-            current_agent, other_agent = other_agent, current_agent
-            continue
+            print(f"Scores: {{game.scores}}")
 
-        if not isinstance(move, (tuple, list)) or len(move) != 2:
-            print(f"Invalid output -> PASS")
-            game.apply_pass()
-            current_agent, other_agent = other_agent, current_agent
-            continue
-
-        path, word = move[0], move[1]
-
-        path_ok, path_reason, _ = game.validate_path(path)
-        if not path_ok:
-            print(f"INVALID PATH: {{path_reason}} -> PASS")
-            game.apply_pass()
-            current_agent, other_agent = other_agent, current_agent
-            continue
-
-        word_ok, word_reason, _, _ = game.validate_word(word, path)
-        if not word_ok:
-            print(f"INVALID WORD: {{word_reason}} -> PASS")
-            game.apply_pass()
-            current_agent, other_agent = other_agent, current_agent
-            continue
-
-        points, cleared = game.apply_move(agent_name, path, word)
-        path_str = " -> ".join(f"({{r}},{{c}})" for r, c in path)
-        print(f"\\n{{agent_name}}: path=[{{path_str}}] word='{{word}}' cleared={{cleared}} points=+{{points}}")
-        print()
-        game.display_board()
         current_agent, other_agent = other_agent, current_agent
 
     print()

@@ -19,6 +19,9 @@ from pathlib import Path
 import logging
 from dotenv import load_dotenv
 
+# Add utils directory to sys.path
+sys.path.append(str(Path(__file__).parent.parent / "utils"))
+
 from model_api import ModelAPI
 from logging_config import setup_logging
 
@@ -56,6 +59,7 @@ import random
 import signal
 # Move timeout in seconds
 MOVE_TIMEOUT = {move_timeout}
+HUMAN_MODE = {human_mode}
 
 class MoveTimeoutException(Exception):
     pass
@@ -73,6 +77,35 @@ O_MARK = 'O'
 {agent1_code}
 
 {agent2_code}
+
+class RandomAgent:
+    def __init__(self, name, symbol):
+        self.name = name
+        self.symbol = symbol
+
+    def make_move(self, board):
+        available = [i for i, spot in enumerate(board) if spot == EMPTY]
+        if available:
+            return random.choice(available)
+        return None
+
+class HumanAgent:
+    def __init__(self, name, symbol):
+        self.name = name
+        self.symbol = symbol
+
+    def make_move(self, board):
+        print_board(board)
+        while True:
+            try:
+                user_input = input(f"Enter move [0-8] (You are {{self.symbol}}): ").strip()
+                if not user_input: continue
+                move = int(user_input)
+                if 0 <= move < 9 and board[move] == EMPTY:
+                    return move
+                print("Invalid move.")
+            except ValueError:
+                print("Enter a number.")
 
 class TicTacToeGame:
     """Manages the state and rules of the game."""
@@ -128,14 +161,22 @@ def play_game(game_num):
     
     # Randomly assign symbols to agents for each game
     # In one game Agent-1 is X, in next Agent-2 is X
+    
+    if HUMAN_MODE:
+        class_1 = HumanAgent
+        class_2 = RandomAgent
+    else:
+        class_1 = TicTacToeAgent_1
+        class_2 = TicTacToeAgent_2
+
     if game_num % 2 == 1:
-        x_agent_class = TicTacToeAgent_1
-        o_agent_class = TicTacToeAgent_2
+        x_agent_class = class_1
+        o_agent_class = class_2
         x_name = "Agent-1"
         o_name = "Agent-2"
     else:
-        x_agent_class = TicTacToeAgent_2
-        o_agent_class = TicTacToeAgent_1
+        x_agent_class = class_2
+        o_agent_class = class_1
         x_name = "Agent-2"
         o_name = "Agent-1"
 
@@ -323,6 +364,14 @@ def run_match(game_code: str):
     finally:
         if os.path.exists(temp_file): os.remove(temp_file)
 
+def run_match_human(game_code: str):
+    temp_file = os.path.join(tempfile.gettempdir(), f"ttt_human_{uuid.uuid4().hex[:8]}.py")
+    try:
+        with open(temp_file, "w") as f: f.write(game_code)
+        subprocess.call(["python", temp_file])
+    finally:
+        if os.path.exists(temp_file): os.remove(temp_file)
+
 async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int], log_f: Path, folder1: str, folder2: str):
     """Run a single match and return the score."""
     output = await asyncio.get_event_loop().run_in_executor(None, run_match, game_code)
@@ -343,7 +392,40 @@ async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int
 async def main_async():
     parser = argparse.ArgumentParser(description="Run Tic-Tac-Toe matches between stored AI agents")
     parser.add_argument("--agent", nargs="+", help="Agent specs: model1[:run1:run2] model2[:run3:run4]")
+    parser.add_argument("--human", action="store_true", help="Play interactively against a random bot")
     args = parser.parse_args()
+
+    if args.human:
+        print("\n" + "=" * 60)
+        print("TIC TAC TOE HUMAN MODE")
+        print("You are playing against a RandomBot.")
+        print("=" * 60)
+        
+        game_code = GAME_CODE_TEMPLATE.format(
+            extra_imports="",
+            agent1_code="",
+            agent2_code="",
+            move_timeout=99999,
+            num_games=NUM_ROUNDS_PER_TICTACTOE_MATCH, # Or just 1? Loop will run many.
+            human_mode=True
+        )
+        # We might want fewer games for human play? The loop in main runs num_games.
+        # But run_match_human runs the WHOLE script which contains the loop.
+        # So we should set num_games=1 or let the user ctrl-c.
+        # Let's set num_games=10? Or just 1.
+        # The user probably wants one game or continuous. The script accepts num_games.
+        # Let's override num_games in the template call.
+        
+        game_code = GAME_CODE_TEMPLATE.format(
+            extra_imports="",
+            agent1_code="",
+            agent2_code="",
+            move_timeout=99999,
+            num_games=10, # Play 10 games
+            human_mode=True
+        )
+        run_match_human(game_code)
+        return
 
     if not args.agent or len(args.agent) != 2:
         print("ERROR: Need exactly 2 agent specifications.")
@@ -407,7 +489,8 @@ async def main_async():
             agent1_code=code1,
             agent2_code=code2,
             num_games=NUM_ROUNDS_PER_TICTACTOE_MATCH,
-            move_timeout=MOVE_TIME_LIMIT
+            move_timeout=MOVE_TIME_LIMIT,
+            human_mode=False
         )
         
         match_tasks.append(run_match_async(game_code, i + 1, (run1, run2), log_f, folder1, folder2))

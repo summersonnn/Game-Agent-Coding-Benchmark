@@ -6,4 +6,5 @@ A1-Battleship: 4
 A2-TicTacToe: 1
 A3-Wizard: 4
 A6-WordMatrixGame: 4
+A8-SurroundMorris: 4
 DEFAULT: 1
