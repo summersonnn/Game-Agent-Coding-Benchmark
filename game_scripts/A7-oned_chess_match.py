@@ -419,8 +419,8 @@ def play_game(game_num):
     """Plays a single game and returns the winner's name or DRAW."""
     game = OneDChessGame()
     
-    # Assign agents based on game number for alternating colors
-    if game_num % 2 == 1:
+    # Randomize starting agent
+    if random.random() < 0.5:
         white_agent_class = OneDChessAgent_1
         black_agent_class = OneDChessAgent_2
         white_name = "Agent-1"
@@ -978,12 +978,19 @@ if __name__ == "__main__":
     
     game = OneDChessGame()
     
-    # Human plays White, Bot plays Black
-    human = HumanAgent("Human", game.WHITE)
-    bot = RandomAgent("Bot", game.BLACK)
+    # Randomize starting color
+    if random.random() < 0.5:
+        human = HumanAgent("Human", game.WHITE)
+        bot = RandomAgent("Bot", game.BLACK)
+        print("You are White (move first).")
+    else:
+        human = HumanAgent("Human", game.BLACK)
+        bot = RandomAgent("Bot", game.WHITE)
+        print("You are Black (move second).")
     
-    agents = {game.WHITE: human, game.BLACK: bot}
-    names = {game.WHITE: "Human", game.BLACK: "Bot"}
+    agents = {game.WHITE: human if human.color == game.WHITE else bot, 
+              game.BLACK: human if human.color == game.BLACK else bot}
+    names = {game.WHITE: agents[game.WHITE].name, game.BLACK: agents[game.BLACK].name}
     
     move_count = 0
     MAX_MOVES = 200

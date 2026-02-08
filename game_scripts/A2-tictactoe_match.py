@@ -169,7 +169,8 @@ def play_game(game_num):
         class_1 = TicTacToeAgent_1
         class_2 = TicTacToeAgent_2
 
-    if game_num % 2 == 1:
+    # Randomize starting agent
+    if random.random() < 0.5:
         x_agent_class = class_1
         o_agent_class = class_2
         x_name = "Agent-1"

@@ -210,7 +210,11 @@ def play_game(game_num, scores):
         agent1: {{'opponent_ships_board': p2_active_board, 'guess_board': p1_guess_board}},
         agent2: {{'opponent_ships_board': p1_active_board, 'guess_board': p2_guess_board}}
     }}
-    current_agent, opponent_agent = agent1, agent2
+    # Randomly assign starting agent
+    if random.random() < 0.5:
+        current_agent, opponent_agent = agent1, agent2
+    else:
+        current_agent, opponent_agent = agent2, agent1
     
     last_shot_coord, last_shot_result = None, None
     turn_continues = False

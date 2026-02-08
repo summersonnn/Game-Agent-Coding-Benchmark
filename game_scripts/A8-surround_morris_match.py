@@ -326,8 +326,8 @@ MAX_ATTEMPTS = 3
 def play_game(game_num, total_scores):
     game = SurroundMorrisGame()
 
-    # Alternate starting color per game number
-    if game_num % 2 == 1:
+    # Randomize starting agent
+    if random.random() < 0.5:
         b_agent_class = SurroundMorrisAgent_1
         w_agent_class = SurroundMorrisAgent_2
         b_name = "Agent-1"
@@ -1017,17 +1017,17 @@ if __name__ == "__main__":
     print("Capture Rule: A piece is captured when it has zero empty")
     print("neighbors AND more opponent neighbors than friendly neighbors.")
     print()
-    print("Human plays B (Black, moves first)")
-    print("Bot plays W (White)")
-    print()
+    if random.random() < 0.5:
+        human = HumanAgent("Human", "B")
+        bot = RandomAgent("Bot", "W")
+        print("You are B (Black, moves first)")
+    else:
+        human = HumanAgent("Human", "W")
+        bot = RandomAgent("Bot", "B")
+        print("You are W (White, moves second)")
 
-    game = SurroundMorrisGame()
-
-    human = HumanAgent("Human", "B")
-    bot = RandomAgent("Bot", "W")
-
-    agents = {"B": human, "W": bot}
-    names = {"B": "Human", "W": "Bot"}
+    agents = {"B": human if human.color == "B" else bot, "W": human if human.color == "W" else bot}
+    names = {"B": agents["B"].name, "W": agents["W"].name}
 
     # --- Placement Phase ---
     print("--- PLACEMENT PHASE ---")

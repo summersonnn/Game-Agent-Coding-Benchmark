@@ -168,7 +168,7 @@ def play_game(game_num):
     # Note: Game always starts with Red piece placed, then Yellow moves.
     # We alternate who plays which color.
     
-    if game_num % 2 == 1:
+    if random.random() < 0.5:
         # Game 1, 3, 5...
         # Agent-1 is Red, Agent-2 is Yellow
         # Since Red moves first (randomly), Agent-2 (Yellow) makes the first CHOICE.
@@ -446,16 +446,22 @@ class RandomAgent:
 if __name__ == "__main__":
     game = Connect4Game()
     
-    # In Random Start, Red (Player 1) places a piece randomly, then Yellow (Player 2) moves.
-    # We'll make the Bot be Red and Human be Yellow so Human gets the "first" real decision.
-    bot = RandomAgent("Bot", game.RED)
-    human = HumanAgent("Human", game.YELLOW)
+    p1, p2 = None, None
+    if random.random() < 0.5:
+        human = HumanAgent("Human", game.RED)
+        bot = RandomAgent("Bot", game.YELLOW)
+        p1, p2 = human, bot
+        print(f"You are Red ({human.symbol}). Bot is Yellow ({bot.symbol}).")
+    else:
+        bot = RandomAgent("Bot", game.RED)
+        human = HumanAgent("Human", game.YELLOW)
+        p1, p2 = bot, human
+        print(f"Bot is Red ({bot.symbol}). You are Yellow ({human.symbol}).")
     
     print("Starting Connect 4 Random Start!")
-    print(f"Bot ({bot.symbol}) vs Human ({human.symbol})")
-    print("Be aware: Bot (Red) has already made a random first move.")
+    print("Be aware: Red player's first piece is placed randomly.")
     
-    winner = game.play_game(bot, human)
+    winner = game.play_game(p1, p2)
     
     print("\\nFinal Board:")
     print(" 0 1 2 3 4 5 6")
