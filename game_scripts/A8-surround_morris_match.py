@@ -37,6 +37,11 @@ except (ValueError, TypeError):
     NUM_GAMES_PER_MATCH = 100
 
 try:
+    MAX_TURNS_PER_GAME = int(os.getenv("MAX_TURNS_PER_GAME", "200"))
+except (ValueError, TypeError):
+    MAX_TURNS_PER_GAME = 200
+
+try:
     MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
@@ -49,646 +54,11 @@ GAME_LOGS_DIR = RESULTS_DIR / "game_logs"
 AGENTS_DIR = Path(__file__).parent.parent / "agents"
 GAME_NAME = "A8-SurroundMorris"
 
-# The game code template (runs in subprocess)
-GAME_CODE_TEMPLATE = '''
-import sys
-import random
-import signal
 
-# Move timeout in seconds
-MOVE_TIMEOUT = {move_timeout}
-
-class MoveTimeoutException(Exception):
-    pass
-
-def timeout_handler(signum, frame):
-    raise MoveTimeoutException("Move timeout")
-
-# --- Game Configuration ---
-NUM_GAMES = {num_games}
-AGENT1_INFO = "{agent1_info}"
-AGENT2_INFO = "{agent2_info}"
-
-{extra_imports}
-
-{agent1_code}
-
-{agent2_code}
-
-
-# --- Board Adjacency ---
-ADJACENCY = {{
-    0: [1, 9],       1: [0, 2, 4],     2: [1, 14],
-    3: [4, 10],      4: [1, 3, 5, 7],  5: [4, 13],
-    6: [7, 11],      7: [4, 6, 8],     8: [7, 12],
-    9: [0, 10, 21],  10: [3, 9, 11, 18], 11: [6, 10, 15],
-    12: [8, 13, 17], 13: [5, 12, 14, 20], 14: [2, 13, 23],
-    15: [11, 16],    16: [15, 17, 19],  17: [12, 16],
-    18: [10, 19],    19: [16, 18, 20, 22], 20: [13, 19],
-    21: [9, 22],     22: [19, 21, 23],  23: [14, 22],
-}}
-
-
-class SurroundMorrisGame:
-    """Manages the Surround Morris game state and rules."""
-
-    def __init__(self):
-        self.board = [''] * 24
-        self.phase = 'placement'
-        self.pieces_in_hand = {{'B': 9, 'W': 9}}
-        self.pieces_on_board = {{'B': 0, 'W': 0}}
-        self.current_player = 'B'
-        self.move_count = 0
-        self.consecutive_passes = 0
-
-    def opponent(self, color):
-        return 'W' if color == 'B' else 'B'
-
-    def is_captured(self, spot, board=None):
-        """
-        Check if the piece at spot satisfies the capture condition.
-        Captured when: zero empty neighbors AND opponent neighbors > friendly neighbors.
-        """
-        b = board if board is not None else self.board
-        piece = b[spot]
-        if not piece:
-            return False
-
-        opp = self.opponent(piece)
-        empty_count = 0
-        friendly_count = 0
-        opp_count = 0
-
-        for neighbor in ADJACENCY[spot]:
-            n = b[neighbor]
-            if n == '':
-                empty_count += 1
-            elif n == piece:
-                friendly_count += 1
-            else:
-                opp_count += 1
-
-        return empty_count == 0 and opp_count > friendly_count
-
-    def validate_placement(self, spot, color):
-        """
-        Validate a placement move.
-        Returns (ok, message, error_code).
-        """
-        if not isinstance(spot, int) or spot < 0 or spot > 23:
-            return False, f"Spot {{spot}} out of range [0, 23]", "INVALID_SPOT_OOB"
-
-        if self.board[spot] != '':
-            return False, f"Spot {{spot}} is occupied by '{{self.board[spot]}}'", "INVALID_SPOT_OCCUPIED"
-
-        if self.phase != 'placement':
-            return False, "Not in placement phase", "INVALID_WRONG_PHASE"
-
-        # Anti-suicide check: simulate placement, process opponent captures, then
-        # check if the placed piece itself would be captured.
-        sim_board = self.board[:]
-        sim_board[spot] = color
-        opp = self.opponent(color)
-
-        # Remove opponent captures first
-        for s in range(24):
-            if sim_board[s] == opp and self.is_captured(s, sim_board):
-                sim_board[s] = ''
-
-        # Now check if placed piece is still captured
-        if self.is_captured(spot, sim_board):
-            return False, f"Placing at {{spot}} is suicide (piece would be captured)", "INVALID_SUICIDE"
-
-        return True, "Valid", ""
-
-    def validate_movement(self, from_spot, to_spot, color):
-        """
-        Validate a movement move.
-        Returns (ok, message, error_code).
-        """
-        if self.phase != 'movement':
-            return False, "Not in movement phase", "INVALID_WRONG_PHASE"
-
-        if not isinstance(from_spot, int) or from_spot < 0 or from_spot > 23:
-            return False, f"Source {{from_spot}} out of range [0, 23]", "INVALID_SPOT_OOB"
-
-        if not isinstance(to_spot, int) or to_spot < 0 or to_spot > 23:
-            return False, f"Destination {{to_spot}} out of range [0, 23]", "INVALID_DEST_OOB"
-
-        if self.board[from_spot] != color:
-            actual = self.board[from_spot]
-            return False, f"Spot {{from_spot}} has '{{actual}}', not your piece '{{color}}'", "INVALID_NOT_YOUR_PIECE"
-
-        if self.board[to_spot] != '':
-            return False, f"Destination {{to_spot}} is occupied", "INVALID_DEST_OCCUPIED"
-
-        if to_spot not in ADJACENCY[from_spot]:
-            return False, f"Spots {{from_spot}} and {{to_spot}} are not adjacent", "INVALID_NOT_ADJACENT"
-
-        return True, "Valid", ""
-
-    def apply_placement(self, spot, color):
-        """Place a piece, process captures, return list of captured spots."""
-        self.board[spot] = color
-        self.pieces_in_hand[color] -= 1
-        self.pieces_on_board[color] += 1
-
-        opp = self.opponent(color)
-        captured = []
-        for s in range(24):
-            if self.board[s] == opp and self.is_captured(s):
-                captured.append(s)
-
-        for s in captured:
-            self.board[s] = ''
-            self.pieces_on_board[opp] -= 1
-
-        return captured
-
-    def apply_movement(self, from_spot, to_spot, color):
-        """Move a piece, process captures, return list of captured spots."""
-        self.board[from_spot] = ''
-        self.board[to_spot] = color
-
-        opp = self.opponent(color)
-        captured = []
-        for s in range(24):
-            if self.board[s] == opp and self.is_captured(s):
-                captured.append(s)
-
-        for s in captured:
-            self.board[s] = ''
-            self.pieces_on_board[opp] -= 1
-
-        return captured
-
-    def get_legal_placements(self, color):
-        """Return list of empty spots where placement is not suicide."""
-        legal = []
-        for spot in range(24):
-            ok, _, _ = self.validate_placement(spot, color)
-            if ok:
-                legal.append(spot)
-        return legal
-
-    def get_legal_movements(self, color):
-        """Return list of (from_spot, to_spot) pairs for the player's pieces."""
-        legal = []
-        for from_spot in range(24):
-            if self.board[from_spot] != color:
-                continue
-            for to_spot in ADJACENCY[from_spot]:
-                if self.board[to_spot] == '':
-                    legal.append((from_spot, to_spot))
-        return legal
-
-    def is_game_over(self):
-        """
-        Check game-over conditions (movement phase only).
-        Returns (is_over, result_description).
-        """
-        if self.phase != 'movement':
-            return False, None
-
-        opp = self.opponent(self.current_player)
-        if self.pieces_on_board[opp] == 0:
-            return True, f"{{self.current_player}} wins (opponent has 0 pieces)"
-
-        if self.pieces_on_board[self.current_player] == 0:
-            return True, f"{{opp}} wins (opponent has 0 pieces)"
-
-        if self.move_count >= 200:
-            return True, "Draw (200 movement turns reached)"
-
-        if self.consecutive_passes >= 6:
-            return True, "Draw (6 consecutive passes)"
-
-        return False, None
-
-    def check_phase_transition(self):
-        """Transition from placement to movement when all pieces are placed."""
-        if self.phase == 'placement' and self.pieces_in_hand['B'] == 0 and self.pieces_in_hand['W'] == 0:
-            self.phase = 'movement'
-            self.move_count = 0
-            self.consecutive_passes = 0
-
-    def display_board(self):
-        """Print ASCII art board visualization."""
-        def p(i):
-            v = self.board[i]
-            return v if v else '.'
-
-        print(f" {{p(0)}}----------{{p(1)}}----------{{p(2)}}")
-        print(f" |           |           |")
-        print(f" |   {{p(3)}}-------{{p(4)}}-------{{p(5)}}   |")
-        print(f" |   |       |       |   |")
-        print(f" |   |   {{p(6)}}---{{p(7)}}---{{p(8)}}   |   |")
-        print(f" |   |   |       |   |   |")
-        print(f" {{p(9)}}---{{p(10)}}---{{p(11)}}       {{p(12)}}---{{p(13)}}---{{p(14)}}")
-        print(f" |   |   |       |   |   |")
-        print(f" |   |   {{p(15)}}---{{p(16)}}---{{p(17)}}   |   |")
-        print(f" |   |       |       |   |")
-        print(f" |   {{p(18)}}-------{{p(19)}}-------{{p(20)}}   |")
-        print(f" |           |           |")
-        print(f" {{p(21)}}----------{{p(22)}}----------{{p(23)}}")
-
-    def get_state_for_agent(self, color):
-        """Build the state dict passed to agent.make_move()."""
-        return {{
-            "board": self.board[:],
-            "phase": self.phase,
-            "your_color": color,
-            "opponent_color": self.opponent(color),
-            "pieces_in_hand": dict(self.pieces_in_hand),
-            "pieces_on_board": dict(self.pieces_on_board),
-            "move_count": self.move_count,
-        }}
-
-
-# --- Stats ---
-stats = {{
-    "p1_invalid": 0,
-    "p2_invalid": 0,
-    "p1_timeout": 0,
-    "p2_timeout": 0,
-    "p1_crash": 0,
-    "p2_crash": 0,
-    "p1_captures": 0,
-    "p2_captures": 0,
-    "p1_pass": 0,
-    "p2_pass": 0,
-    "turns": 0,
-}}
-
-MAX_ATTEMPTS = 3
-
-
-def play_game(game_num, total_scores):
-    game = SurroundMorrisGame()
-
-    # Randomize starting agent
-    if random.random() < 0.5:
-        b_agent_class = SurroundMorrisAgent_1
-        w_agent_class = SurroundMorrisAgent_2
-        b_name = "Agent-1"
-        w_name = "Agent-2"
-    else:
-        b_agent_class = SurroundMorrisAgent_2
-        w_agent_class = SurroundMorrisAgent_1
-        b_name = "Agent-2"
-        w_name = "Agent-1"
-
-    print()
-    print("=" * 60)
-    print(f"GAME {{game_num}}")
-    print(f"Agent-1: {{AGENT1_INFO}}")
-    print(f"Agent-2: {{AGENT2_INFO}}")
-    print(f"{{b_name}} plays B (Black), {{w_name}} plays W (White)")
-    print("=" * 60)
-
-    # Initialize agents
-    try:
-        b_agent = b_agent_class(b_name, 'B')
-    except Exception as e:
-        print(f"{{b_name}} (B) init crash: {{e}}")
-        return w_name
-
-    try:
-        w_agent = w_agent_class(w_name, 'W')
-    except Exception as e:
-        print(f"{{w_name}} (W) init crash: {{e}}")
-        return b_name
-
-    agents = {{'B': b_agent, 'W': w_agent}}
-    names = {{'B': b_name, 'W': w_name}}
-
-    def get_p_prefix(agent_name):
-        return "p1" if agent_name == "Agent-1" else "p2"
-
-    def do_random_placement(color):
-        """Fallback: random legal placement."""
-        legal = game.get_legal_placements(color)
-        if legal:
-            spot = random.choice(legal)
-            captured = game.apply_placement(spot, color)
-            return spot, captured
-        return None, []
-
-    def do_random_movement(color):
-        """Fallback: random legal movement."""
-        legal = game.get_legal_movements(color)
-        if legal:
-            from_s, to_s = random.choice(legal)
-            captured = game.apply_movement(from_s, to_s, color)
-            return (from_s, to_s), captured
-        return None, []
-
-    # --- Placement Phase ---
-    placement_turn = 0
-    while game.phase == 'placement':
-        color = game.current_player
-        agent = agents[color]
-        agent_name = names[color]
-        p_prefix = get_p_prefix(agent_name)
-        stats["turns"] += 1
-        placement_turn += 1
-
-        state = game.get_state_for_agent(color)
-        feedback = None
-        move_made = False
-
-        for attempt in range(MAX_ATTEMPTS):
-            move = None
-            try:
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(max(1, int(MOVE_TIMEOUT)))
-                try:
-                    move = agent.make_move(state, feedback)
-                finally:
-                    signal.alarm(0)
-            except MoveTimeoutException:
-                print(f"{{agent_name}} ({{color}}): TIMEOUT")
-                stats[f"{{p_prefix}}_timeout"] += 1
-                spot, captured = do_random_placement(color)
-                if spot is not None:
-                    cap_str = f" captured {{captured}}" if captured else ""
-                    print(f"{{agent_name}} ({{color}}): random placement at {{spot}}{{cap_str}}")
-                    stats[f"{{p_prefix}}_captures"] += len(captured)
-                move_made = True
-                break
-            except Exception as e:
-                print(f"{{agent_name}} ({{color}}): CRASH '{{str(e)[:80]}}'")
-                stats[f"{{p_prefix}}_crash"] += 1
-                spot, captured = do_random_placement(color)
-                if spot is not None:
-                    cap_str = f" captured {{captured}}" if captured else ""
-                    print(f"{{agent_name}} ({{color}}): random placement at {{spot}}{{cap_str}}")
-                    stats[f"{{p_prefix}}_captures"] += len(captured)
-                move_made = True
-                break
-
-            # Validate placement
-            if not isinstance(move, int):
-                try:
-                    move = int(move)
-                except (ValueError, TypeError):
-                    stats[f"{{p_prefix}}_invalid"] += 1
-                    remaining = MAX_ATTEMPTS - attempt - 1
-                    print(f"{{agent_name}} ({{color}}): INVALID OUTPUT '{{move}}' ({{remaining}} retries)")
-                    feedback = {{
-                        "error_code": "INVALID_OUTPUT",
-                        "error_message": f"Expected int, got {{type(move).__name__}}: {{move}}",
-                        "attempted_move": str(move),
-                        "attempt_number": attempt + 1,
-                    }}
-                    continue
-
-            ok, msg, error_code = game.validate_placement(move, color)
-            if not ok:
-                stats[f"{{p_prefix}}_invalid"] += 1
-                remaining = MAX_ATTEMPTS - attempt - 1
-                print(f"{{agent_name}} ({{color}}): INVALID placement at {{move}} - {{msg}} ({{remaining}} retries)")
-                feedback = {{
-                    "error_code": error_code,
-                    "error_message": msg,
-                    "attempted_move": move,
-                    "attempt_number": attempt + 1,
-                }}
-                continue
-
-            # Valid placement
-            captured = game.apply_placement(move, color)
-            cap_str = f" captured {{captured}}" if captured else ""
-            print(f"{{agent_name}} ({{color}}): placement at {{move}}{{cap_str}}")
-            stats[f"{{p_prefix}}_captures"] += len(captured)
-            move_made = True
-            break
-
-        # All attempts exhausted
-        if not move_made:
-            print(f"{{agent_name}} ({{color}}): 3 failed attempts, random fallback")
-            spot, captured = do_random_placement(color)
-            if spot is not None:
-                cap_str = f" captured {{captured}}" if captured else ""
-                print(f"{{agent_name}} ({{color}}): random placement at {{spot}}{{cap_str}}")
-                stats[f"{{p_prefix}}_captures"] += len(captured)
-
-        # Check phase transition
-        game.check_phase_transition()
-
-        # Switch turns
-        game.current_player = game.opponent(color)
-
-        # Display board periodically
-        if placement_turn % 6 == 0 or game.phase == 'movement':
-            game.display_board()
-            print(f"Pieces on board: B={{game.pieces_on_board['B']}} W={{game.pieces_on_board['W']}}")
-            print(f"Pieces in hand: B={{game.pieces_in_hand['B']}} W={{game.pieces_in_hand['W']}}")
-
-    # --- Movement Phase ---
-    if game.phase == 'movement':
-        print()
-        print("--- MOVEMENT PHASE ---")
-        game.display_board()
-
-    while game.phase == 'movement':
-        game_over, result_desc = game.is_game_over()
-        if game_over:
-            break
-
-        color = game.current_player
-        agent = agents[color]
-        agent_name = names[color]
-        p_prefix = get_p_prefix(agent_name)
-        stats["turns"] += 1
-        game.move_count += 1
-
-        # Check if player has legal moves
-        legal_moves = game.get_legal_movements(color)
-        if not legal_moves:
-            print(f"{{agent_name}} ({{color}}): no legal moves, forced pass")
-            stats[f"{{p_prefix}}_pass"] += 1
-            game.consecutive_passes += 1
-            game.current_player = game.opponent(color)
-            continue
-
-        state = game.get_state_for_agent(color)
-        feedback = None
-        move_made = False
-
-        for attempt in range(MAX_ATTEMPTS):
-            move = None
-            try:
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(max(1, int(MOVE_TIMEOUT)))
-                try:
-                    move = agent.make_move(state, feedback)
-                finally:
-                    signal.alarm(0)
-            except MoveTimeoutException:
-                print(f"{{agent_name}} ({{color}}): TIMEOUT")
-                stats[f"{{p_prefix}}_timeout"] += 1
-                mv, captured = do_random_movement(color)
-                if mv:
-                    cap_str = f" captured {{captured}}" if captured else ""
-                    print(f"{{agent_name}} ({{color}}): random move {{mv[0]}}->{{mv[1]}}{{cap_str}}")
-                    stats[f"{{p_prefix}}_captures"] += len(captured)
-                    game.consecutive_passes = 0
-                move_made = True
-                break
-            except Exception as e:
-                print(f"{{agent_name}} ({{color}}): CRASH '{{str(e)[:80]}}'")
-                stats[f"{{p_prefix}}_crash"] += 1
-                mv, captured = do_random_movement(color)
-                if mv:
-                    cap_str = f" captured {{captured}}" if captured else ""
-                    print(f"{{agent_name}} ({{color}}): random move {{mv[0]}}->{{mv[1]}}{{cap_str}}")
-                    stats[f"{{p_prefix}}_captures"] += len(captured)
-                    game.consecutive_passes = 0
-                move_made = True
-                break
-
-            # Validate movement output
-            if not isinstance(move, (tuple, list)) or len(move) != 2:
-                stats[f"{{p_prefix}}_invalid"] += 1
-                remaining = MAX_ATTEMPTS - attempt - 1
-                print(f"{{agent_name}} ({{color}}): INVALID OUTPUT '{{move}}' ({{remaining}} retries)")
-                feedback = {{
-                    "error_code": "INVALID_OUTPUT",
-                    "error_message": f"Expected (from_spot, to_spot) tuple, got {{type(move).__name__}}",
-                    "attempted_move": str(move),
-                    "attempt_number": attempt + 1,
-                }}
-                continue
-
-            try:
-                from_spot, to_spot = int(move[0]), int(move[1])
-            except (ValueError, TypeError):
-                stats[f"{{p_prefix}}_invalid"] += 1
-                remaining = MAX_ATTEMPTS - attempt - 1
-                print(f"{{agent_name}} ({{color}}): INVALID non-int move {{move}} ({{remaining}} retries)")
-                feedback = {{
-                    "error_code": "INVALID_OUTPUT",
-                    "error_message": f"Could not convert move to integers: {{move}}",
-                    "attempted_move": str(move),
-                    "attempt_number": attempt + 1,
-                }}
-                continue
-
-            ok, msg, error_code = game.validate_movement(from_spot, to_spot, color)
-            if not ok:
-                stats[f"{{p_prefix}}_invalid"] += 1
-                remaining = MAX_ATTEMPTS - attempt - 1
-                print(f"{{agent_name}} ({{color}}): INVALID move {{from_spot}}->{{to_spot}} - {{msg}} ({{remaining}} retries)")
-                feedback = {{
-                    "error_code": error_code,
-                    "error_message": msg,
-                    "attempted_move": (from_spot, to_spot),
-                    "attempt_number": attempt + 1,
-                }}
-                continue
-
-            # Valid movement
-            captured = game.apply_movement(from_spot, to_spot, color)
-            cap_str = f" captured {{captured}}" if captured else ""
-            print(f"{{agent_name}} ({{color}}): move {{from_spot}}->{{to_spot}}{{cap_str}}")
-            stats[f"{{p_prefix}}_captures"] += len(captured)
-            game.consecutive_passes = 0
-            move_made = True
-            break
-
-        # All attempts exhausted
-        if not move_made:
-            print(f"{{agent_name}} ({{color}}): 3 failed attempts, random fallback")
-            mv, captured = do_random_movement(color)
-            if mv:
-                cap_str = f" captured {{captured}}" if captured else ""
-                print(f"{{agent_name}} ({{color}}): random move {{mv[0]}}->{{mv[1]}}{{cap_str}}")
-                stats[f"{{p_prefix}}_captures"] += len(captured)
-                game.consecutive_passes = 0
-            else:
-                print(f"{{agent_name}} ({{color}}): no legal moves after fallback, forced pass")
-                stats[f"{{p_prefix}}_pass"] += 1
-                game.consecutive_passes += 1
-
-        # Switch turns
-        game.current_player = game.opponent(color)
-
-        # Display board every 10 moves
-        if game.move_count % 10 == 0:
-            game.display_board()
-            print(f"Move {{game.move_count}}: B={{game.pieces_on_board['B']}} W={{game.pieces_on_board['W']}}")
-
-    # Game over
-    game_over, result_desc = game.is_game_over()
-    if not game_over:
-        # Shouldn't happen, but handle placement-only edge case
-        result_desc = "Game ended unexpectedly"
-
-    print()
-    game.display_board()
-    print(f"Pieces: B={{game.pieces_on_board['B']}} W={{game.pieces_on_board['W']}}")
-    print(f"GAME {{game_num}} ENDED: {{result_desc}}")
-
-    # Determine winner
-    if "wins" in result_desc:
-        winner_color = result_desc[0]
-        winner = names[winner_color]
-    elif "Draw" in result_desc:
-        winner = "DRAW"
-    else:
-        winner = "DRAW"
-
-    print(f"Winner: {{winner}}")
-
-    # Update scores
-    if winner == "DRAW":
-        total_scores["Agent-1"] += 0.5
-        total_scores["Agent-2"] += 0.5
-    elif winner in total_scores:
-        total_scores[winner] += 1
-
-    print(
-        f"Running Total - Agent-1: {{total_scores['Agent-1']}} | "
-        f"Agent-2: {{total_scores['Agent-2']}}"
-    )
-    print("=" * 60)
-    sys.stdout.flush()
-
-    return winner
-
-
-def main():
-    total_scores = {{"Agent-1": 0, "Agent-2": 0}}
-
-    for i in range(NUM_GAMES):
-        play_game(i + 1, total_scores)
-        sys.stdout.flush()
-
-    print(f"RESULT:Agent-1={{total_scores['Agent-1']}},Agent-2={{total_scores['Agent-2']}}")
-    print("--- MATCH STATISTICS ---")
-    print(f"Agent-1 Invalid Moves: {{stats['p1_invalid']}}")
-    print(f"Agent-2 Invalid Moves: {{stats['p2_invalid']}}")
-    print(f"Agent-1 Timeouts: {{stats['p1_timeout']}}")
-    print(f"Agent-2 Timeouts: {{stats['p2_timeout']}}")
-    print(f"Agent-1 Crashes: {{stats['p1_crash']}}")
-    print(f"Agent-2 Crashes: {{stats['p2_crash']}}")
-    print(f"Agent-1 Captures: {{stats['p1_captures']}}")
-    print(f"Agent-2 Captures: {{stats['p2_captures']}}")
-    print(f"Agent-1 Forced Passes: {{stats['p1_pass']}}")
-    print(f"Agent-2 Forced Passes: {{stats['p2_pass']}}")
-    print(f"Total Turns: {{stats['turns']}}")
-
-
-if __name__ == "__main__":
-    main()
-'''
-
-# --- Human play mode ---
-HUMAN_GAME_CODE = '''
-import random
-
-# --- Board Adjacency ---
+# ============================================================
+# Shared game engine code (used by both match and human modes)
+# ============================================================
+GAME_ENGINE_CODE = r'''
 ADJACENCY = {
     0: [1, 9],       1: [0, 2, 4],     2: [1, 14],
     3: [4, 10],      4: [1, 3, 5, 7],  5: [4, 13],
@@ -711,7 +81,7 @@ class SurroundMorrisGame:
         self.pieces_on_board = {'B': 0, 'W': 0}
         self.current_player = 'B'
         self.move_count = 0
-        self.consecutive_passes = 0
+        self.history = []
 
     def opponent(self, color):
         return 'W' if color == 'B' else 'B'
@@ -743,144 +113,176 @@ class SurroundMorrisGame:
         return empty_count == 0 and opp_count > friendly_count
 
     def validate_placement(self, spot, color):
-        """
-        Validate a placement move.
-        Returns (ok, message, error_code).
-        """
         if not isinstance(spot, int) or spot < 0 or spot > 23:
             return False, f"Spot {spot} out of range [0, 23]", "INVALID_SPOT_OOB"
-
         if self.board[spot] != '':
             return False, f"Spot {spot} is occupied by '{self.board[spot]}'", "INVALID_SPOT_OCCUPIED"
-
         if self.phase != 'placement':
             return False, "Not in placement phase", "INVALID_WRONG_PHASE"
-
-        # Anti-suicide check
-        sim_board = self.board[:]
-        sim_board[spot] = color
-        opp = self.opponent(color)
-
-        for s in range(24):
-            if sim_board[s] == opp and self.is_captured(s, sim_board):
-                sim_board[s] = ''
-
-        if self.is_captured(spot, sim_board):
-            return False, f"Placing at {spot} is suicide (piece would be captured)", "INVALID_SUICIDE"
-
         return True, "Valid", ""
 
     def validate_movement(self, from_spot, to_spot, color):
-        """Validate a movement move."""
         if self.phase != 'movement':
             return False, "Not in movement phase", "INVALID_WRONG_PHASE"
-
         if not isinstance(from_spot, int) or from_spot < 0 or from_spot > 23:
             return False, f"Source {from_spot} out of range [0, 23]", "INVALID_SPOT_OOB"
-
         if not isinstance(to_spot, int) or to_spot < 0 or to_spot > 23:
             return False, f"Destination {to_spot} out of range [0, 23]", "INVALID_DEST_OOB"
-
         if self.board[from_spot] != color:
             actual = self.board[from_spot]
             return False, f"Spot {from_spot} has '{actual}', not your piece '{color}'", "INVALID_NOT_YOUR_PIECE"
-
         if self.board[to_spot] != '':
             return False, f"Destination {to_spot} is occupied", "INVALID_DEST_OCCUPIED"
-
         if to_spot not in ADJACENCY[from_spot]:
             return False, f"Spots {from_spot} and {to_spot} are not adjacent", "INVALID_NOT_ADJACENT"
-
         return True, "Valid", ""
 
+    def _capture_sweep(self, color):
+        """
+        Universal capture sweep with self-harm priority.
+        1. Remove mover's captured pieces first.
+        2. Re-check enemy pieces (may have gained empty neighbors from step 1).
+        """
+        captured = []
+        opp = self.opponent(color)
+
+        for s in range(24):
+            if self.board[s] == color and self.is_captured(s):
+                self.board[s] = ''
+                self.pieces_on_board[color] -= 1
+                captured.append(s)
+
+        for s in range(24):
+            if self.board[s] == opp and self.is_captured(s):
+                self.board[s] = ''
+                self.pieces_on_board[opp] -= 1
+                captured.append(s)
+
+        return captured
+
     def apply_placement(self, spot, color):
-        """Place a piece, process captures, return list of captured spots."""
+        """
+        Place a piece. Suicide check first, then sweep with self-harm priority.
+        """
         self.board[spot] = color
         self.pieces_in_hand[color] -= 1
         self.pieces_on_board[color] += 1
 
-        opp = self.opponent(color)
         captured = []
-        for s in range(24):
-            if self.board[s] == opp and self.is_captured(s):
-                captured.append(s)
 
-        for s in captured:
-            self.board[s] = ''
-            self.pieces_on_board[opp] -= 1
+        if self.is_captured(spot):
+            self.board[spot] = ''
+            self.pieces_on_board[color] -= 1
+            captured.append(spot)
+            return captured
 
+        captured.extend(self._capture_sweep(color))
         return captured
 
     def apply_movement(self, from_spot, to_spot, color):
-        """Move a piece, process captures, return list of captured spots."""
+        """
+        Move a piece. Suicide check first, then sweep with self-harm priority.
+        """
         self.board[from_spot] = ''
         self.board[to_spot] = color
 
-        opp = self.opponent(color)
         captured = []
-        for s in range(24):
-            if self.board[s] == opp and self.is_captured(s):
-                captured.append(s)
 
-        for s in captured:
-            self.board[s] = ''
-            self.pieces_on_board[opp] -= 1
+        if self.is_captured(to_spot):
+            self.board[to_spot] = ''
+            self.pieces_on_board[color] -= 1
+            captured.append(to_spot)
+            return captured
 
+        captured.extend(self._capture_sweep(color))
         return captured
 
     def get_legal_placements(self, color):
-        """Return list of empty spots where placement is not suicide."""
-        legal = []
-        for spot in range(24):
-            ok, _, _ = self.validate_placement(spot, color)
-            if ok:
-                legal.append(spot)
-        return legal
+        return [s for s in range(24) if self.board[s] == '']
 
     def get_legal_movements(self, color):
-        """Return list of (from_spot, to_spot) pairs for the player's pieces."""
-        legal = []
-        for from_spot in range(24):
-            if self.board[from_spot] != color:
+        moves = []
+        for f in range(24):
+            if self.board[f] != color:
                 continue
-            for to_spot in ADJACENCY[from_spot]:
-                if self.board[to_spot] == '':
-                    legal.append((from_spot, to_spot))
-        return legal
+            for t in ADJACENCY[f]:
+                if self.board[t] == '':
+                    moves.append((f, t))
+        return moves
 
-    def is_game_over(self):
-        """Check game-over conditions."""
-        if self.phase != 'movement':
-            return False, None
+    def record_history(self):
+        self.history.append((tuple(self.board), self.current_player))
 
+    def check_repetition(self):
+        """
+        Check 3-fold repetition. Call after record_history(), BEFORE move.
+        Returns (is_over, description) or (False, None).
+        """
+        current_state = (tuple(self.board), self.current_player)
+        if self.history.count(current_state) >= 3:
+            b = self.pieces_on_board['B']
+            w = self.pieces_on_board['W']
+            if b > w:
+                return True, f"B wins by Repetition (Score: {b}-{w})"
+            elif w > b:
+                return True, f"W wins by Repetition (Score: {w}-{b})"
+            else:
+                return True, "Draw by Repetition (Scores equal)"
+        return False, None
+
+    def check_elimination(self):
+        """
+        Check if either player is eliminated. Call AFTER move.
+        Self-harm priority: check mover (current_player) first.
+        During placement, a player is only eliminated if they have 0 on board AND 0 in hand.
+        """
         opp = self.opponent(self.current_player)
-        if self.pieces_on_board[opp] == 0:
-            return True, f"{self.current_player} wins (opponent has 0 pieces)"
 
-        if self.pieces_on_board[self.current_player] == 0:
-            return True, f"{opp} wins (opponent has 0 pieces)"
+        mover_alive = self.pieces_on_board[self.current_player] > 0 or \
+                      (self.phase == 'placement' and self.pieces_in_hand[self.current_player] > 0)
+        opp_alive = self.pieces_on_board[opp] > 0 or \
+                    (self.phase == 'placement' and self.pieces_in_hand[opp] > 0)
 
-        if self.move_count >= 200:
-            return True, "Draw (200 movement turns reached)"
+        if not mover_alive:
+            return True, f"{opp} wins ({self.current_player} has 0 pieces)"
+        if not opp_alive:
+            return True, f"{self.current_player} wins ({opp} has 0 pieces)"
+        return False, None
 
-        if self.consecutive_passes >= 6:
-            return True, "Draw (6 consecutive passes)"
-
+    def check_turn_limit(self):
+        """Check movement turn limit. Call AFTER move and move_count increment."""
+        if self.phase == 'movement' and self.move_count >= MAX_TURNS:
+            return True, f"Draw ({MAX_TURNS} movement turns reached)"
         return False, None
 
     def check_phase_transition(self):
-        """Transition from placement to movement when all pieces are placed."""
         if self.phase == 'placement' and self.pieces_in_hand['B'] == 0 and self.pieces_in_hand['W'] == 0:
             self.phase = 'movement'
             self.move_count = 0
-            self.consecutive_passes = 0
+            self.history = []
 
     def display_board(self):
-        """Print ASCII art board visualization with spot numbers."""
         def p(i):
             v = self.board[i]
             return v if v else '.'
+        print(f" {p(0)}----------{p(1)}----------{p(2)}")
+        print(f" |           |           |")
+        print(f" |   {p(3)}-------{p(4)}-------{p(5)}   |")
+        print(f" |   |       |       |   |")
+        print(f" |   |   {p(6)}---{p(7)}---{p(8)}   |   |")
+        print(f" |   |   |       |   |   |")
+        print(f" {p(9)}---{p(10)}---{p(11)}       {p(12)}---{p(13)}---{p(14)}")
+        print(f" |   |   |       |   |   |")
+        print(f" |   |   {p(15)}---{p(16)}---{p(17)}   |   |")
+        print(f" |   |       |       |   |")
+        print(f" |   {p(18)}-------{p(19)}-------{p(20)}   |")
+        print(f" |           |           |")
+        print(f" {p(21)}----------{p(22)}----------{p(23)}")
 
+    def display_board_with_numbers(self):
+        def p(i):
+            v = self.board[i]
+            return v if v else '.'
         print()
         print("Board Layout (spot numbers for reference):")
         print()
@@ -900,7 +302,6 @@ class SurroundMorrisGame:
         print()
 
     def get_state_for_agent(self, color):
-        """Build the state dict passed to agent.make_move()."""
         return {
             "board": self.board[:],
             "phase": self.phase,
@@ -909,18 +310,441 @@ class SurroundMorrisGame:
             "pieces_in_hand": dict(self.pieces_in_hand),
             "pieces_on_board": dict(self.pieces_on_board),
             "move_count": self.move_count,
+            "history": self.history[:],
         }
+'''
+
+
+# ============================================================
+# Match runner code (play_game + main for agent-vs-agent)
+# ============================================================
+MATCH_RUNNER_CODE = r'''
+class MoveTimeoutException(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise MoveTimeoutException("Move timeout")
+
+stats = {
+    "p1_invalid": 0,
+    "p2_invalid": 0,
+    "p1_timeout": 0,
+    "p2_timeout": 0,
+    "p1_crash": 0,
+    "p2_crash": 0,
+    "p1_captures": 0,
+    "p2_captures": 0,
+    "p1_stalemate": 0,
+    "p2_stalemate": 0,
+    "turns": 0,
+}
+
+MAX_ATTEMPTS = 3
+
+
+def play_game(game_num, match_stats):
+    game = SurroundMorrisGame()
+
+    if random.random() < 0.5:
+        b_agent_class = SurroundMorrisAgent_1
+        w_agent_class = SurroundMorrisAgent_2
+        b_name = "Agent-1"
+        w_name = "Agent-2"
+    else:
+        b_agent_class = SurroundMorrisAgent_2
+        w_agent_class = SurroundMorrisAgent_1
+        b_name = "Agent-2"
+        w_name = "Agent-1"
+
+    print()
+    print("=" * 60)
+    print(f"GAME {game_num}")
+    print(f"Agent-1: {AGENT1_INFO}")
+    print(f"Agent-2: {AGENT2_INFO}")
+    print(f"{b_name} plays B (Black), {w_name} plays W (White)")
+    print("=" * 60)
+
+    try:
+        b_agent = b_agent_class(b_name, 'B')
+    except Exception as e:
+        print(f"{b_name} (B) init crash: {e}")
+        return w_name
+
+    try:
+        w_agent = w_agent_class(w_name, 'W')
+    except Exception as e:
+        print(f"{w_name} (W) init crash: {e}")
+        return b_name
+
+    agents = {'B': b_agent, 'W': w_agent}
+    names = {'B': b_name, 'W': w_name}
+
+    def get_p_prefix(agent_name):
+        return "p1" if agent_name == "Agent-1" else "p2"
+
+    def do_random_placement(color):
+        legal = game.get_legal_placements(color)
+        if legal:
+            spot = random.choice(legal)
+            captured = game.apply_placement(spot, color)
+            return spot, captured
+        return None, []
+
+    def do_random_movement(color):
+        legal = game.get_legal_movements(color)
+        if legal:
+            from_s, to_s = random.choice(legal)
+            captured = game.apply_movement(from_s, to_s, color)
+            return (from_s, to_s), captured
+        return None, []
+
+    result_desc = None
+    game_over = False
+
+    # --- Placement Phase ---
+    placement_turn = 0
+    while game.phase == 'placement' and not game_over:
+        color = game.current_player
+        agent = agents[color]
+        agent_name = names[color]
+        p_prefix = get_p_prefix(agent_name)
+        stats["turns"] += 1
+        placement_turn += 1
+
+        state = game.get_state_for_agent(color)
+        feedback = None
+        move_made = False
+
+        for attempt in range(MAX_ATTEMPTS):
+            move = None
+            try:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(max(1, int(MOVE_TIMEOUT)))
+                try:
+                    move = agent.make_move(state, feedback)
+                finally:
+                    signal.alarm(0)
+            except MoveTimeoutException:
+                print(f"{agent_name} ({color}): TIMEOUT")
+                stats[f"{p_prefix}_timeout"] += 1
+                spot, captured = do_random_placement(color)
+                if spot is not None:
+                    cap_str = f" captured {captured}" if captured else ""
+                    print(f"{agent_name} ({color}): random placement at {spot}{cap_str}")
+                    stats[f"{p_prefix}_captures"] += len(captured)
+                move_made = True
+                break
+            except Exception as e:
+                print(f"{agent_name} ({color}): CRASH '{str(e)[:80]}'")
+                stats[f"{p_prefix}_crash"] += 1
+                spot, captured = do_random_placement(color)
+                if spot is not None:
+                    cap_str = f" captured {captured}" if captured else ""
+                    print(f"{agent_name} ({color}): random placement at {spot}{cap_str}")
+                    stats[f"{p_prefix}_captures"] += len(captured)
+                move_made = True
+                break
+
+            if not isinstance(move, int):
+                try:
+                    move = int(move)
+                except (ValueError, TypeError):
+                    stats[f"{p_prefix}_invalid"] += 1
+                    remaining = MAX_ATTEMPTS - attempt - 1
+                    print(f"{agent_name} ({color}): INVALID OUTPUT '{move}' ({remaining} retries)")
+                    feedback = {
+                        "error_code": "INVALID_OUTPUT",
+                        "error_message": f"Expected int, got {type(move).__name__}: {move}",
+                        "attempted_move": str(move),
+                        "attempt_number": attempt + 1,
+                    }
+                    continue
+
+            ok, msg, error_code = game.validate_placement(move, color)
+            if not ok:
+                stats[f"{p_prefix}_invalid"] += 1
+                remaining = MAX_ATTEMPTS - attempt - 1
+                print(f"{agent_name} ({color}): INVALID placement at {move} - {msg} ({remaining} retries)")
+                feedback = {
+                    "error_code": error_code,
+                    "error_message": msg,
+                    "attempted_move": move,
+                    "attempt_number": attempt + 1,
+                }
+                continue
+
+            captured = game.apply_placement(move, color)
+            cap_str = f" captured {captured}" if captured else ""
+            print(f"{agent_name} ({color}): placement at {move}{cap_str}")
+            stats[f"{p_prefix}_captures"] += len(captured)
+            move_made = True
+            break
+
+        if not move_made:
+            print(f"{agent_name} ({color}): 3 failed attempts, random fallback")
+            spot, captured = do_random_placement(color)
+            if spot is not None:
+                cap_str = f" captured {captured}" if captured else ""
+                print(f"{agent_name} ({color}): random placement at {spot}{cap_str}")
+                stats[f"{p_prefix}_captures"] += len(captured)
+
+        # Check elimination after move (self-harm priority: mover checked first)
+        game_over, result_desc = game.check_elimination()
+        if game_over:
+            break
+
+        game.check_phase_transition()
+        game.current_player = game.opponent(color)
+
+        if placement_turn % 6 == 0 or game.phase == 'movement':
+            game.display_board()
+            print(f"Pieces on board: B={game.pieces_on_board['B']} W={game.pieces_on_board['W']}")
+            print(f"Pieces in hand: B={game.pieces_in_hand['B']} W={game.pieces_in_hand['W']}")
+
+    # --- Movement Phase ---
+    if game.phase == 'movement' and not game_over:
+        print()
+        print("--- MOVEMENT PHASE ---")
+        game.display_board()
+
+    while game.phase == 'movement' and not game_over:
+        # Record history and check repetition BEFORE move
+        game.record_history()
+        game_over, result_desc = game.check_repetition()
+        if game_over:
+            break
+
+        color = game.current_player
+        agent = agents[color]
+        agent_name = names[color]
+        p_prefix = get_p_prefix(agent_name)
+        stats["turns"] += 1
+
+        # Check stalemate before move
+        legal_moves = game.get_legal_movements(color)
+        if not legal_moves:
+            print(f"{agent_name} ({color}): no legal moves, STALEMATE/DRAW")
+            stats[f"{p_prefix}_stalemate"] += 1
+            result_desc = "Draw (Stalemate - No Legal Moves)"
+            game_over = True
+            break
+
+        state = game.get_state_for_agent(color)
+        feedback = None
+        move_made = False
+
+        for attempt in range(MAX_ATTEMPTS):
+            move = None
+            try:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(max(1, int(MOVE_TIMEOUT)))
+                try:
+                    move = agent.make_move(state, feedback)
+                finally:
+                    signal.alarm(0)
+            except MoveTimeoutException:
+                print(f"{agent_name} ({color}): TIMEOUT")
+                stats[f"{p_prefix}_timeout"] += 1
+                mv, captured = do_random_movement(color)
+                if mv:
+                    cap_str = f" captured {captured}" if captured else ""
+                    print(f"{agent_name} ({color}): random move {mv[0]}->{mv[1]}{cap_str}")
+                    stats[f"{p_prefix}_captures"] += len(captured)
+                move_made = True
+                break
+            except Exception as e:
+                print(f"{agent_name} ({color}): CRASH '{str(e)[:80]}'")
+                stats[f"{p_prefix}_crash"] += 1
+                mv, captured = do_random_movement(color)
+                if mv:
+                    cap_str = f" captured {captured}" if captured else ""
+                    print(f"{agent_name} ({color}): random move {mv[0]}->{mv[1]}{cap_str}")
+                    stats[f"{p_prefix}_captures"] += len(captured)
+                move_made = True
+                break
+
+            if not isinstance(move, (tuple, list)) or len(move) != 2:
+                stats[f"{p_prefix}_invalid"] += 1
+                remaining = MAX_ATTEMPTS - attempt - 1
+                print(f"{agent_name} ({color}): INVALID OUTPUT '{move}' ({remaining} retries)")
+                feedback = {
+                    "error_code": "INVALID_OUTPUT",
+                    "error_message": f"Expected (from_spot, to_spot) tuple, got {type(move).__name__}",
+                    "attempted_move": str(move),
+                    "attempt_number": attempt + 1,
+                }
+                continue
+
+            try:
+                from_spot, to_spot = int(move[0]), int(move[1])
+            except (ValueError, TypeError):
+                stats[f"{p_prefix}_invalid"] += 1
+                remaining = MAX_ATTEMPTS - attempt - 1
+                print(f"{agent_name} ({color}): INVALID non-int move {move} ({remaining} retries)")
+                feedback = {
+                    "error_code": "INVALID_OUTPUT",
+                    "error_message": f"Could not convert move to integers: {move}",
+                    "attempted_move": str(move),
+                    "attempt_number": attempt + 1,
+                }
+                continue
+
+            ok, msg, error_code = game.validate_movement(from_spot, to_spot, color)
+            if not ok:
+                stats[f"{p_prefix}_invalid"] += 1
+                remaining = MAX_ATTEMPTS - attempt - 1
+                print(f"{agent_name} ({color}): INVALID move {from_spot}->{to_spot} - {msg} ({remaining} retries)")
+                feedback = {
+                    "error_code": error_code,
+                    "error_message": msg,
+                    "attempted_move": (from_spot, to_spot),
+                    "attempt_number": attempt + 1,
+                }
+                continue
+
+            captured = game.apply_movement(from_spot, to_spot, color)
+            cap_str = f" captured {captured}" if captured else ""
+            print(f"{agent_name} ({color}): move {from_spot}->{to_spot}{cap_str}")
+            stats[f"{p_prefix}_captures"] += len(captured)
+            move_made = True
+            break
+
+        if not move_made:
+            print(f"{agent_name} ({color}): 3 failed attempts, random fallback")
+            mv, captured = do_random_movement(color)
+            if mv:
+                cap_str = f" captured {captured}" if captured else ""
+                print(f"{agent_name} ({color}): random move {mv[0]}->{mv[1]}{cap_str}")
+                stats[f"{p_prefix}_captures"] += len(captured)
+            else:
+                print(f"{agent_name} ({color}): no legal moves after fallback, STALEMATE")
+                stats[f"{p_prefix}_stalemate"] += 1
+                result_desc = "Draw (Stalemate - No Legal Moves)"
+                game_over = True
+                break
+
+        # Check game end AFTER move: elimination first, then turn limit
+        game.move_count += 1
+
+        game_over, result_desc = game.check_elimination()
+        if not game_over:
+            game_over, result_desc = game.check_turn_limit()
+
+        if game_over:
+            break
+
+        game.current_player = game.opponent(color)
+
+        if game.move_count % 10 == 0:
+            game.display_board()
+            print(f"Move {game.move_count}: B={game.pieces_on_board['B']} W={game.pieces_on_board['W']}")
+
+    if not result_desc:
+        result_desc = "Game ended unexpectedly"
+
+    print()
+    game.display_board()
+    print(f"Pieces: B={game.pieces_on_board['B']} W={game.pieces_on_board['W']}")
+    print(f"GAME {game_num} ENDED: {result_desc}")
+
+    # Determine winner and score
+    score = 0
+    winner_color = None
+
+    if "wins" in result_desc:
+        winner_color = result_desc[0]
+        winner = names[winner_color]
+
+        if "Repetition" in result_desc:
+            b_count = game.pieces_on_board['B']
+            w_count = game.pieces_on_board['W']
+            score = abs(b_count - w_count)
+        else:
+            score = game.pieces_on_board[winner_color]
+
+    elif "Draw" in result_desc:
+        winner_color = None
+        winner = "DRAW"
+        total_pieces = game.pieces_on_board['B'] + game.pieces_on_board['W']
+        score = total_pieces / 2.0
+    else:
+        winner_color = None
+        winner = "DRAW"
+        score = 0.5
+
+    print(f"\nGame {game_num}")
+    print("Final board:")
+    game.display_board()
+
+    if winner != "DRAW":
+        print(f"{winner_color} ({winner}) wins with score of {score}")
+    else:
+        print(f"Game ended in a DRAW")
+
+    print(f"Winner: {winner}")
+
+    if winner != "DRAW":
+        match_stats["wins"][winner] += 1
+        match_stats["scores"][winner] += score
+    else:
+        match_stats["scores"]["Agent-1"] += score
+        match_stats["scores"]["Agent-2"] += score
+
+    print("=" * 60)
+    sys.stdout.flush()
+
+    return winner
+
+
+def main():
+    match_stats = {
+        "wins": {"Agent-1": 0, "Agent-2": 0},
+        "scores": {"Agent-1": 0, "Agent-2": 0}
+    }
+
+    for i in range(NUM_GAMES):
+        play_game(i + 1, match_stats)
+        sys.stdout.flush()
+
+    print("\nFinal Results")
+    print(f"Agent 1 Wins: {match_stats['wins']['Agent-1']} times")
+    print(f"Agent 2 Wins: {match_stats['wins']['Agent-2']} times")
+    print("Scores:")
+    print(f"Agent 1: {match_stats['scores']['Agent-1']}")
+    print(f"Agent 2: {match_stats['scores']['Agent-2']}")
+
+    print(f"RESULT:Agent-1={match_stats['scores']['Agent-1']},Agent-2={match_stats['scores']['Agent-2']}")
+    print("--- MATCH STATISTICS ---")
+
+    print(f"Agent-1 Crashes: {stats['p1_crash']}")
+    print(f"Agent-2 Crashes: {stats['p2_crash']}")
+    print(f"Agent-1 Captures: {stats['p1_captures']}")
+    print(f"Agent-2 Captures: {stats['p2_captures']}")
+    print(f"Agent-1 Stalemates: {stats['p1_stalemate']}")
+    print(f"Agent-2 Stalemates: {stats['p2_stalemate']}")
+    print(f"Total Turns: {stats['turns']}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+# ============================================================
+# Human play mode code
+# ============================================================
+HUMAN_PLAY_CODE = r'''
+import random
+import datetime
+import os
 
 
 class HumanAgent:
-    """Human player that inputs moves via terminal."""
-
     def __init__(self, name, color):
         self.name = name
         self.color = color
 
     def make_move(self, state, feedback=None):
-        """Display board state and prompt for move input."""
         game = SurroundMorrisGame()
         game.board = state["board"][:]
         game.phase = state["phase"]
@@ -934,7 +758,7 @@ class HumanAgent:
             print(f"Phase: {state['phase'].upper()}")
             print("=" * 60)
 
-            game.display_board()
+            game.display_board_with_numbers()
 
             print(f"Pieces on board: B={state['pieces_on_board']['B']} W={state['pieces_on_board']['W']}")
             print(f"Pieces in hand: B={state['pieces_in_hand']['B']} W={state['pieces_in_hand']['W']}")
@@ -945,11 +769,7 @@ class HumanAgent:
                 print()
 
             if state["phase"] == "placement":
-                legal = game.get_legal_placements(self.color)
-                print(f"Legal placement spots: {legal}")
-                print()
                 print("Enter a spot number (0-23) to place your piece:")
-                
                 try:
                     move = input("> ").strip()
                     spot = int(move)
@@ -961,11 +781,7 @@ class HumanAgent:
                 except ValueError:
                     print("Please enter a valid number.")
             else:
-                legal = game.get_legal_movements(self.color)
-                print(f"Legal moves: {legal}")
-                print()
                 print("Enter move as 'from to' (e.g., '3 4'):")
-                
                 try:
                     move = input("> ").strip()
                     parts = move.split()
@@ -983,30 +799,26 @@ class HumanAgent:
 
 
 class RandomAgent:
-    """Bot that plays random valid moves."""
-
     def __init__(self, name, color):
         self.name = name
         self.color = color
 
     def make_move(self, state, feedback=None):
-        """Pick a random valid move."""
-        game = SurroundMorrisGame()
-        game.board = state["board"][:]
-        game.phase = state["phase"]
-        game.pieces_in_hand = state["pieces_in_hand"].copy()
-        game.pieces_on_board = state["pieces_on_board"].copy()
-
         if state["phase"] == "placement":
-            legal = game.get_legal_placements(self.color)
-            if legal:
-                return random.choice(legal)
-            return 0
+            legal = [s for s in range(24) if state["board"][s] == '']
+            return random.choice(legal) if legal else 0
         else:
-            legal = game.get_legal_movements(self.color)
-            if legal:
-                return random.choice(legal)
-            return None
+            moves = []
+            for f in range(24):
+                if state["board"][f] != self.color:
+                    continue
+                for t in ADJACENCY[f]:
+                    if state["board"][t] == '':
+                        moves.append((f, t))
+            return random.choice(moves) if moves else None
+
+
+MAX_TURNS = 200
 
 
 if __name__ == "__main__":
@@ -1029,22 +841,24 @@ if __name__ == "__main__":
     agents = {"B": human if human.color == "B" else bot, "W": human if human.color == "W" else bot}
     names = {"B": agents["B"].name, "W": agents["W"].name}
 
-    # --- Placement Phase ---
+    game = SurroundMorrisGame()
+    result_desc = None
+    game_over = False
+
     print("--- PLACEMENT PHASE ---")
     print("Each player places 9 pieces.")
-    
-    while game.phase == 'placement':
+
+    while game.phase == 'placement' and not game_over:
         color = game.current_player
         agent = agents[color]
         agent_name = names[color]
-        
+
         state = game.get_state_for_agent(color)
         move = agent.make_move(state, None)
-        
+
         ok, msg, _ = game.validate_placement(move, color)
         if not ok:
             print(f"{agent_name} ({color}): Invalid placement {move} - {msg}")
-            # Random fallback for bot
             if agent_name == "Bot":
                 legal = game.get_legal_placements(color)
                 if legal:
@@ -1056,82 +870,116 @@ if __name__ == "__main__":
             captured = game.apply_placement(move, color)
             cap_str = f" - captured {captured}" if captured else ""
             print(f"{agent_name} ({color}): placed at {move}{cap_str}")
-        
+
+        game_over, result_desc = game.check_elimination()
+        if game_over:
+            break
+
         game.check_phase_transition()
         game.current_player = game.opponent(color)
 
-    # --- Movement Phase ---
     print()
     print("=" * 60)
     print("--- MOVEMENT PHASE ---")
     print("=" * 60)
-    game.display_board()
+    game.display_board_with_numbers()
 
-    while game.phase == 'movement':
-        game_over, result_desc = game.is_game_over()
+    while game.phase == 'movement' and not game_over:
+        game.record_history()
+        game_over, result_desc = game.check_repetition()
         if game_over:
             break
-        
+
         color = game.current_player
         agent = agents[color]
         agent_name = names[color]
-        game.move_count += 1
-        
-        # Check if player has legal moves
+
         legal_moves = game.get_legal_movements(color)
         if not legal_moves:
-            print(f"{agent_name} ({color}): no legal moves, forced pass")
-            game.consecutive_passes += 1
-            game.current_player = game.opponent(color)
-            continue
-        
+            print(f"{agent_name} ({color}): no legal moves, STALEMATE")
+            game_over = True
+            result_desc = "Draw (Stalemate)"
+            break
+
         state = game.get_state_for_agent(color)
         move = agent.make_move(state, None)
-        
+
         if move is None:
-            print(f"{agent_name} ({color}): no move returned, pass")
-            game.consecutive_passes += 1
-            game.current_player = game.opponent(color)
+            print(f"{agent_name} ({color}): no move returned")
             continue
-        
+
         from_spot, to_spot = move
         ok, msg, _ = game.validate_movement(from_spot, to_spot, color)
         if not ok:
             print(f"{agent_name} ({color}): Invalid move {from_spot}->{to_spot} - {msg}")
-            # Random fallback for bot
             if agent_name == "Bot" and legal_moves:
                 from_spot, to_spot = random.choice(legal_moves)
                 captured = game.apply_movement(from_spot, to_spot, color)
                 cap_str = f" - captured {captured}" if captured else ""
                 print(f"{agent_name} ({color}): moved {from_spot}->{to_spot}{cap_str}")
-                game.consecutive_passes = 0
         else:
             captured = game.apply_movement(from_spot, to_spot, color)
             cap_str = f" - captured {captured}" if captured else ""
             print(f"{agent_name} ({color}): moved {from_spot}->{to_spot}{cap_str}")
-            game.consecutive_passes = 0
-        
+
+        game.move_count += 1
+
+        game_over, result_desc = game.check_elimination()
+        if not game_over:
+            game_over, result_desc = game.check_turn_limit()
+
+        if game_over:
+            break
+
         game.current_player = game.opponent(color)
 
-    # Game over
     print()
     print("=" * 60)
-    game.display_board()
+    game.display_board_with_numbers()
     print(f"Pieces: B={game.pieces_on_board['B']} W={game.pieces_on_board['W']}")
-    
-    game_over, result_desc = game.is_game_over()
-    if result_desc:
-        print(f"GAME ENDED: {result_desc}")
+
+    winner_name = "DRAW"
+    winner_color = None
+
+    if result_desc and "wins" in result_desc:
+        winner_color = result_desc[0]
+        winner_name = names[winner_color]
+        score = game.pieces_on_board[winner_color]
+        print(f"GAME ENDED: {winner_color} ({winner_name}) wins with score of {score}")
     else:
-        print("GAME ENDED")
-    
+        print(f"GAME ENDED: {result_desc if result_desc else 'Draw'}")
+
     print()
     print("Thanks for playing!")
+
+    try:
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"surround_morris_human_{ts}.txt"
+        log_dir = "."
+        if os.path.exists("../results/surround_morris/game_logs"):
+            log_dir = "../results/surround_morris/game_logs"
+        elif os.path.exists("results/surround_morris/game_logs"):
+            log_dir = "results/surround_morris/game_logs"
+        filepath = os.path.join(log_dir, filename)
+        with open(filepath, "w") as f:
+            f.write(f"Surround Morris Game - Human vs Bot\n")
+            f.write(f"Date: {datetime.datetime.now()}\n")
+            f.write("=" * 60 + "\n")
+            f.write(f"Result: {result_desc}\n")
+            if winner_color:
+                f.write(f"Winner: {winner_name} ({winner_color})\n")
+            else:
+                f.write("Winner: DRAW\n")
+            f.write(f"\nPieces B: {game.pieces_on_board['B']}\n")
+            f.write(f"Pieces W: {game.pieces_on_board['W']}\n")
+            f.write(f"Total Moves: {game.move_count}\n")
+        print(f"\nGame report saved to: {filepath}")
+    except Exception as e:
+        print(f"Could not save game report: {e}")
 '''
 
 
 def find_model_folder(pattern: str) -> str | None:
-    """Find a model folder matching the given pattern."""
     if not AGENTS_DIR.exists():
         logger.error("Agents directory not found: %s", AGENTS_DIR)
         return None
@@ -1152,7 +1000,6 @@ def find_model_folder(pattern: str) -> str | None:
 
 
 def get_available_runs(model_folder: str, game: str) -> list[int]:
-    """Get list of available run IDs for a model and game."""
     model_dir = AGENTS_DIR / model_folder
     runs = []
     pattern = re.compile(rf"^{re.escape(game)}_(\d+)\.py$")
@@ -1168,7 +1015,6 @@ def get_available_runs(model_folder: str, game: str) -> list[int]:
 def load_stored_agent(
     model_folder: str, game: str, run: int, agent_idx: int
 ) -> tuple[str, str]:
-    """Load agent code from a stored file and extract the agent class."""
     agent_file = AGENTS_DIR / model_folder / f"{game}_{run}.py"
 
     if not agent_file.exists():
@@ -1178,7 +1024,6 @@ def load_stored_agent(
     content = agent_file.read_text()
     lines = content.split("\n")
 
-    # Skip the header docstring
     code_start = 0
     in_docstring = False
     for i, line in enumerate(lines):
@@ -1191,7 +1036,6 @@ def load_stored_agent(
 
     code_lines = lines[code_start:]
 
-    # Extract imports and find class
     imports = []
     class_start_idx = None
 
@@ -1210,7 +1054,6 @@ def load_stored_agent(
         logger.error("No SurroundMorrisAgent class found in %s", agent_file)
         return "", ""
 
-    # Extract ONLY the SurroundMorrisAgent class
     class_lines = []
     base_indent = 0
 
@@ -1236,7 +1079,6 @@ def load_stored_agent(
 
     agent_code = "\n".join(class_lines)
 
-    # Rename SurroundMorrisAgent to SurroundMorrisAgent_{agent_idx}
     agent_code = re.sub(
         r"\bSurroundMorrisAgent\b", f"SurroundMorrisAgent_{agent_idx}", agent_code
     )
@@ -1245,7 +1087,6 @@ def load_stored_agent(
 
 
 def parse_agent_spec(spec: str) -> tuple[str, list[int]]:
-    """Parse agent spec like 'model1:1:2' into (pattern, [run_ids])."""
     parts = spec.split(":")
     model_pattern = parts[0]
     runs = [int(r) for r in parts[1:]]
@@ -1258,25 +1099,40 @@ def build_game_code(
     extra_imports: str,
     num_games: int,
     move_timeout: float,
+    max_turns: int,
     agent1_info: str,
     agent2_info: str,
 ) -> str:
-    """Build the complete game code with both agent implementations."""
-    return GAME_CODE_TEMPLATE.format(
-        num_games=num_games,
-        move_timeout=move_timeout,
-        extra_imports=extra_imports,
-        agent1_code=agent1_code,
-        agent2_code=agent2_code,
-        agent1_info=agent1_info,
-        agent2_info=agent2_info,
+    header = (
+        "import sys\n"
+        "import random\n"
+        "import signal\n"
+        "from collections import Counter\n"
+        "\n"
+        f"MOVE_TIMEOUT = {move_timeout}\n"
+        f"MAX_TURNS = {max_turns}\n"
+        f"NUM_GAMES = {num_games}\n"
+        f'AGENT1_INFO = "{agent1_info}"\n'
+        f'AGENT2_INFO = "{agent2_info}"\n'
     )
+
+    return "\n\n".join([
+        header,
+        extra_imports,
+        agent1_code,
+        agent2_code,
+        GAME_ENGINE_CODE,
+        MATCH_RUNNER_CODE,
+    ])
+
+
+def build_human_game_code() -> str:
+    return GAME_ENGINE_CODE + "\n\n" + HUMAN_PLAY_CODE
 
 
 def run_match(
     game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = 600
 ) -> dict:
-    """Run a single match in a subprocess."""
     temp_id = uuid.uuid4().hex[:8]
     temp_file = os.path.join(
         tempfile.gettempdir(), f"surround_morris_match_{match_id}_{temp_id}.py"
@@ -1301,7 +1157,6 @@ def run_match(
                 "error": result.stderr[:500],
             }
 
-        # Parse results
         match = re.search(
             r"RESULT:Agent-1=([\d.]+),Agent-2=([\d.]+)", result.stdout
         )
@@ -1314,8 +1169,10 @@ def run_match(
             log_lines = []
             for line in result.stdout.splitlines():
                 if line.startswith((
-                    "Agent-1:", "Agent-2:", "GAME ", "Winner:",
+                    "Agent-1:", "Agent-2:", "GAME ", "Game ", "Winner:",
                     "Running Total", "==========", "--- MOVEMENT",
+                    "Final", "Scores:", "Agent 1", "Agent 2",
+                    "B (", "W (", " |", " -"
                 )) or "ENDED" in line or line.strip() == "":
                     log_lines.append(line)
 
@@ -1353,19 +1210,17 @@ def run_match(
         }
     finally:
         if os.path.exists(temp_file):
-            os.remove(temp_file)
+            pass
 
 
 async def run_match_async(
     game_code: str, match_id: int, run_ids: tuple[int, int]
 ) -> dict:
-    """Run a match asynchronously via executor."""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, run_match, game_code, match_id, run_ids)
 
 
 async def main_async():
-    """Main entry point for agent-vs-agent matches."""
     parser = argparse.ArgumentParser(description="Run Surround Morris matches")
     parser.add_argument(
         "--agent", nargs="+",
@@ -1377,14 +1232,13 @@ async def main_async():
     )
     args = parser.parse_args()
 
-    # Human play mode
     if args.human:
         temp_file = os.path.join(
             tempfile.gettempdir(), f"surround_morris_human_{uuid.uuid4().hex[:8]}.py"
         )
         try:
             with open(temp_file, "w") as f:
-                f.write(HUMAN_GAME_CODE)
+                f.write(build_human_game_code())
             subprocess.run(
                 ["python", temp_file], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr
             )
@@ -1451,7 +1305,7 @@ async def main_async():
 
         game_code = build_game_code(
             code1, code2, extra_imports, NUM_GAMES_PER_MATCH,
-            MOVE_TIME_LIMIT, agent1_info, agent2_info,
+            MOVE_TIME_LIMIT, MAX_TURNS_PER_GAME, agent1_info, agent2_info,
         )
 
         match_tasks.append(run_match_async(game_code, i + 1, (run1, run2)))

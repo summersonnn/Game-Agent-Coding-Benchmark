@@ -5,7 +5,6 @@ Surround Morris is a 2-player territorial strategy game on a Nine Men's Morris b
 The game is played on a 24-spot board consisting of three concentric squares connected at midpoints. Each player has 9 pieces (Black 'B' vs White 'W'). The goal is to eliminate all opponent pieces from the board.
 
 ## Board Layout
-
 ```
  0-----------1-----------2
  |           |           |
@@ -15,9 +14,9 @@ The game is played on a 24-spot board consisting of three concentric squares con
  |   |   |       |   |   |
  9--10--11      12--13--14
  |   |   |       |   |   |
- |   |  15--16--17   |   |
+ |   |   15--16--17  |   |
  |   |       |       |   |
- |  18------19------20   |
+ |   18------19------20  |
  |           |           |
 21----------22----------23
 ```
@@ -25,7 +24,6 @@ The game is played on a 24-spot board consisting of three concentric squares con
 Spots are numbered 0-23. Lines between spots indicate adjacency (legal movement paths).
 
 ## Adjacency Graph
-
 ```python
 ADJACENCY = {
     0: [1, 9],       1: [0, 2, 4],     2: [1, 14],
@@ -39,65 +37,82 @@ ADJACENCY = {
 }
 ```
 
-**Node types by neighbor count:**
-- **Corners (2 neighbors):** 0, 2, 6, 8, 15, 17, 18, 20, 21, 23, 3, 5
-- **T-junctions (3 neighbors):** 1, 7, 9, 11, 12, 14, 16, 22
-- **Crossroads (4 neighbors):** 4, 10, 13, 19
-
 ## The Capture Rule: "Overwhelm"
 
 A piece is captured and removed when it satisfies BOTH conditions:
 1. It has **zero empty adjacent spots** (completely blocked)
 2. The number of **adjacent opponents is strictly greater** than the number of **adjacent friendlies**
-
 ```
 IF (empty_neighbors == 0) AND (opponent_neighbors > friendly_neighbors) -> CAPTURED
 ```
 
-**Examples:**
+### Critical Capture Logic: "Suicide First, Self-Harm Priority"
+Captures are processed in a specific order after every move (Placement or Movement):
 
-| Scenario | Opponents | Friendlies | Empty | Result |
-|----------|:---------:|:----------:|:-----:|--------|
-| Total Blockade | 4 | 0 | 0 | CAPTURED (4 > 0) |
-| Overwhelmed | 3 | 1 | 0 | CAPTURED (3 > 1) |
-| Heavily Defended | 1 | 3 | 0 | SAFE (1 < 3) |
-| Stalemate | 2 | 2 | 0 | SAFE (2 = 2) |
-| Escape Open | 3 | 0 | 1 | SAFE (has empty) |
+1. **Active Piece Suicide Check:** The engine checks the piece you just played.
+   * If it meets capture criteria -> **It is removed immediately.**
+   * **Consequence:** It dies *before* it can help capture any neighbors. It captures nothing. The turn ends.
+2. **Universal Capture Sweep (Self-Harm Priority):**
+   * Only if the active piece *survived* step 1, the engine scans the board.
+   * **Step 2a:** All **friendly pieces** (same color as mover) that are now overwhelmed are removed first.
+   * **Step 2b:** The engine **re-checks** all **enemy pieces**. Some enemy pieces that were overwhelmed before step 2a may now have empty neighbors (from removed friendly pieces) and survive.
+   * This means your own pieces always die before enemies in a mutual capture scenario. You cannot kill an enemy by blocking them if doing so also blocks your own piece — your piece dies first, potentially freeing the enemy.
 
 ## Gameplay Phases
 
 ### Phase 1: Placement
 1. Board starts empty. Players alternate placing one piece at a time onto any vacant spot.
 2. Black ('B') always places first.
-3. Captures are checked after every placement. All opponent pieces satisfying the capture condition are removed immediately.
-4. **Anti-suicide rule:** You cannot place a piece where it would be immediately captured. (The engine checks: place piece -> remove opponent captures -> if placed piece is still captured, the move is illegal.)
+3. **Suicide is LEGAL:** You are allowed to place a piece into a spot where it will die immediately. However, due to the "Suicide First" rule, this is usually a wasted move (you die, enemy survives).
+4. **Elimination during placement:** If a player has 0 pieces on board AND 0 pieces in hand, they lose immediately.
 5. Phase ends when both players have placed all 9 pieces (18 total placements).
 
 ### Phase 2: Movement
 1. Players alternate sliding one piece along a line to an adjacent empty spot.
 2. **No flying:** Even with few pieces, you must slide to adjacent spots only.
-3. Captures are checked after every move. Only opponent pieces can be captured during movement (the moved piece always has the vacated spot as an empty neighbor).
-4. If a player has no legal moves, they pass (forced pass).
+3. **Universal Capture:** Moving a piece can trigger the death of **any** piece on the board.
+   * Be careful not to block your own pieces ("Friendly Fire").
+   * Moving a piece *away* from a cluster might leave a friend behind it overwhelmed.
+   * In mutual capture scenarios, your pieces die first (Self-Harm Priority).
+4. **Stalemate:** If a player has **no legal moves** (all pieces are blocked), the game ends immediately in a **DRAW**.
 
 ## Game End Conditions
 
-The game ends during the movement phase when:
-- A player has **0 pieces** on the board -> their opponent wins
-- **200 movement turns** have elapsed -> draw
-- **6 consecutive passes** -> draw
+The game can end during **either phase** for elimination, and during the **movement phase** for all other conditions:
+
+1. **Elimination (both phases):** A player has **0 pieces on board** (and during placement, also **0 pieces in hand**) -> Opponent wins. If a move harms both sides, the mover is checked first (self-harm priority), so the mover loses.
+2. **Stalemate (movement only):** A player has **no legal moves** -> Draw.
+3. **Turn Limit (movement only):** **200 movement turns** have elapsed -> Draw. Move count starts in the movement phase.
+4. **Repetition (movement only):** The exact same board position (pieces + active player) occurs **3 times**.
+   * Repetition is checked **before** each move. History is recorded at the start of each turn.
+   * **Result:** The game ends immediately.
+   * **Winner:** The player with **more pieces** on the board wins.
+   * If piece counts are equal -> Draw.
+
+### Game Loop Order (Movement Phase)
+1. Record current state to history.
+2. Check 3-fold repetition — if triggered, game ends.
+3. Check stalemate — if no legal moves, game ends (Draw).
+4. Player makes their move.
+5. Apply move with capture logic (Suicide First, then Self-Harm Priority Sweep).
+6. Increment move count.
+7. Check elimination — if triggered, game ends (mover checked first).
+8. Check turn limit — if triggered, game ends (Draw).
+9. Switch to opponent's turn.
 
 ## Board Geometry & Capture Thresholds
 
-| Position Type | Neighbors | To Capture (0 Friendlies) | To Capture (1 Friendly) |
+**CRITICAL:** The thresholds below apply *only* if the piece has **0 empty neighbors**. If `empty_neighbors > 0`, the piece is **SAFE**, regardless of the opponent count.
+
+| Position Type | Total Neighbors | To Capture (With 0 Empty & 0 Friendlies) | To Capture (With 0 Empty & 1 Friendly) |
 |---------------|:---------:|:-------------------------:|:-----------------------:|
-| Corner | 2 | 2 opponents | Impossible (1=1, tie) |
+| Corner | 2 | 2 opponents | Impossible (1 vs 1 tie) |
 | T-junction | 3 | 3 opponents | 2 opponents (2 > 1) |
 | Crossroad | 4 | 4 opponents | 3 opponents (3 > 1) |
 
 ## Game Engine Reference
 
 The game engine provides a `SurroundMorrisGame` class with this state:
-
 ```python
 class SurroundMorrisGame:
     board: list[str]          # 24 elements: '', 'B', or 'W'
@@ -106,12 +121,13 @@ class SurroundMorrisGame:
     pieces_on_board: dict     # {'B': int, 'W': int}
     current_player: str       # 'B' or 'W'
     move_count: int           # movement turns elapsed
+    history: list[tuple]      # list of (board_tuple, current_player) for repetition checking
 
     def get_legal_placements(color) -> list[int]
-        # Empty spots where placement is not suicide
+        # All empty spots (Suicide is legal)
 
     def get_legal_movements(color) -> list[tuple[int, int]]
-        # All (from_spot, to_spot) pairs
+        # All (from_spot, to_spot) pairs. Returns empty list if stalemated.
 
     def is_captured(spot, board) -> bool
         # Check capture condition for piece at spot
@@ -124,7 +140,6 @@ class SurroundMorrisGame:
 |------|---------|
 | `INVALID_SPOT_OOB` | Spot not in [0, 23] |
 | `INVALID_SPOT_OCCUPIED` | Spot already has a piece |
-| `INVALID_SUICIDE` | Placement would result in immediate capture |
 | `INVALID_WRONG_PHASE` | Not in placement phase |
 | `INVALID_OUTPUT` | Return value was not an integer |
 
@@ -142,7 +157,6 @@ class SurroundMorrisGame:
 ## Error Handling
 
 You get up to **3 attempts** per turn. On failure, you receive a `feedback` dict:
-
 ```python
 {
     "error_code": str,        # one of the error codes above
@@ -152,14 +166,11 @@ You get up to **3 attempts** per turn. On failure, you receive a `feedback` dict
 }
 ```
 
-After 3 failures, a timeout, or a crash, the engine makes a random valid move for you.
-
 ## Implementation Task
 
 Implement a `SurroundMorrisAgent` class that plays the game.
 
 ## SurroundMorrisAgent Interface
-
 ```python
 import random
 
@@ -204,6 +215,10 @@ class SurroundMorrisAgent:
                     # {'B': int, 'W': int} - pieces currently on the board
                 "move_count": int,
                     # Number of movement turns elapsed (0 during placement)
+                "history": list[tuple],
+                    # List of (board_tuple, current_player) states seen so far.
+                    # Use this to detect and avoid 3-fold repetition.
+                    # Reset when transitioning from placement to movement phase.
             }
 
         feedback : dict or None
@@ -248,18 +263,20 @@ class SurroundMorrisAgent:
 
 ## Strategy Tips
 
-1. **Control crossroads (4 neighbors):** Spots 4, 10, 13, 19 are hardest to capture and give the most influence over adjacent pieces. Prioritize these during placement.
-2. **Target corners (2 neighbors):** Corner pieces are easy to trap - only 2 enemies needed for capture with no friendly support.
-3. **Build clusters:** Adjacent friendly pieces defend each other. Isolated pieces are vulnerable.
-4. **Create pressure chains:** Position pieces to threaten multiple captures with a single move. Look for spots where moving in closes the last empty neighbor of an enemy AND creates numerical superiority.
-5. **Preserve empty neighbors:** Keep escape routes for your pieces. A piece with at least one empty neighbor cannot be captured regardless of enemy count.
-6. **Count before moving:** Before sliding, check if the destination closes gaps around your own pieces that might make them vulnerable.
-7. **Placement phase is critical:** The opening 18 placements determine the entire board structure. Fight for central positions while disrupting opponent clusters.
-8. **Anti-suicide awareness:** During placement, the engine rejects moves where your piece would be immediately captured (after opponent captures resolve). Use this knowledge - you can safely place next to enemies if you'll also trigger a capture that frees your piece.
+1. **Avoid Suicide:** Suicide moves are legal but usually disastrous. Your piece is removed *before* it can capture enemies. Only use it if you are forced or have a specific deep-search reason.
+2. **Watch for Friendly Fire:** Before moving, check if your move will block a friendly piece's last air hole. The engine kills your pieces first in the sweep, which may then free the enemy pieces you were trying to capture.
+3. **Control crossroads (4 neighbors):** Spots 4, 10, 13, 19 give the most influence.
+4. **Target corners (2 neighbors):** Corner pieces are easy to trap (needs only 2 enemies).
+5. **Score Advantage:** Since 3-fold repetition awards the win to the player with more pieces, maintaining a material lead is a viable win condition.
+6. **Preserve empty neighbors:** Keep escape routes open.
+7. **Placement phase is critical:** Fight for central positions while disrupting opponent clusters.
+8. **Avoid Repetition When Behind:** If you have fewer pieces, avoid repeating board states — your opponent wins on repetition.
+9. **Use History:** The `history` field in the state dict lets you detect positions that have occurred before. Avoid entering a state for the 3rd time if you have fewer pieces.
 
 ## Competition Format
 
 - 1 vs 1 match.
-- Multiple games per match, alternating starting color.
-- Win = 1 point, Draw = 0.5 points each.
-- Cumulative score determines the winner.
+- Scoring Rules:
+    - Win by Elimination: Score = Winner's remaining pieces (e.g., 5 pieces vs 0 -> 5 points).
+    - Win by Repetition: Score = Difference in piece count (e.g., 7 pieces vs 4 -> 3 points).
+    - Draw (both cases): Each player receives half the total pieces on board (e.g., 6 total pieces / 2 = 3 points each).
