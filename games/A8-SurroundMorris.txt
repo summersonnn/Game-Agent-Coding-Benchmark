@@ -73,20 +73,19 @@ Captures are processed in a specific order after every move (Placement or Moveme
 3. **Universal Capture:** Moving a piece can trigger the death of **any** piece on the board.
    * Be careful not to block your own pieces ("Friendly Fire").
    * In mutual capture scenarios, your pieces die first (Self-Harm Priority).
-4. **Stalemate:** If a player has **no legal moves** (all pieces are blocked), the game ends immediately in a **DRAW**.
+4. **Mate:** If a player has **no legal moves** (all pieces are blocked), the game ends immediately. The stuck player **LOSES**.
 
 ## Game End Conditions
 
 The game can end during **either phase** for elimination, and during the **movement phase** for all other conditions:
 
 1. **Elimination (both phases):** A player has **0 pieces on board** (and during placement, also **0 pieces in hand**) -> Opponent wins. If a move harms both sides, the mover is checked first (self-harm priority), so the mover loses.
-2. **Stalemate (movement only):** A player has **no legal moves** -> Draw.
+2. **Mate:** A player has **no legal moves** -> The stuck player **LOSES**. The other player wins.
 3. **Turn Limit (movement only):** **200 movement turns** have elapsed -> Draw. Move count starts in the movement phase.
 4. **Repetition (movement only):** The exact same board position (pieces + active player) occurs **3 times**.
    * Repetition is checked **before** each move. History is recorded at the start of each turn.
-   * **Result:** The game ends immediately.
-   * **Winner:** The player with **more pieces** on the board wins. And score is determined with the formula: winner_pieces - loser_pieces.
-   * If piece counts are equal -> Draw.
+   * **Result:** The game ends immediately in a **DRAW**.
+   * **Score:** Each player receives half the total pieces on board.
 
 
 ## Board Geometry & Capture Thresholds
@@ -256,16 +255,16 @@ class SurroundMorrisAgent:
 2. **Watch for Friendly Fire:** Before moving, check if your move will block a friendly piece's last air hole. The engine kills your pieces first in the sweep, which may then free the enemy pieces you were trying to capture.
 3. **Control crossroads (4 neighbors):** Spots 4, 10, 13, 19 give the most influence.
 4. **Target corners (2 neighbors):** Corner pieces are easy to trap (needs only 2 enemies).
-5. **Score Advantage:** Since 3-fold repetition awards the win to the player with more pieces, maintaining a material lead is a viable win condition.
-6. **Preserve empty neighbors:** Keep escape routes open.
+5. **Score Advantage:** Since 3-fold repetition is now a draw, playing for repetition when ahead is less powerful than before, but still avoids a loss.
+6. **Preserve empty neighbors:** Keep escape routes open to avoid Mate.
 7. **Placement phase is critical:** Fight for central positions while disrupting opponent clusters.
-8. **Avoid Repetition When Behind:** If you have fewer pieces, avoid repeating board states — your opponent wins on repetition.
-9. **Use History:** The `history` field in the state dict lets you detect positions that have occurred before. Avoid entering a state for the 3rd time if you have fewer pieces.
+8. **Avoid Repetition When Ahead:** If you checkmate yourself by repetition, you only get half points.
+9. **Use History:** The `history` field in the state dict lets you detect positions that have occurred before.
 
 ## Competition Format
 
 - 1 vs 1 match.
 - Scoring Rules:
     - Win by Elimination: Score = Winner's remaining pieces (e.g., 5 pieces vs 0 -> 5 points).
-    - Win by Repetition: Score = Difference in piece count (e.g., 7 pieces vs 4 -> 3 points).
-    - Draw (both cases): Each player receives half the total pieces on board (e.g., 6 total pieces / 2 = 3 points each).
+    - Win by Mate (Stalemate): Score = **+7 for Winner, -7 for Loser** (Fixed).
+    - Draw (Turn Limit or Repetition): Each player receives half the total pieces on board (e.g., 6 total pieces / 2 = 3 points each).
