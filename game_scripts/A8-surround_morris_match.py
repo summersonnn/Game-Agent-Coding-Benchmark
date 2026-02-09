@@ -820,25 +820,51 @@ class RandomAgent:
 
 MAX_TURNS = 200
 
+MODE_TITLES = {
+    "humanvsbot": "Human vs Random Bot",
+    "humanvshuman": "Human vs Human",
+    "humanvsagent": "Human vs Stored Agent",
+}
+
 
 if __name__ == "__main__":
+    mode_title = MODE_TITLES.get(GAME_MODE, GAME_MODE)
+
     print("=" * 60)
-    print("SURROUND MORRIS - Human vs Random Bot")
+    print(f"SURROUND MORRIS - {mode_title}")
     print("=" * 60)
     print()
     print("Capture Rule: A piece is captured when it has zero empty")
     print("neighbors AND more opponent neighbors than friendly neighbors.")
     print()
-    if random.random() < 0.5:
-        human = HumanAgent("Human", "B")
-        bot = RandomAgent("Bot", "W")
-        print("You are B (Black, moves first)")
-    else:
-        human = HumanAgent("Human", "W")
-        bot = RandomAgent("Bot", "B")
-        print("You are W (White, moves second)")
 
-    agents = {"B": human if human.color == "B" else bot, "W": human if human.color == "W" else bot}
+    if GAME_MODE == "humanvsbot":
+        if random.random() < 0.5:
+            agent_b = HumanAgent("Human", "B")
+            agent_w = RandomAgent("Bot", "W")
+            print("You are B (Black, moves first)")
+        else:
+            agent_b = RandomAgent("Bot", "B")
+            agent_w = HumanAgent("Human", "W")
+            print("You are W (White, moves second)")
+
+    elif GAME_MODE == "humanvshuman":
+        agent_b = HumanAgent("Player 1", "B")
+        agent_w = HumanAgent("Player 2", "W")
+        print("Player 1 is B (Black, moves first)")
+        print("Player 2 is W (White, moves second)")
+
+    elif GAME_MODE == "humanvsagent":
+        if random.random() < 0.5:
+            agent_b = HumanAgent("Human", "B")
+            agent_w = SurroundMorrisAgent_1("Agent", "W")
+            print("You are B (Black, moves first)")
+        else:
+            agent_b = SurroundMorrisAgent_1("Agent", "B")
+            agent_w = HumanAgent("Human", "W")
+            print("You are W (White, moves second)")
+
+    agents = {"B": agent_b, "W": agent_w}
     names = {"B": agents["B"].name, "W": agents["W"].name}
 
     game = SurroundMorrisGame()
@@ -859,7 +885,7 @@ if __name__ == "__main__":
         ok, msg, _ = game.validate_placement(move, color)
         if not ok:
             print(f"{agent_name} ({color}): Invalid placement {move} - {msg}")
-            if agent_name == "Bot":
+            if not isinstance(agent, HumanAgent):
                 legal = game.get_legal_placements(color)
                 if legal:
                     move = random.choice(legal)
@@ -912,7 +938,7 @@ if __name__ == "__main__":
         ok, msg, _ = game.validate_movement(from_spot, to_spot, color)
         if not ok:
             print(f"{agent_name} ({color}): Invalid move {from_spot}->{to_spot} - {msg}")
-            if agent_name == "Bot" and legal_moves:
+            if not isinstance(agent, HumanAgent) and legal_moves:
                 from_spot, to_spot = random.choice(legal_moves)
                 captured = game.apply_movement(from_spot, to_spot, color)
                 cap_str = f" - captured {captured}" if captured else ""
@@ -954,7 +980,7 @@ if __name__ == "__main__":
 
     try:
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"surround_morris_human_{ts}.txt"
+        filename = f"surround_morris_{GAME_MODE}_{ts}.txt"
         log_dir = "."
         if os.path.exists("../results/surround_morris/game_logs"):
             log_dir = "../results/surround_morris/game_logs"
@@ -962,7 +988,7 @@ if __name__ == "__main__":
             log_dir = "results/surround_morris/game_logs"
         filepath = os.path.join(log_dir, filename)
         with open(filepath, "w") as f:
-            f.write(f"Surround Morris Game - Human vs Bot\n")
+            f.write(f"Surround Morris Game - {mode_title}\n")
             f.write(f"Date: {datetime.datetime.now()}\n")
             f.write("=" * 60 + "\n")
             f.write(f"Result: {result_desc}\n")
@@ -1126,8 +1152,18 @@ def build_game_code(
     ])
 
 
-def build_human_game_code() -> str:
-    return GAME_ENGINE_CODE + "\n\n" + HUMAN_PLAY_CODE
+def build_human_game_code(
+    mode: str, agent_code: str = "", agent_imports: str = ""
+) -> str:
+    mode_header = f'GAME_MODE = "{mode}"\n'
+    parts = [mode_header]
+    if mode == "humanvsagent" and agent_imports:
+        parts.append(agent_imports)
+    if mode == "humanvsagent" and agent_code:
+        parts.append(agent_code)
+    parts.append(GAME_ENGINE_CODE)
+    parts.append(HUMAN_PLAY_CODE)
+    return "\n\n".join(parts)
 
 
 def run_match(
@@ -1226,21 +1262,69 @@ async def main_async():
         "--agent", nargs="+",
         help="Agent specs: model1[:run1:run2] model2[:run3:run4]",
     )
-    parser.add_argument(
-        "--human", action="store_true",
+    human_group = parser.add_mutually_exclusive_group()
+    human_group.add_argument(
+        "--humanvsbot", action="store_true",
         help="Play interactively against a random bot",
+    )
+    human_group.add_argument(
+        "--humanvshuman", action="store_true",
+        help="Two humans play at the same terminal",
+    )
+    human_group.add_argument(
+        "--humanvsagent", action="store_true",
+        help="Play against a stored agent (requires --agent with 1 spec)",
     )
     args = parser.parse_args()
 
-    if args.human:
+    human_mode = None
+    if args.humanvsbot:
+        human_mode = "humanvsbot"
+    elif args.humanvshuman:
+        human_mode = "humanvshuman"
+    elif args.humanvsagent:
+        human_mode = "humanvsagent"
+
+    if human_mode:
+        if human_mode == "humanvsagent":
+            if not args.agent or len(args.agent) != 1:
+                print("ERROR: --humanvsagent requires exactly 1 --agent spec.")
+                print("Example: --humanvsagent --agent mistral:1")
+                sys.exit(1)
+            model_pattern, runs = parse_agent_spec(args.agent[0])
+            folder = find_model_folder(model_pattern)
+            if not folder:
+                sys.exit(1)
+            if not runs:
+                runs = get_available_runs(folder, GAME_NAME)
+            if not runs:
+                print(f"ERROR: No runs found for {folder}/{GAME_NAME}")
+                sys.exit(1)
+            agent_code, agent_imports = load_stored_agent(
+                folder, GAME_NAME, runs[0], 1
+            )
+            if not agent_code:
+                print(f"ERROR: Failed to load agent from {folder}")
+                sys.exit(1)
+            game_code = build_human_game_code(
+                "humanvsagent", agent_code, agent_imports
+            )
+        elif args.agent:
+            print("ERROR: --agent is not used with --humanvsbot or --humanvshuman.")
+            sys.exit(1)
+        else:
+            game_code = build_human_game_code(human_mode)
+
         temp_file = os.path.join(
-            tempfile.gettempdir(), f"surround_morris_human_{uuid.uuid4().hex[:8]}.py"
+            tempfile.gettempdir(),
+            f"surround_morris_{human_mode}_{uuid.uuid4().hex[:8]}.py",
         )
         try:
             with open(temp_file, "w") as f:
-                f.write(build_human_game_code())
+                f.write(game_code)
             subprocess.run(
-                ["python", temp_file], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr
+                ["python", temp_file],
+                stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr,
             )
         finally:
             if os.path.exists(temp_file):
