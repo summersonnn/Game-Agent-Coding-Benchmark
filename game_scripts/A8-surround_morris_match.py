@@ -970,7 +970,15 @@ if __name__ == "__main__":
     if result_desc and "wins" in result_desc:
         winner_color = result_desc[0]
         winner_name = names[winner_color]
-        score = game.pieces_on_board[winner_color]
+
+        # Use differential scoring for repetition wins
+        if "Repetition" in result_desc:
+            b_count = game.pieces_on_board['B']
+            w_count = game.pieces_on_board['W']
+            score = abs(b_count - w_count)
+        else:
+            score = game.pieces_on_board[winner_color]
+
         print(f"GAME ENDED: {winner_color} ({winner_name}) wins with score of {score}")
     else:
         print(f"GAME ENDED: {result_desc if result_desc else 'Draw'}")
