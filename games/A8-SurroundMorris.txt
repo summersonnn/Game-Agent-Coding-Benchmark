@@ -65,14 +65,13 @@ Captures are processed in a specific order after every move (Placement or Moveme
 2. Black ('B') always places first.
 3. **Suicide is LEGAL:** You are allowed to place a piece into a spot where it will die immediately. However, due to the "Suicide First" rule, this is usually a wasted move (you die, enemy survives).
 4. **Elimination during placement:** If a player has 0 pieces on board AND 0 pieces in hand, they lose immediately.
-5. Phase ends when both players have placed all 9 pieces (18 total placements).
+5. Phase ends when both players have placed all 9 pieces (18 total placements). Note that some of these pieces may have been captured during the placement phase.
 
 ### Phase 2: Movement
 1. Players alternate sliding one piece along a line to an adjacent empty spot.
 2. **No flying:** Even with few pieces, you must slide to adjacent spots only.
 3. **Universal Capture:** Moving a piece can trigger the death of **any** piece on the board.
    * Be careful not to block your own pieces ("Friendly Fire").
-   * Moving a piece *away* from a cluster might leave a friend behind it overwhelmed.
    * In mutual capture scenarios, your pieces die first (Self-Harm Priority).
 4. **Stalemate:** If a player has **no legal moves** (all pieces are blocked), the game ends immediately in a **DRAW**.
 
@@ -86,19 +85,9 @@ The game can end during **either phase** for elimination, and during the **movem
 4. **Repetition (movement only):** The exact same board position (pieces + active player) occurs **3 times**.
    * Repetition is checked **before** each move. History is recorded at the start of each turn.
    * **Result:** The game ends immediately.
-   * **Winner:** The player with **more pieces** on the board wins.
+   * **Winner:** The player with **more pieces** on the board wins. And score is determined with the formula: winner_pieces - loser_pieces.
    * If piece counts are equal -> Draw.
 
-### Game Loop Order (Movement Phase)
-1. Record current state to history.
-2. Check 3-fold repetition — if triggered, game ends.
-3. Check stalemate — if no legal moves, game ends (Draw).
-4. Player makes their move.
-5. Apply move with capture logic (Suicide First, then Self-Harm Priority Sweep).
-6. Increment move count.
-7. Check elimination — if triggered, game ends (mover checked first).
-8. Check turn limit — if triggered, game ends (Draw).
-9. Switch to opponent's turn.
 
 ## Board Geometry & Capture Thresholds
 
