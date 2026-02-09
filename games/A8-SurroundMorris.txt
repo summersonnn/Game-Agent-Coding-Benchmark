@@ -115,7 +115,7 @@ class SurroundMorrisGame:
         # All empty spots (Suicide is legal)
 
     def get_legal_movements(color) -> list[tuple[int, int]]
-        # All (from_spot, to_spot) pairs. Returns empty list if stalemated.
+        # All (from_spot, to_spot) pairs. Returns empty list if mated.
 
     def is_captured(spot, board) -> bool
         # Check capture condition for piece at spot
@@ -266,5 +266,5 @@ class SurroundMorrisAgent:
 - 1 vs 1 match.
 - Scoring Rules:
     - Win by Elimination: Score = Winner's remaining pieces (e.g., 5 pieces vs 0 -> 5 points).
-    - Win by Mate (Stalemate): Score = **+7 for Winner, -7 for Loser** (Fixed).
+    - Win by Mate: Score = **+7 for Winner, -7 for Loser** (Fixed).
     - Draw (Turn Limit or Repetition): Each player receives half the total pieces on board (e.g., 6 total pieces / 2 = 3 points each).

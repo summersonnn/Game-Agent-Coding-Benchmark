@@ -95,10 +95,10 @@ Requires a total number of agents that is a multiple of 6.
 
 ```bash
 # Use all runs from mistral and gpt-mini
-uv run python utils/wizard_match.py --agent mistral gpt-mini
+uv run python game_scripts/A3-wizard_match.py --agent mistral gpt-mini
 
 # Use specific runs
-uv run python utils/wizard_match.py --agent mistral:1:2:3 gpt-mini:1:2:3
+uv run python game_scripts/A3-wizard_match.py --agent mistral:1:2:3 gpt-mini:1:2:3
 ```
 
 #### 2. Battleship (2 Players)
@@ -106,29 +106,70 @@ Matches agents from two models head-to-head.
 
 ```bash
 # Match first N runs of mistral against first N runs of deepseek
-uv run python utils/battleship_match.py --agent mistral deepseek
+uv run python game_scripts/A1-battleship_match.py --agent mistral deepseek
 
 # Match specific runs
-uv run python utils/battleship_match.py --agent mistral:1:2 deepseek:3:4
+uv run python game_scripts/A1-battleship_match.py --agent mistral:1:2 deepseek:3:4
 ```
 
 #### 3. Tic Tac Toe (2 Players)
 Matches agents from two models head-to-head.
 
 ```bash
-uv run python utils/tictactoe_match.py --agent mistral deepseek
+uv run python game_scripts/A2-tictactoe_match.py --agent mistral deepseek
 ```
 
 ### Debug Mode
 For Wizard, you can enable interactive debug mode:
 ```bash
-uv run python utils/wizard_match.py --agent mistral:1 --debug
+uv run python game_scripts/A3-wizard_match.py --agent mistral:1 --debug
 ```
+
+---
+
+## Tool: Matchmaker (`matchmaker.py`)
+
+The matchmaker automates full round-robin tournaments. It discovers all agents for a game, generates every cross-model fixture, and executes them concurrently as subprocesses — each delegated to the appropriate match runner.
+
+### Usage
+
+```bash
+# Full tournament for SurroundMorris, each pair plays 4 times
+uv run python game_scripts/matchmaker.py --game A8 --same_opponent_match 4
+
+# Preview fixtures without running anything
+uv run python game_scripts/matchmaker.py --game A8 --same_opponent_match 1 --dry-run
+
+# Wizard tournament with 8 concurrent workers
+uv run python game_scripts/matchmaker.py --game A3 --same_opponent_match 2 --workers 8
+```
+
+### Arguments
+
+| Argument | Type | Default | Description |
+|---|---|---|---|
+| `--game` | str | required | Game ID: A1 through A8 |
+| `--same_opponent_match` | int | 1 | Minimum encounters per cross-model agent pair |
+| `--workers` | int | 4 | Max concurrent match subprocesses |
+| `--dry-run` | flag | false | Print fixture list without executing |
+
+### How `--same_opponent_match` works
+
+This controls how many times every cross-model agent pair is guaranteed to encounter each other.
+
+**2-player games (A1, A2, A4-A8):** Each cross-model pair plays a direct head-to-head match `same_opponent_match` times. All `itertools.combinations` of agents are generated, same-model pairs are filtered out, and the remainder is repeated. For example, 20 models with 2 runs each (40 agents) produce 760 cross-model pairs — with `--same_opponent_match 4` that's 3040 total matches.
+
+**6-player games (A3 Wizard):** There is no head-to-head; instead, 6 agents from 6 different models share a table per game. The matchmaker uses a greedy pairwise-coverage algorithm to generate groups such that every cross-model agent pair co-occurs in at least `same_opponent_match` games. This ensures sufficient statistical signal to compare any two models even in a multiplayer setting.
+
+### What the matchmaker does NOT do
+
+The matchmaker is purely a scheduler. Each subprocess call to a match runner handles game execution, result parsing, scoreboard updates, and log writing internally. The matchmaker only tracks success/failure counts and reports a summary at the end.
 
 ## Project Structure
 
 - `agents/`: Stored agent implementations.
 - `config/`: Configuration files (models, questions).
 - `games/`: Game prompts and rules.
-- `utils/`: Core logic, match runners, and population scripts.
+- `game_scripts/`: Match runners and tournament scheduler.
+- `utils/`: Core logic and population scripts.
 - `results/`: Logs and performance data.

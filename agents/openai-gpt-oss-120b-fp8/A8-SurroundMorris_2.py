@@ -1,7 +1,7 @@
 """
 Agent Code: A8-SurroundMorris
 Model: openai/gpt-oss-120b@preset/fp8
-Run: 2
+Run: 3
 Generated: 2026-02-09 12:28:06
 """
 
@@ -10,193 +10,210 @@ import copy
 import random
 import copy
 
-# ADJACENCY is provided by the game engine as a global variable.
+# ADJACENCY is provided by the game engine at runtime
 # Example:
-# ADJACENCY = {
-#     0: [1, 9], 1: [0, 2, 4], ... 
-# }
+# ADJACENCY = {0: [1, 9], 1: [0, 2, 4], ... }
 
 class SurroundMorrisAgent:
     """
-    Simple heuristic agent for Surround Morris.
-    Tries to avoid suicide, favours high‑degree positions,
-    and selects moves that maximise opponent captures while
-    minimising self‑captures (self‑harm priority).
+    Simple but rule‑aware agent for Surround Morris.
+    It tries to avoid suicide/self‑harm, prefers moves that capture
+    opponent pieces, and steers clear of 3‑fold repetition when it is
+    behind in material.
     """
 
     def __init__(self, name: str, color: str):
         self.name = name
         self.color = color  # 'B' or 'W'
 
-    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------
     # Helper utilities
-    # ------------------------------------------------------------------ #
-    def _opponent(self, color: str) -> str:
-        return "W" if color == "B" else "B"
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _neighbors(pos: int):
+        """Return adjacency list for a spot."""
+        return ADJACENCY[pos]
 
-    def _neighbors(self, spot: int):
-        return ADJACENCY[spot]
+    @staticmethod
+    def _capture_status(board, pos, color):
+        """
+        Returns True if the piece at `pos` (of `color`) would be captured
+        according to the Overwhelm rule.
+        """
+        if board[pos] != color:
+            return False
 
-    def _capture_info(self, board: list[str], spot: int) -> tuple[int, int, int]:
-        """
-        Returns (empty_cnt, friendly_cnt, opponent_cnt) for the piece on `spot`.
-        """
-        color = board[spot]
-        opp = self._opponent(color)
-        empty = friendly = opponent = 0
-        for nb in self._neighbors(spot):
-            if board[nb] == "":
+        empty = opp = friendly = 0
+        for nb in ADJACENCY[pos]:
+            if board[nb] == '':
                 empty += 1
             elif board[nb] == color:
                 friendly += 1
             else:
-                opponent += 1
-        return empty, friendly, opponent
+                opp += 1
 
-    def _is_overwhelmed(self, board: list[str], spot: int) -> bool:
-        """
-        True if the piece at `spot` satisfies the capture rule.
-        """
-        if board[spot] == "":
-            return False
-        empty, friendly, opponent = self._capture_info(board, spot)
-        return empty == 0 and opponent > friendly
+        # capture only when no empty neighbours and opp > friendly
+        return empty == 0 and opp > friendly
 
-    def _simulate_capture_sweep(
-        self, board: list[str], mover_color: str, active_spot: int
-    ) -> tuple[list[str], int, int]:
+    @staticmethod
+    def _apply_capture(board, active_pos, active_color):
         """
-        Perform the full capture sweep after a move/placement.
-        Returns (new_board, own_captures, opponent_captures).
-        The active piece is assumed to have survived the initial suicide check.
+        Perform the capture sweep after a move/placement.
+        Returns a new board list after all removals.
         """
         new_board = board[:]
-        opp = self._opponent(mover_color)
 
-        # 2a – remove overwhelmed friendly pieces (including possible other pieces of mover)
-        friendly_overwhelmed = [
-            i for i in range(24) if new_board[i] == mover_color and self._is_overwhelmed(new_board, i)
+        # 1️⃣ Active piece suicide check
+        if SurroundMorrisAgent._capture_status(new_board, active_pos, active_color):
+            new_board[active_pos] = ''          # it dies immediately
+            return new_board                    # turn ends, no further captures
+
+        # 2️⃣ Universal capture sweep (self‑harm priority)
+        opp_color = 'W' if active_color == 'B' else 'B'
+
+        # step 2a – remove own overwhelmed pieces
+        to_remove_friendly = [
+            i for i, v in enumerate(new_board)
+            if v == active_color and SurroundMorrisAgent._capture_status(new_board, i, active_color)
         ]
-        for i in friendly_overwhelmed:
-            new_board[i] = ""
+        for i in to_remove_friendly:
+            new_board[i] = ''
 
-        # 2b – now remove overwhelmed opponent pieces (only once)
-        opponent_overwhelmed = [
-            i for i in range(24) if new_board[i] == opp and self._is_overwhelmed(new_board, i)
+        # step 2b – remove opponent overwhelmed pieces (after friendly removal)
+        to_remove_enemy = [
+            i for i, v in enumerate(new_board)
+            if v == opp_color and SurroundMorrisAgent._capture_status(new_board, i, opp_color)
         ]
-        for i in opponent_overwhelmed:
-            new_board[i] = ""
+        for i in to_remove_enemy:
+            new_board[i] = ''
 
-        own_captures = len(friendly_overwhelmed)
-        opponent_captures = len(opponent_overwhelmed)
-        return new_board, own_captures, opponent_captures
+        return new_board
 
-    def _board_key(self, board: list[str]) -> tuple:
+    @staticmethod
+    def _board_key(board, player):
         """Immutable representation used for repetition detection."""
-        return tuple(board)
+        return (tuple(board), player)
 
-    # ------------------------------------------------------------------ #
-    # Core decision making
-    # ------------------------------------------------------------------ #
-    def make_move(self, state: dict, feedback: dict | None = None):
-        board = state["board"]
-        phase = state["phase"]
-        my_color = state["your_color"]
-        opp_color = state["opponent_color"]
-        pieces_in_hand = state["pieces_in_hand"]
-        history = state["history"]  # list of (board_tuple, player)
+    # ------------------------------------------------------------------
+    # Core decision logic
+    # ------------------------------------------------------------------
+    def _choose_placement(self, state):
+        board = state['board']
+        color = state['your_color']
+        opp = state['opponent_color']
+        history = state['history']
 
-        # --------------------------------------------------------------
-        # Placement phase
-        # --------------------------------------------------------------
-        if phase == "placement":
-            empty_spots = [i for i, v in enumerate(board) if v == ""]
-            # Prefer positions with higher degree (more influence)
-            spots_by_degree = sorted(
-                empty_spots, key=lambda s: len(ADJACENCY[s]), reverse=True
-            )
-            for spot in spots_by_degree:
-                # Simulate placement
-                temp_board = board[:]
-                temp_board[spot] = my_color
+        empty_spots = [i for i, v in enumerate(board) if v == '']
+        best_spot = None
+        best_score = -10**9
 
-                # Suicide check for the active piece
-                if self._is_overwhelmed(temp_board, spot):
-                    continue  # would die immediately – avoid
+        for spot in empty_spots:
+            # simulate placing at `spot`
+            trial = board[:]
+            trial[spot] = color
+            trial = self._apply_capture(trial, spot, color)
 
-                # Full capture sweep (friendly pieces may die)
-                final_board, own_cap, opp_cap = self._simulate_capture_sweep(
-                    temp_board, my_color, spot
-                )
-                # Keep placements where our own piece survived
-                if final_board[spot] == my_color:
-                    return spot
+            # count pieces after the placement
+            my_cnt = trial.count(color)
+            opp_cnt = trial.count(opp)
 
-            # No safe spot found – pick any empty spot (suicide is legal)
-            return random.choice(empty_spots) if empty_spots else 0
+            # avoid suicide (my_cnt may drop to 0)
+            score = (my_cnt - opp_cnt) * 10   # material advantage priority
 
-        # --------------------------------------------------------------
-        # Movement phase
-        # --------------------------------------------------------------
-        # Gather all legal moves
+            # small bonus for threatening opponent (adjacent opp count)
+            threat = sum(1 for nb in ADJACENCY[spot] if board[nb] == opp)
+            score += threat
+
+            # repetition avoidance – if this board would be the 3rd occurrence,
+            # treat it as very bad when we are losing material
+            key = self._board_key(trial, opp)  # next turn will be opponent
+            rep = sum(1 for h in state['history'] if h == key)
+            if rep >= 2 and my_cnt < opp_cnt:
+                score -= 1000
+
+            if score > best_score:
+                best_score = score
+                best_spot = spot
+
+        # fallback (should never happen)
+        return best_spot if best_spot is not None else random.choice(empty_spots)
+
+    def _choose_movement(self, state):
+        board = state['board']
+        color = state['your_color']
+        opp = state['opponent_color']
+        history = state['history']
+
         legal_moves = []
-        for src in range(24):
-            if board[src] != my_color:
+        for src, piece in enumerate(board):
+            if piece != color:
                 continue
             for dst in ADJACENCY[src]:
-                if board[dst] == "":
+                if board[dst] == '':
                     legal_moves.append((src, dst))
 
-        if not legal_moves:
-            # No moves – engine will treat as draw, but we must return something
-            return (0, 0)
-
         best_move = None
-        best_score = -10 ** 9  # very low initial value
-
-        # Pre‑compute repetition counts for quick lookup
-        rep_counts = {}
-        for b, _ in history:
-            rep_counts[b] = rep_counts.get(b, 0) + 1
+        best_score = -10**9
 
         for src, dst in legal_moves:
-            # Simulate the move
-            temp_board = board[:]
-            temp_board[src] = ""
-            temp_board[dst] = my_color
+            trial = board[:]
+            trial[src] = ''
+            trial[dst] = color
+            trial = self._apply_capture(trial, dst, color)
 
-            # ----- 1. Active piece suicide check -----
-            if self._is_overwhelmed(temp_board, dst):
-                continue  # move would kill our own active piece – discard
+            my_cnt = trial.count(color)
+            opp_cnt = trial.count(opp)
 
-            # ----- 2. Full capture sweep -----
-            final_board, own_cap, opp_cap = self._simulate_capture_sweep(
-                temp_board, my_color, dst
-            )
-            net_gain = opp_cap - own_cap  # positive is good
+            # net material change (enemy captured - own captured)
+            material_gain = (my_cnt - state['pieces_on_board'][color]) - (opp_cnt - state['pieces_on_board'][opp])
+            # Positive if we captured more enemies than we lost
+            score = material_gain * 100
 
-            # ----- 3. Repetition avoidance -----
-            board_key = self._board_key(final_board)
-            future_rep = rep_counts.get(board_key, 0) + 1  # would be seen again
-            # If this would be the 3rd occurrence and we are *behind* in material,
-            # heavily penalise the move.
-            my_pieces = final_board.count(my_color)
-            opp_pieces = final_board.count(opp_color)
-            if future_rep >= 3 and my_pieces < opp_pieces:
-                net_gain -= 5  # arbitrary penalty
+            # safety: penalise moves that cause us to lose any piece
+            if my_cnt < state['pieces_on_board'][color]:
+                score -= 200
 
-            # ----- 4. Choose the best move -----
-            # Prefer moves that do not lose our own pieces.
-            if own_cap == 0 and net_gain > best_score:
-                best_score = net_gain
+            # positional bonus: occupy high‑degree nodes (4‑neighbour spots)
+            degree = len(ADJACENCY[dst])
+            if degree == 4:
+                score += 5
+            elif degree == 3:
+                score += 2
+
+            # threat bonus – how many opponent neighbours we now block
+            blocked = sum(1 for nb in ADJACENCY[dst] if board[nb] == opp)
+            score += blocked
+
+            # repetition avoidance
+            key = self._board_key(trial, opp)   # opponent to move next
+            rep = sum(1 for h in history if h == key)
+            if rep >= 2 and my_cnt < opp_cnt:
+                score -= 1000
+
+            if score > best_score:
+                best_score = score
                 best_move = (src, dst)
-            # If all moves lose something, still keep the least damaging.
-            elif best_move is None and net_gain > best_score:
-                best_score = net_gain
-                best_move = (src, dst)
 
-        # Fallback – if every move was discarded (e.g., all cause suicide), pick random legal move
+        # If for some reason no move survives (should be draw), return a dummy
         if best_move is None:
-            best_move = random.choice(legal_moves)
+            # choose any legal move to satisfy engine; if none, return dummy
+            return legal_moves[0] if legal_moves else (0, 0)
 
         return best_move
+
+    # ------------------------------------------------------------------
+    # Public interface required by the competition
+    # ------------------------------------------------------------------
+    def make_move(self, state: dict, feedback: dict | None = None):
+        """
+        Return a placement (int) during the placement phase or a movement
+        (tuple[int, int]) during the movement phase.
+        """
+        phase = state['phase']
+
+        # Simple retry handling – if we got feedback we just recompute;
+        # the logic above already avoids illegal moves.
+        if phase == 'placement':
+            return self._choose_placement(state)
+        else:  # movement phase
+            return self._choose_movement(state)

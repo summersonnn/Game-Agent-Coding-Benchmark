@@ -221,14 +221,7 @@ class SurroundMorrisGame:
         """
         current_state = (tuple(self.board), self.current_player)
         if self.history.count(current_state) >= 3:
-            b = self.pieces_on_board['B']
-            w = self.pieces_on_board['W']
-            if b > w:
-                return True, f"B wins by Repetition (Score: {b}-{w})"
-            elif w > b:
-                return True, f"W wins by Repetition (Score: {w}-{b})"
-            else:
-                return True, "Draw by Repetition (Scores equal)"
+            return True, "Draw by Repetition"
         return False, None
 
     def check_elimination(self):
@@ -515,12 +508,13 @@ def play_game(game_num, match_stats):
         p_prefix = get_p_prefix(agent_name)
         stats["turns"] += 1
 
-        # Check stalemate before move
+        # Check stalemate before move — stuck player loses
         legal_moves = game.get_legal_movements(color)
         if not legal_moves:
-            print(f"{agent_name} ({color}): no legal moves, STALEMATE/DRAW")
+            opp_color = game.opponent(color)
+            print(f"{agent_name} ({color}): no legal moves, {opp_color} wins by Mate")
             stats[f"{p_prefix}_stalemate"] += 1
-            result_desc = "Draw (Stalemate - No Legal Moves)"
+            result_desc = f"{opp_color} wins by Mate ({color} has no legal moves)"
             game_over = True
             break
 
@@ -612,9 +606,10 @@ def play_game(game_num, match_stats):
                 print(f"{agent_name} ({color}): random move {mv[0]}->{mv[1]}{cap_str}")
                 stats[f"{p_prefix}_captures"] += len(captured)
             else:
-                print(f"{agent_name} ({color}): no legal moves after fallback, STALEMATE")
+                opp_color = game.opponent(color)
+                print(f"{agent_name} ({color}): no legal moves after fallback, {opp_color} wins by Mate")
                 stats[f"{p_prefix}_stalemate"] += 1
-                result_desc = "Draw (Stalemate - No Legal Moves)"
+                result_desc = f"{opp_color} wins by Mate ({color} has no legal moves)"
                 game_over = True
                 break
 
@@ -649,11 +644,9 @@ def play_game(game_num, match_stats):
         winner = names[winner_color]
         loser = names[loser_color]
 
-        if "Repetition" in result_desc:
-            winner_pcs = game.pieces_on_board[winner_color]
-            loser_pcs = game.pieces_on_board[loser_color]
-            winner_score = winner_pcs - loser_pcs
-            loser_score = loser_pcs - winner_pcs
+        if "Mate" in result_desc:
+            winner_score = 7
+            loser_score = -7
         else:
             winner_score = game.pieces_on_board[winner_color]
             loser_score = -game.pieces_on_board[winner_color]
@@ -921,9 +914,10 @@ if __name__ == "__main__":
 
         legal_moves = game.get_legal_movements(color)
         if not legal_moves:
-            print(f"{agent_name} ({color}): no legal moves, STALEMATE")
+            opp_color = game.opponent(color)
+            print(f"{agent_name} ({color}): no legal moves, {opp_color} wins by Mate")
             game_over = True
-            result_desc = "Draw (Stalemate)"
+            result_desc = f"{opp_color} wins by Mate ({color} has no legal moves)"
             break
 
         state = game.get_state_for_agent(color)
@@ -970,11 +964,8 @@ if __name__ == "__main__":
         winner_color = result_desc[0]
         winner_name = names[winner_color]
 
-        # Use differential scoring for repetition wins
-        if "Repetition" in result_desc:
-            b_count = game.pieces_on_board['B']
-            w_count = game.pieces_on_board['W']
-            score = abs(b_count - w_count)
+        if "Mate" in result_desc:
+            score = 7
         else:
             score = game.pieces_on_board[winner_color]
 
