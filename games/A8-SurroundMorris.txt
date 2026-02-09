@@ -2,7 +2,7 @@ Surround Morris is a 2-player territorial strategy game on a Nine Men's Morris b
 
 ## Game Overview
 
-The game is played on a 24-spot board consisting of three concentric squares connected at midpoints. Each player has 9 pieces (Black 'B' vs White 'W'). The goal is to eliminate all opponent pieces from the board.
+The game is played on a 24-spot board consisting of three concentric squares connected at midpoints. Each player has 7 pieces (Black 'B' vs White 'W'). The goal is to eliminate all opponent pieces from the board.
 
 ## Board Layout
 ```
@@ -65,7 +65,7 @@ Captures are processed in a specific order after every move (Placement or Moveme
 2. Black ('B') always places first.
 3. **Suicide is LEGAL:** You are allowed to place a piece into a spot where it will die immediately. However, due to the "Suicide First" rule, this is usually a wasted move (you die, enemy survives).
 4. **Elimination during placement:** If a player has 0 pieces on board AND 0 pieces in hand, they lose immediately.
-5. Phase ends when both players have placed all 9 pieces (18 total placements). Note that some of these pieces may have been captured during the placement phase.
+5. Phase ends when both players have placed all 7 pieces (14 total placements). Note that some of these pieces may have been captured during the placement phase.
 
 ### Phase 2: Movement
 1. Players alternate sliding one piece along a line to an adjacent empty spot.

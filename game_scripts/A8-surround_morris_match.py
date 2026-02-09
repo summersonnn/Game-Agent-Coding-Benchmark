@@ -77,7 +77,7 @@ class SurroundMorrisGame:
     def __init__(self):
         self.board = [''] * 24
         self.phase = 'placement'
-        self.pieces_in_hand = {'B': 9, 'W': 9}
+        self.pieces_in_hand = {'B': 7, 'W': 7}
         self.pieces_on_board = {'B': 0, 'W': 0}
         self.current_player = 'B'
         self.move_count = 0
@@ -872,7 +872,7 @@ if __name__ == "__main__":
     game_over = False
 
     print("--- PLACEMENT PHASE ---")
-    print("Each player places 9 pieces.")
+    print("Each player places 7 pieces.")
 
     while game.phase == 'placement' and not game_over:
         color = game.current_player
