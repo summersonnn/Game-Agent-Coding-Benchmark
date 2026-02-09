@@ -25,6 +25,7 @@ sys.path.append(str(Path(__file__).parent.parent / "utils"))
 
 from model_api import ModelAPI
 from logging_config import setup_logging
+from scoreboard import update_scoreboard
 
 logger = setup_logging(__name__)
 
@@ -647,37 +648,44 @@ def play_game(game_num, match_stats):
     print(f"Pieces: B={game.pieces_on_board['B']} W={game.pieces_on_board['W']}")
     print(f"GAME {game_num} ENDED: {result_desc}")
 
-    # Determine winner and score
-    score = 0
+    # Determine winner/loser and scores (loser gets negative)
+    winner_score = 0
+    loser_score = 0
     winner_color = None
 
     if "wins" in result_desc:
         winner_color = result_desc[0]
+        loser_color = game.opponent(winner_color)
         winner = names[winner_color]
+        loser = names[loser_color]
 
         if "Repetition" in result_desc:
-            b_count = game.pieces_on_board['B']
-            w_count = game.pieces_on_board['W']
-            score = abs(b_count - w_count)
+            winner_pcs = game.pieces_on_board[winner_color]
+            loser_pcs = game.pieces_on_board[loser_color]
+            winner_score = winner_pcs - loser_pcs
+            loser_score = loser_pcs - winner_pcs
         else:
-            score = game.pieces_on_board[winner_color]
+            winner_score = game.pieces_on_board[winner_color]
+            loser_score = -game.pieces_on_board[winner_color]
 
     elif "Draw" in result_desc:
         winner_color = None
         winner = "DRAW"
         total_pieces = game.pieces_on_board['B'] + game.pieces_on_board['W']
-        score = total_pieces / 2.0
+        winner_score = total_pieces / 2.0
+        loser_score = total_pieces / 2.0
     else:
         winner_color = None
         winner = "DRAW"
-        score = 0.5
+        winner_score = 0.5
+        loser_score = 0.5
 
     print(f"\nGame {game_num}")
     print("Final board:")
     game.display_board()
 
     if winner != "DRAW":
-        print(f"{winner_color} ({winner}) wins with score of {score}")
+        print(f"{winner_color} ({winner}) wins with score of {winner_score}")
     else:
         print(f"Game ended in a DRAW")
 
@@ -685,10 +693,12 @@ def play_game(game_num, match_stats):
 
     if winner != "DRAW":
         match_stats["wins"][winner] += 1
-        match_stats["scores"][winner] += score
+        match_stats["scores"][winner] += winner_score
+        match_stats["scores"][loser] += loser_score
     else:
-        match_stats["scores"]["Agent-1"] += score
-        match_stats["scores"]["Agent-2"] += score
+        match_stats["draws"] += 1
+        match_stats["scores"]["Agent-1"] += winner_score
+        match_stats["scores"]["Agent-2"] += loser_score
 
     print("=" * 60)
     sys.stdout.flush()
@@ -699,7 +709,8 @@ def play_game(game_num, match_stats):
 def main():
     match_stats = {
         "wins": {"Agent-1": 0, "Agent-2": 0},
-        "scores": {"Agent-1": 0, "Agent-2": 0}
+        "scores": {"Agent-1": 0, "Agent-2": 0},
+        "draws": 0,
     }
 
     for i in range(NUM_GAMES):
@@ -714,6 +725,8 @@ def main():
     print(f"Agent 2: {match_stats['scores']['Agent-2']}")
 
     print(f"RESULT:Agent-1={match_stats['scores']['Agent-1']},Agent-2={match_stats['scores']['Agent-2']}")
+    print(f"WINS:Agent-1={match_stats['wins']['Agent-1']},Agent-2={match_stats['wins']['Agent-2']}")
+    print(f"DRAWS:{match_stats['draws']}")
     print("--- MATCH STATISTICS ---")
 
     print(f"Agent-1 Crashes: {stats['p1_crash']}")
@@ -1202,7 +1215,7 @@ def run_match(
             }
 
         match = re.search(
-            r"RESULT:Agent-1=([\d.]+),Agent-2=([\d.]+)", result.stdout
+            r"RESULT:Agent-1=(-?[\d.]+),Agent-2=(-?[\d.]+)", result.stdout
         )
 
         stats_block = ""
@@ -1210,6 +1223,15 @@ def run_match(
             stats_block = result.stdout.split("--- MATCH STATISTICS ---")[1].strip()
 
         if match:
+            wins_match = re.search(
+                r"WINS:Agent-1=(\d+),Agent-2=(\d+)", result.stdout
+            )
+            draws_match = re.search(r"DRAWS:(\d+)", result.stdout)
+
+            agent1_wins = int(wins_match.group(1)) if wins_match else 0
+            agent2_wins = int(wins_match.group(2)) if wins_match else 0
+            draws = int(draws_match.group(1)) if draws_match else 0
+
             log_lines = []
             for line in result.stdout.splitlines():
                 if line.startswith((
@@ -1227,6 +1249,9 @@ def run_match(
                 "success": True,
                 "agent1_score": float(match.group(1)),
                 "agent2_score": float(match.group(2)),
+                "agent1_wins": agent1_wins,
+                "agent2_wins": agent2_wins,
+                "draws": draws,
                 "error": None,
                 "stats_block": stats_block,
                 "log": "\n".join(log_lines),
@@ -1444,6 +1469,43 @@ async def main_async():
     print(f"  {folder1}: {total1:.1f}")
     print(f"  {folder2}: {total2:.1f}")
     print(f"\nLogs saved to: {log_f}")
+
+    # Update global scoreboard
+    scoreboard_path = Path(__file__).parent.parent / "scoreboard" / "A8-scoreboard.txt"
+
+    for result in results:
+        if not result["success"]:
+            continue
+
+        run1 = result["agent1_run_id"]
+        run2 = result["agent2_run_id"]
+        agent1_key = f"{folder1}:{run1}"
+        agent2_key = f"{folder2}:{run2}"
+
+        a1_wins = result.get("agent1_wins", 0)
+        a2_wins = result.get("agent2_wins", 0)
+        match_draws = result.get("draws", 0)
+
+        update_scoreboard(
+            scoreboard_path,
+            agent1_key,
+            games_played=NUM_GAMES_PER_MATCH,
+            wins=a1_wins,
+            losses=a2_wins,
+            draws=match_draws,
+            score=result["agent1_score"],
+        )
+        update_scoreboard(
+            scoreboard_path,
+            agent2_key,
+            games_played=NUM_GAMES_PER_MATCH,
+            wins=a2_wins,
+            losses=a1_wins,
+            draws=match_draws,
+            score=result["agent2_score"],
+        )
+
+    print(f"Scoreboard updated: {scoreboard_path}")
 
 
 if __name__ == "__main__":
