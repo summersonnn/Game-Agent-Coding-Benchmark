@@ -497,16 +497,10 @@ def play_game(game_num, match_stats):
         game.check_phase_transition()
         game.current_player = game.opponent(color)
 
-        if placement_turn % 6 == 0 or game.phase == 'movement':
-            game.display_board()
-            print(f"Pieces on board: B={game.pieces_on_board['B']} W={game.pieces_on_board['W']}")
-            print(f"Pieces in hand: B={game.pieces_in_hand['B']} W={game.pieces_in_hand['W']}")
-
     # --- Movement Phase ---
     if game.phase == 'movement' and not game_over:
         print()
         print("--- MOVEMENT PHASE ---")
-        game.display_board()
 
     while game.phase == 'movement' and not game_over:
         # Record history and check repetition BEFORE move
@@ -636,10 +630,6 @@ def play_game(game_num, match_stats):
 
         game.current_player = game.opponent(color)
 
-        if game.move_count % 10 == 0:
-            game.display_board()
-            print(f"Move {game.move_count}: B={game.pieces_on_board['B']} W={game.pieces_on_board['W']}")
-
     if not result_desc:
         result_desc = "Game ended unexpectedly"
 
@@ -680,10 +670,6 @@ def play_game(game_num, match_stats):
         winner_score = 0.5
         loser_score = 0.5
 
-    print(f"\nGame {game_num}")
-    print("Final board:")
-    game.display_board()
-
     if winner != "DRAW":
         print(f"{winner_color} ({winner}) wins with score of {winner_score}")
     else:
@@ -718,8 +704,8 @@ def main():
         sys.stdout.flush()
 
     print("\nFinal Results")
-    print(f"Agent 1 Wins: {match_stats['wins']['Agent-1']} times")
-    print(f"Agent 2 Wins: {match_stats['wins']['Agent-2']} times")
+    print(f"Agent 1 ({AGENT1_INFO}) Wins: {match_stats['wins']['Agent-1']} times")
+    print(f"Agent 2 ({AGENT2_INFO}) Wins: {match_stats['wins']['Agent-2']} times")
     print("Scores:")
     print(f"Agent 1: {match_stats['scores']['Agent-1']}")
     print(f"Agent 2: {match_stats['scores']['Agent-2']}")
@@ -1238,7 +1224,7 @@ def run_match(
                     "Agent-1:", "Agent-2:", "GAME ", "Game ", "Winner:",
                     "Running Total", "==========", "--- MOVEMENT",
                     "Final", "Scores:", "Agent 1", "Agent 2",
-                    "B (", "W (", " |", " -"
+                    "B (", "W (", " |", " -", " .", " B", " W", "Pieces:"
                 )) or "ENDED" in line or line.strip() == "":
                     log_lines.append(line)
 
@@ -1417,8 +1403,8 @@ async def main_async():
         all_imports = set(imp1.split("\n") + imp2.split("\n"))
         extra_imports = "\n".join(imp for imp in all_imports if imp.strip())
 
-        agent1_info = f"{folder1} (Run {run1})"
-        agent2_info = f"{folder2} (Run {run2})"
+        agent1_info = f"{folder1}:{run1}"
+        agent2_info = f"{folder2}:{run2}"
 
         game_code = build_game_code(
             code1, code2, extra_imports, NUM_GAMES_PER_MATCH,
@@ -1465,9 +1451,11 @@ async def main_async():
                 )
                 f.write("-" * 60 + "\n\n")
 
+    runs1_str = ",".join(str(r) for r in runs1)
+    runs2_str = ",".join(str(r) for r in runs2)
     print("\nFINAL RESULTS:")
-    print(f"  {folder1}: {total1:.1f}")
-    print(f"  {folder2}: {total2:.1f}")
+    print(f"  {folder1}:{runs1_str}: {total1:.1f}")
+    print(f"  {folder2}:{runs2_str}: {total2:.1f}")
     print(f"\nLogs saved to: {log_f}")
 
     # Update global scoreboard
