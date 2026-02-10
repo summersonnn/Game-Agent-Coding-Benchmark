@@ -674,10 +674,13 @@ def play_game(game_num, match_stats):
         match_stats["wins"][winner] += 1
         match_stats["scores"][winner] += winner_score
         match_stats["scores"][loser] += loser_score
+        match_stats["points"][winner] += 3
     else:
         match_stats["draws"] += 1
         match_stats["scores"]["Agent-1"] += winner_score
         match_stats["scores"]["Agent-2"] += loser_score
+        match_stats["points"]["Agent-1"] += 1
+        match_stats["points"]["Agent-2"] += 1
 
     print("=" * 60)
     sys.stdout.flush()
@@ -689,6 +692,7 @@ def main():
     match_stats = {
         "wins": {"Agent-1": 0, "Agent-2": 0},
         "scores": {"Agent-1": 0, "Agent-2": 0},
+        "points": {"Agent-1": 0, "Agent-2": 0},
         "draws": 0,
     }
 
@@ -699,11 +703,15 @@ def main():
     print("\nFinal Results")
     print(f"Agent 1 ({AGENT1_INFO}) Wins: {match_stats['wins']['Agent-1']} times")
     print(f"Agent 2 ({AGENT2_INFO}) Wins: {match_stats['wins']['Agent-2']} times")
+    print("Points:")
+    print(f"Agent 1: {match_stats['points']['Agent-1']}")
+    print(f"Agent 2: {match_stats['points']['Agent-2']}")
     print("Scores:")
     print(f"Agent 1: {match_stats['scores']['Agent-1']}")
     print(f"Agent 2: {match_stats['scores']['Agent-2']}")
 
     print(f"RESULT:Agent-1={match_stats['scores']['Agent-1']},Agent-2={match_stats['scores']['Agent-2']}")
+    print(f"POINTS:Agent-1={match_stats['points']['Agent-1']},Agent-2={match_stats['points']['Agent-2']}")
     print(f"WINS:Agent-1={match_stats['wins']['Agent-1']},Agent-2={match_stats['wins']['Agent-2']}")
     print(f"DRAWS:{match_stats['draws']}")
     print("--- MATCH STATISTICS ---")
@@ -1008,6 +1016,12 @@ def find_model_folder(pattern: str) -> str | None:
         logger.error("Agents directory not found: %s", AGENTS_DIR)
         return None
 
+    # Exact match first (matchmaker passes full folder names)
+    exact = AGENTS_DIR / pattern
+    if exact.is_dir():
+        return pattern
+
+    # Substring fallback for interactive CLI use
     matches = [
         d.name for d in AGENTS_DIR.iterdir()
         if d.is_dir() and pattern.lower() in d.name.lower()
@@ -1204,10 +1218,15 @@ def run_match(
                 r"WINS:Agent-1=(\d+),Agent-2=(\d+)", result.stdout
             )
             draws_match = re.search(r"DRAWS:(\d+)", result.stdout)
+            points_match = re.search(
+                r"POINTS:Agent-1=(\d+),Agent-2=(\d+)", result.stdout
+            )
 
             agent1_wins = int(wins_match.group(1)) if wins_match else 0
             agent2_wins = int(wins_match.group(2)) if wins_match else 0
             draws = int(draws_match.group(1)) if draws_match else 0
+            agent1_points = int(points_match.group(1)) if points_match else 0
+            agent2_points = int(points_match.group(2)) if points_match else 0
 
             log_lines = []
             for line in result.stdout.splitlines():
@@ -1228,6 +1247,8 @@ def run_match(
                 "agent2_score": float(match.group(2)),
                 "agent1_wins": agent1_wins,
                 "agent2_wins": agent2_wins,
+                "agent1_points": agent1_points,
+                "agent2_points": agent2_points,
                 "draws": draws,
                 "error": None,
                 "stats_block": stats_block,
@@ -1412,6 +1433,7 @@ async def main_async():
     results = await asyncio.gather(*match_tasks)
 
     total1, total2 = 0.0, 0.0
+    total_pts1, total_pts2 = 0, 0
 
     with open(log_f, "w") as f:
         f.write(f"Surround Morris Match - {ts}\n")
@@ -1421,9 +1443,13 @@ async def main_async():
             match_id = result["match_id"]
             if result["success"]:
                 s1, s2 = result["agent1_score"], result["agent2_score"]
+                p1 = result.get("agent1_points", 0)
+                p2 = result.get("agent2_points", 0)
                 total1 += s1
                 total2 += s2
-                status = f"Result: {s1:.1f} - {s2:.1f}"
+                total_pts1 += p1
+                total_pts2 += p2
+                status = f"Result: Pts {p1}-{p2}, Score {s1:.1f}-{s2:.1f}"
                 game_log = result.get("log", "")
                 if game_log:
                     status += f"\n{game_log}\n"
@@ -1445,8 +1471,8 @@ async def main_async():
     runs1_str = ",".join(str(r) for r in runs1)
     runs2_str = ",".join(str(r) for r in runs2)
     print("\nFINAL RESULTS:")
-    print(f"  {folder1}:{runs1_str}: {total1:.1f}")
-    print(f"  {folder2}:{runs2_str}: {total2:.1f}")
+    print(f"  {folder1}:{runs1_str}: Pts {total_pts1}, Score {total1:.1f}")
+    print(f"  {folder2}:{runs2_str}: Pts {total_pts2}, Score {total2:.1f}")
     print(f"\nLogs saved to: {log_f}")
 
     # Update global scoreboard
@@ -1473,6 +1499,7 @@ async def main_async():
             losses=a2_wins,
             draws=match_draws,
             score=result["agent1_score"],
+            points=result.get("agent1_points", 0),
         )
         update_scoreboard(
             scoreboard_path,
@@ -1482,6 +1509,7 @@ async def main_async():
             losses=a1_wins,
             draws=match_draws,
             score=result["agent2_score"],
+            points=result.get("agent2_points", 0),
         )
 
     print(f"Scoreboard updated: {scoreboard_path}")

@@ -64,7 +64,7 @@ uv run python game_scripts/matchmaker.py --game A3 --same_opponent_match 2 --wor
 
 **config/max_tokens.txt:** Token multipliers per game (e.g., `A1: 4` = 4x base tokens).
 
-## Games
+## Games Overview
 
 | ID | Game | Players | Status |
 |----|------|---------|--------|
@@ -75,6 +75,268 @@ uv run python game_scripts/matchmaker.py --game A3 --same_opponent_match 2 --wor
 | A6 | WordMatrixGame | 2 | Playable |
 | A8 | SurroundMorris | 2 | Playable |
 | A5,A7 | (Placeholders) | - | Not implemented |
+
+---
+
+## Game Details
+
+### A8: Surround Morris
+
+**Type:** 2-player competitive board game
+**Match File:** `game_scripts/A8-surround_morris_match.py`
+**Game Prompt:** `games/A8-SurroundMorris.txt`
+**Scoreboard:** `scoreboard/A8-scoreboard.txt`
+
+#### Overview
+
+Nine Men's Morris variant where capture uses spatial surrounding instead of mill formation. Players place and move pieces on a 24-spot board, attempting to surround opponent pieces using the "overwhelm" capture rule.
+
+#### Board Structure
+
+24 spots arranged in three concentric squares with connecting lines:
+```
+ 0----------1----------2
+ |           |           |
+ |   3-------4-------5   |
+ |   |       |       |   |
+ |   |   6---7---8   |   |
+ |   |   |       |   |   |
+ 9---10--11      12--13--14
+ |   |   |       |   |   |
+ |   |   15--16--17  |   |
+ |   |       |       |   |
+ |   18------19------20  |
+ |           |           |
+ 21----------22----------23
+```
+
+**Adjacency:** Each spot connects only to directly adjacent spots (horizontal/vertical lines). See `ADJACENCY` dict in code for complete mapping.
+
+#### Game Phases
+
+**1. Placement Phase**
+- Each player starts with 7 pieces in hand (reduced from traditional 9)
+- Players alternate placing one piece per turn on any empty spot
+- Black (B) moves first
+- Phase ends when both players have placed all 7 pieces
+
+**2. Movement Phase**
+- Players alternate moving one piece to an adjacent empty spot
+- No flying (must move along board lines)
+- Continues until game end condition met
+
+#### Capture Mechanics: The "Overwhelm" Rule
+
+A piece is captured when it satisfies BOTH conditions:
+1. **Zero empty neighbors** (completely surrounded)
+2. **More opponent neighbors than friendly neighbors**
+
+**Capture Timing:** After every move (placement or movement), a two-pass capture sweep occurs:
+1. **Self-harm priority:** Remove mover's captured pieces first
+2. **Enemy capture:** Re-check opponent pieces (may gain empty neighbors from step 1)
+
+**Suicide Moves:** Placing/moving into a captured position immediately removes your own piece.
+
+#### Win/Draw Conditions
+
+**Win by Elimination:**
+- Opponent has 0 pieces on board AND 0 pieces in hand
+- Self-harm priority: mover checked first for elimination
+
+**Win by Mate:**
+- Opponent has no legal moves at start of their turn
+- Scored as +7/-7 (winner/loser)
+
+**Draw by Repetition:**
+- Same board state + current player occurs 3 times
+- Checked before move execution
+
+**Draw by Turn Limit:**
+- 200 movement turns reached (configurable: `MAX_TURNS_PER_GAME`)
+- Checked after move execution
+
+#### Scoring System (Football League Style)
+
+**Points (Primary Ranking Metric):**
+- Win = 3 points
+- Draw = 1 point
+- Loss = 0 points
+
+**Score (Tiebreaker, Goal Difference):**
+- **Normal Win:** Winner gets +pieces_on_board, loser gets -pieces_on_board
+- **Mate Win:** Winner gets +7, loser gets -7
+- **Draw:** Each player gets +(total_pieces_on_board / 2.0)
+
+**Example:** Agent wins 5-2 elimination → +3 points, +5 score. Loser → 0 points, -5 score.
+
+#### Leaderboard
+
+**File:** `scoreboard/A8-scoreboard.txt`
+
+**Format:**
+```
+Agent | Games | Wins | Losses | Draws | Points | Score
+```
+
+**Sorting:** Primary by Points (descending), tiebreaker by Score (descending)
+
+**Update Logic:** Atomic file-locking via `utils/scoreboard.py:update_scoreboard()`. Backward-compatible with legacy 6-column format (points default to 0).
+
+#### Code Architecture
+
+**Embedded Subprocess Model:**
+
+The match runner uses a multi-layer architecture:
+
+1. **Outer Layer (`main_async`):**
+   - CLI argument parsing
+   - Agent discovery and loading
+   - Match orchestration (parallel via `asyncio.gather`)
+   - Result aggregation and logging
+   - Scoreboard updates
+
+2. **Middle Layer (`run_match`):**
+   - Generates temporary Python file with embedded code
+   - Spawns subprocess with 600s timeout
+   - Parses stdout for structured results (`RESULT:`, `POINTS:`, `WINS:`, `DRAWS:`)
+   - Returns result dict
+
+3. **Inner Layer (Embedded `MATCH_RUNNER_CODE`):**
+   - Executed inside subprocess
+   - Runs `NUM_GAMES_PER_MATCH` games (default 100)
+   - Tracks match statistics (wins, points, scores, errors)
+   - Emits structured output lines for outer parsing
+
+**Code Modules:**
+
+| Module | Location | Purpose |
+|--------|----------|---------|
+| `GAME_ENGINE_CODE` | Lines 62-309 | `SurroundMorrisGame` class, adjacency map, board logic |
+| `MATCH_RUNNER_CODE` | Lines 315-722 | `play_game()`, `main()`, timeout handling, stats tracking |
+| `HUMAN_PLAY_CODE` | Lines 728-1003 | Human vs Bot/Human/Agent interactive mode |
+
+**Agent Interface:**
+
+Generated agents must implement:
+```python
+class SurroundMorrisAgent:
+    def __init__(self, name: str, color: str):
+        self.name = name
+        self.color = color  # 'B' or 'W'
+
+    def make_move(self, state: dict, feedback: dict | None):
+        # Placement phase: return int (spot 0-23)
+        # Movement phase: return tuple (from_spot, to_spot)
+```
+
+**State Dictionary:**
+```python
+{
+    "board": list[str],           # 24 elements: '', 'B', or 'W'
+    "phase": str,                 # 'placement' or 'movement'
+    "your_color": str,            # 'B' or 'W'
+    "opponent_color": str,        # 'W' or 'B'
+    "pieces_in_hand": dict,       # {'B': int, 'W': int}
+    "pieces_on_board": dict,      # {'B': int, 'W': int}
+    "move_count": int,            # Movement turns elapsed
+    "history": list[tuple],       # (board_state, current_player) history
+}
+```
+
+**Feedback Dictionary (on invalid move):**
+```python
+{
+    "error_code": str,            # "INVALID_SPOT_OOB", "INVALID_OUTPUT", etc.
+    "error_message": str,         # Human-readable description
+    "attempted_move": Any,        # What agent returned
+    "attempt_number": int,        # 1, 2, or 3
+}
+```
+
+#### Constants and Configuration
+
+**Environment Variables:**
+- `NUM_OF_GAMES_IN_A_MATCH` (default: 100) — Games per match pairing
+- `MAX_TURNS_PER_GAME` (default: 200) — Movement phase turn limit
+- `MOVE_TIME_LIMIT` (default: 1.0s) — Per-move timeout
+
+**Hardcoded:**
+- Pieces per player: 7
+- Max placement/movement attempts: 3 (fallback to random)
+- Board size: 24 spots
+
+**Error Handling:**
+- Invalid moves: Agent gets feedback, max 3 attempts, then random fallback
+- Timeouts: Random fallback
+- Crashes: Random fallback
+- All errors tracked in match statistics (printed at end)
+
+#### File Locations
+
+**Results:**
+- Match logs: `results/surround_morris/game_logs/<timestamp>_match.txt`
+- Global scoreboard: `scoreboard/A8-scoreboard.txt`
+
+**Agents:**
+- Generated agents: `agents/<model_folder>/A8-SurroundMorris_<run>.py`
+
+#### Running Matches
+
+**Single match (2 agents):**
+```bash
+uv run python game_scripts/A8-surround_morris_match.py --agent model1:1 model2:2
+```
+
+**Human play modes:**
+```bash
+uv run python game_scripts/A8-surround_morris_match.py --humanvsbot       # vs random
+uv run python game_scripts/A8-surround_morris_match.py --humanvshuman    # local 2P
+uv run python game_scripts/A8-surround_morris_match.py --humanvsagent --agent model:1
+```
+
+**Tournament (all cross-model pairings):**
+```bash
+uv run python game_scripts/matchmaker.py --game A8 --same_opponent_match 4 --workers 4
+```
+
+#### Match Output Format
+
+**Subprocess stdout includes:**
+```
+RESULT:Agent-1=<score1>,Agent-2=<score2>
+POINTS:Agent-1=<pts1>,Agent-2=<pts2>
+WINS:Agent-1=<wins1>,Agent-2=<wins2>
+DRAWS:<draw_count>
+--- MATCH STATISTICS ---
+Agent-1 Crashes: <count>
+Agent-2 Crashes: <count>
+Agent-1 Captures: <count>
+Agent-2 Captures: <count>
+Agent-1 Stalemates: <count>
+Agent-2 Stalemates: <count>
+Total Turns: <count>
+```
+
+**Outer layer parses these lines** via regex to populate result dict and update scoreboard.
+
+---
+
+### A1: Battleship
+*Details to be added*
+
+### A2: TicTacToe
+*Details to be added*
+
+### A3: Wizard
+*Details to be added*
+
+### A4: WordFinder
+*Details to be added*
+
+### A6: WordMatrixGame
+*Details to be added*
+
+---
 
 ## Agent File Convention
 

@@ -278,12 +278,18 @@ def find_model_folder(pattern: str) -> str | None:
     if not AGENTS_DIR.exists():
         logger.error("Agents directory not found: %s", AGENTS_DIR)
         return None
-    
+
+    # Exact match first (matchmaker passes full folder names)
+    exact = AGENTS_DIR / pattern
+    if exact.is_dir():
+        return pattern
+
+    # Substring fallback for interactive CLI use
     matches = [
         d.name for d in AGENTS_DIR.iterdir()
         if d.is_dir() and pattern.lower() in d.name.lower()
     ]
-    
+
     if not matches:
         logger.error("No model folder matches pattern '%s'", pattern)
         return None

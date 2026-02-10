@@ -255,11 +255,10 @@ class SurroundMorrisAgent:
 2. **Watch for Friendly Fire:** Before moving, check if your move will block a friendly piece's last air hole. The engine kills your pieces first in the sweep, which may then free the enemy pieces you were trying to capture.
 3. **Control crossroads (4 neighbors):** Spots 4, 10, 13, 19 give the most influence.
 4. **Target corners (2 neighbors):** Corner pieces are easy to trap (needs only 2 enemies).
-5. **Score Advantage:** Since 3-fold repetition is now a draw, playing for repetition when ahead is less powerful than before, but still avoids a loss.
-6. **Preserve empty neighbors:** Keep escape routes open to avoid Mate.
-7. **Placement phase is critical:** Fight for central positions while disrupting opponent clusters.
-8. **Avoid Repetition When Ahead:** If you checkmate yourself by repetition, you only get half points.
-9. **Use History:** The `history` field in the state dict lets you detect positions that have occurred before.
+5. **Preserve empty neighbors:** Keep escape routes open to avoid Mate.
+6. **Placement phase is critical:** Fight for central positions while disrupting opponent clusters.
+7. **Avoid Repetition When Ahead:** If you checkmate yourself by repetition, you only get half points.
+8. **Use History:** The `history` field in the state dict lets you detect positions that have occurred before.
 
 ## Competition Format
 

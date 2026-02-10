@@ -17,6 +17,7 @@ def update_scoreboard(
     losses: int,
     draws: int,
     score: float,
+    points: int = 0,
 ) -> None:
     """Atomically update an agent's row in the scoreboard file.
 
@@ -37,18 +38,30 @@ def update_scoreboard(
                 if not line or line.startswith("Agent"):
                     continue
                 parts = [p.strip() for p in line.split("|")]
-                if len(parts) != 6:
-                    continue
-                try:
-                    entries[parts[0]] = {
-                        "games": int(parts[1]),
-                        "wins": int(parts[2]),
-                        "losses": int(parts[3]),
-                        "draws": int(parts[4]),
-                        "score": float(parts[5]),
-                    }
-                except (ValueError, IndexError):
-                    continue
+                if len(parts) == 7:
+                    try:
+                        entries[parts[0]] = {
+                            "games": int(parts[1]),
+                            "wins": int(parts[2]),
+                            "losses": int(parts[3]),
+                            "draws": int(parts[4]),
+                            "points": int(parts[5]),
+                            "score": float(parts[6]),
+                        }
+                    except (ValueError, IndexError):
+                        continue
+                elif len(parts) == 6:
+                    try:
+                        entries[parts[0]] = {
+                            "games": int(parts[1]),
+                            "wins": int(parts[2]),
+                            "losses": int(parts[3]),
+                            "draws": int(parts[4]),
+                            "points": 0,
+                            "score": float(parts[5]),
+                        }
+                    except (ValueError, IndexError):
+                        continue
 
         if agent_name in entries:
             row = entries[agent_name]
@@ -56,6 +69,7 @@ def update_scoreboard(
             row["wins"] += wins
             row["losses"] += losses
             row["draws"] += draws
+            row["points"] += points
             row["score"] += score
         else:
             entries[agent_name] = {
@@ -63,18 +77,22 @@ def update_scoreboard(
                 "wins": wins,
                 "losses": losses,
                 "draws": draws,
+                "points": points,
                 "score": score,
             }
 
         sorted_entries = sorted(
-            entries.items(), key=lambda kv: kv[1]["score"], reverse=True
+            entries.items(),
+            key=lambda kv: (kv[1]["points"], kv[1]["score"]),
+            reverse=True,
         )
 
-        lines = ["Agent | Games | Wins | Losses | Draws | Score"]
+        lines = ["Agent | Games | Wins | Losses | Draws | Points | Score"]
         for name, row in sorted_entries:
             lines.append(
                 f"{name} | {row['games']} | {row['wins']} | "
-                f"{row['losses']} | {row['draws']} | {row['score']:.1f}"
+                f"{row['losses']} | {row['draws']} | "
+                f"{row['points']} | {row['score']:.1f}"
             )
 
         scoreboard_path.write_text("\n".join(lines) + "\n")
