@@ -227,9 +227,143 @@ To prevent disk bloat and ensure logs remain readable for both humans and analys
 
 Critically, the logs must preserve central system data (such as RESULT, SCORE, and CRASH counts) and the final game state. To ensure the final board or position is not stripped by the filter, the runner should prefix these lines with BOARD: or FINAL STATE:. Any line containing the word ENDED or empty lines used for visual spacing should also be kept. All other repetitive debug data, intermediate UI frames, or non-essential agent chatter should be discarded before the final write to the results directory.
 
+### 11.1 Per-Game Log Format
+Every game match runner must print the final board position in the logs of each game. The standardized per-game log block format is:
+
+```text
+============================================================
+Game X
+Agent-1: name (color_if_applicable)
+Agent-2: name (color_if_applicable)
+------------------------------------------------------------
+[... move-by-move detail (game-specific, not standardized) ...]
+Final Position:
+BOARD: <game-specific board display with BOARD: prefix>
+<game-specific info, e.g. "Pieces: B=6 W=3">
+----------------------------------------
+Final Result: Agent-1 wins by elimination.  (or "Draw by Repetition.")
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 5
+Agent-2: -5
+============================================================
+```
+
+*   `============` = game delimiter (between games)
+*   `------------` = section delimiter (within a game)
+*   Board lines prefixed with `BOARD:`
+
 
 ## 12. Log Storage & Cleanup
 | Item         | Specification                                                                                                                     |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | **Location** | `RESULTS_DIR / {timestamp}_{folder1}_vs_{folder2}_match.txt`                                                                      |
 | **Cleanup**  | Raw subprocess stdout should be processed in memory **or** stored in a `.tmp` file and deleted after the filtered log is written. |
+
+## 13. Log Examples
+These examples demonstrate how the standardized headers, separators, and machine-readable tags are implemented in practice.
+
+### A1 Battleship Example
+```text
+Match Contenders:
+mistralai-mistral-large-2512:1
+openai-gpt-oss-120b-fp8:1
+
+Result:
+mistralai-mistral-large-2512:1 : Pts: 3 - Score: -1.0
+openai-gpt-oss-120b-fp8:1 : Pts: 6 - Score: 1.0
+
+============================================================
+Game 1
+Agent-1: mistralai-mistral-large-2512
+Agent-2: openai-gpt-oss-120b-fp8
+------------------------------------------------------------
+Final Position:
+BOARD: mistralai-mistral-large-2512 Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # O O O O O O O
+...
+BOARD: 7  S S S S S O O O
+
+BOARD: openai-gpt-oss-120b-fp8 Ships:
+BOARD:    0 1 2 3 4 5 6 7
+...
+----------------------------------------
+Final Result: mistralai-mistral-large-2512 wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 5
+Agent-2: -5
+============================================================
+============================================================
+Agent-1: mistralai-mistral-large-2512
+Agent-2: openai-gpt-oss-120b-fp8
+RESULT:Agent-1=3.0,Agent-2=6.0
+SCORE:Agent-1=-1.0,Agent-2=1.0
+WINS:Agent-1=1,Agent-2=2
+DRAWS:0
+STATS:Agent-1={...},Agent-2={...}
+
+--- MATCH STATISTICS ---
+Agent-1 make_move_crash: 0
+Agent-2 make_move_crash: 0
+...
+------------------------------------------------------------
+```
+
+### A8 Surround Morris Example
+```text
+Match Contenders:
+anthropic-claude-opus-4.6:1
+google-gemini-3-pro-preview:1
+
+Result:
+anthropic-claude-opus-4.6:1 : Pts: 5 - Score: 6.0
+google-gemini-3-pro-preview:1 : Pts: 2 - Score: -6.0
+
+============================================================
+Game 1
+Agent-1: anthropic-claude-opus-4.6:1 (W)
+Agent-2: google-gemini-3-pro-preview:1 (B)
+------------------------------------------------------------
+
+Final Position:
+BOARD:  .----------B----------.
+BOARD:  |           |           |
+...
+BOARD:  .----------B----------B
+Pieces: B=7 W=4
+----
+Final Result: Draw by Repetition
+----------------------------------------
+Points:
+Agent-1: 1
+Agent-2: 1
+----------------------------------------
+Scores:
+Agent-1: 0
+Agent-2: 0
+============================================================
+============================================================
+Agent-1: anthropic-claude-opus-4.6:1
+Agent-2: google-gemini-3-pro-preview:1
+RESULT:Agent-1=5,Agent-2=2
+SCORE:Agent-1=6.0,Agent-2=-6.0
+WINS:Agent-1=1,Agent-2=0
+DRAWS:2
+STATS:Agent-1={...},Agent-2={...}
+
+--- MATCH STATISTICS ---
+Agent-1 make_move_crash: 0
+Agent-2 make_move_crash: 0
+...
+------------------------------------------------------------
+```

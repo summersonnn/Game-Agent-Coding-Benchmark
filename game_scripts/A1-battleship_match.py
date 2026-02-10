@@ -635,6 +635,19 @@ def play_game(game_num, match_stats):
             opponent_agent = agent2 if current_agent == agent1 else agent1
             my_ships_board = players[opponent_agent]['opponent_ships_board']
             score = sum(row.count(SHIP) for row in my_ships_board)
+
+            # Print final board state
+            print("Final Position:")
+            print(f"BOARD: {{AGENT1_NAME}} Ships:")
+            print("BOARD:    0 1 2 3 4 5 6 7")
+            for r in range(BOARD_SIZE):
+                print(f"BOARD: {{r}}  {{' '.join(p1_ships_board[r])}}")
+            print()
+            print(f"BOARD: {{AGENT2_NAME}} Ships:")
+            print("BOARD:    0 1 2 3 4 5 6 7")
+            for r in range(BOARD_SIZE):
+                print(f"BOARD: {{r}}  {{' '.join(p2_ships_board[r])}}")
+
             return current_agent.name, score
         
         if not turn_continues:
@@ -649,7 +662,12 @@ def main():
     }}
     
     for i in range(NUM_GAMES):
-        print(f"GAME {{i+1}}")
+        print("=" * 60)
+        print(f"Game {{i+1}}")
+        print(f"Agent-1: {{AGENT1_NAME}}")
+        print(f"Agent-2: {{AGENT2_NAME}}")
+        print("-" * 60)
+        
         result, game_score = play_game(i + 1, match_stats)
         
         if isinstance(result, tuple): # Crash
@@ -672,14 +690,39 @@ def main():
             if winner_id == AGENT1_NAME: match_stats[AGENT2_NAME]["other_crash"] += 1
             else: match_stats[AGENT1_NAME]["other_crash"] += 1
             
-            print(f"CRASH in Game {{i+1}}: {{crash_msg}}")
+            print("Final Position: N/A (crash)")
+            print("-" * 40)
+            print(f"Final Result: {{winner_id}} wins. (opponent crashed)")
+            print("-" * 40)
+            print("Points:")
+            if winner_id == AGENT1_NAME:
+                print("Agent-1: 3")
+                print("Agent-2: 0")
+            else:
+                print("Agent-1: 0")
+                print("Agent-2: 3")
+            print("-" * 40)
+            print("Scores:")
+            print(f"{{winner_id}}: {{max_score}}")
+            print(f"{{loser_id_key}}: -{{max_score}}")
 
         elif result == "DRAW":
             match_stats[AGENT1_NAME]["draws"] += 1
             match_stats[AGENT1_NAME]["points"] += 1
             match_stats[AGENT2_NAME]["draws"] += 1
             match_stats[AGENT2_NAME]["points"] += 1
-            print(f"Game {{i+1}} Result: DRAW")
+            
+            print("-" * 40)
+            print("Final Result: Draw by Turn Limit.")
+            print("-" * 40)
+            print("Points:")
+            print("Agent-1: 1")
+            print("Agent-2: 1")
+            print("-" * 40)
+            print("Scores:")
+            print("Agent-1: 0")
+            print("Agent-2: 0")
+
         else:
             winner_id = result # AGENT1_NAME or AGENT2_NAME
             loser_id = AGENT2_NAME if winner_id == AGENT1_NAME else AGENT1_NAME
@@ -689,10 +732,32 @@ def main():
             match_stats[winner_id]["score"] += game_score
             match_stats[loser_id]["losses"] += 1
             match_stats[loser_id]["score"] -= game_score
-            print(f"Game {{i+1}} Result: {{winner_id}} wins with score {{game_score}} ({{loser_id}} score -{{game_score}})")
+            
+            print("-" * 40)
+            print(f"Final Result: {{winner_id}} wins by Elimination.")
+            print("-" * 40)
+            print("Points:")
+            if winner_id == AGENT1_NAME:
+                print("Agent-1: 3")
+                print("Agent-2: 0")
+            else:
+                print("Agent-1: 0")
+                print("Agent-2: 3")
+            print("-" * 40)
+            print("Scores:")
+            if winner_id == AGENT1_NAME:
+                print(f"Agent-1: {{game_score}}")
+                print(f"Agent-2: -{{game_score}}")
+            else:
+                print(f"Agent-1: -{{game_score}}")
+                print(f"Agent-2: {{game_score}}")
         
+        print("=" * 60)
         sys.stdout.flush()
     
+    print("=" * 60)
+    print(f"Agent-1: {{AGENT1_NAME}}")
+    print(f"Agent-2: {{AGENT2_NAME}}")
     print(f"RESULT:Agent-1={{float(match_stats[AGENT1_NAME]['points'])}},Agent-2={{float(match_stats[AGENT2_NAME]['points'])}}")
     print(f"SCORE:Agent-1={{float(match_stats[AGENT1_NAME]['score'])}},Agent-2={{float(match_stats[AGENT2_NAME]['score'])}}")
     print(f"WINS:Agent-1={{match_stats[AGENT1_NAME]['wins']}},Agent-2={{match_stats[AGENT2_NAME]['wins']}}")
@@ -939,12 +1004,12 @@ def run_match(game_code: str, match_id: int, run_ids: tuple[int, int], timeout: 
             for line in result.stdout.splitlines():
                 stripped = line.lstrip()
                 if stripped.startswith((
-                    "Agent-1:", "Agent-2:", "GAME", "Game", "Winner:",
-                    "Running Total", "==========", "--- Turn", "0 1", "YOUR",
-                    "Final", "Scores:", "Agent 1", "Agent 2",
-                    "BOARD:", "FINAL STATE:",
-                    "CRASH", "RESULT", "SCORE", "WINS", "DRAWS", "STATS"
-                )) or "ENDED" in line or line.strip() == "":
+                    "Agent-1:", "Agent-2:", "Game ",
+                    "=====", "----",
+                    "Final", "Scores:", "Points:",
+                    "BOARD:",
+                    "CRASH", "RESULT", "SCORE", "WINS", "DRAWS", "STATS",
+                )) or line.strip() == "":
                     log_lines.append(line)
 
             return {
@@ -1165,8 +1230,13 @@ async def main_async():
     total_pts1, total_pts2 = 0, 0
     
     with open(log_f, "w") as f:
-        f.write(f"Battleship Stored Agent Match - {ts}\n")
-        f.write("=" * 60 + "\n\n")
+        # Header
+        f.write(f"Match Contenders:\n")
+        # We assume 1-to-1 mapping for the log header if multiple matches are in one file, 
+        # or just list the first pair if usually one match per file.
+        if num_matches > 0:
+             f.write(f"{folder1}:{runs1[0]}\n")
+             f.write(f"{folder2}:{runs2[0]}\n\n")
         
         for result in sorted(results, key=lambda x: x["match_id"]):
             match_id = result["match_id"]
@@ -1178,7 +1248,12 @@ async def main_async():
                 total2 += s2
                 total_pts1 += p1
                 total_pts2 += p2
-                status = f"Result: Pts {p1}-{p2}, Score {s1:.1f}-{s2:.1f}"
+
+                # Result section
+                status = "Result:\n"
+                status += f"{folder1}:{result['agent1_run_id']} : Pts: {p1} - Score: {s1:.1f}\n"
+                status += f"{folder2}:{result['agent2_run_id']} : Pts: {p2} - Score: {s2:.1f}\n"
+
                 game_log = result.get("log", "")
                 if game_log:
                     status += f"\n{game_log}\n"
@@ -1189,10 +1264,11 @@ async def main_async():
             else:
                 status = f"FAILED: {result.get('error', 'Unknown')}"
                 
-            print(f"  Match {match_id}: {status.splitlines()[0]}")
-            f.write(f"Match {match_id}: {folder1} vs {folder2}\n")
+            # Only print brief status to console
+            print(f"Match {match_id} Completed. Pts {p1}-{p2}")
+
             f.write(f"{status}\n")
-            f.write("-" * 40 + "\n\n")
+            f.write("-" * 60 + "\n\n")
 
             # Update scoreboard once per match
             if result["success"]:

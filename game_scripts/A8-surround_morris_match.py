@@ -258,19 +258,19 @@ class SurroundMorrisGame:
         def p(i):
             v = self.board[i]
             return v if v else '.'
-        print(f" {p(0)}----------{p(1)}----------{p(2)}")
-        print(f" |           |           |")
-        print(f" |   {p(3)}-------{p(4)}-------{p(5)}   |")
-        print(f" |   |       |       |   |")
-        print(f" |   |   {p(6)}---{p(7)}---{p(8)}   |   |")
-        print(f" |   |   |       |   |   |")
-        print(f" {p(9)}---{p(10)}---{p(11)}       {p(12)}---{p(13)}---{p(14)}")
-        print(f" |   |   |       |   |   |")
-        print(f" |   |   {p(15)}---{p(16)}---{p(17)}   |   |")
-        print(f" |   |       |       |   |")
-        print(f" |   {p(18)}-------{p(19)}-------{p(20)}   |")
-        print(f" |           |           |")
-        print(f" {p(21)}----------{p(22)}----------{p(23)}")
+        print(f"BOARD:  {p(0)}----------{p(1)}----------{p(2)}")
+        print(f"BOARD:  |           |           |")
+        print(f"BOARD:  |   {p(3)}-------{p(4)}-------{p(5)}   |")
+        print(f"BOARD:  |   |       |       |   |")
+        print(f"BOARD:  |   |   {p(6)}---{p(7)}---{p(8)}   |   |")
+        print(f"BOARD:  |   |   |       |   |   |")
+        print(f"BOARD:  {p(9)}---{p(10)}---{p(11)}       {p(12)}---{p(13)}---{p(14)}")
+        print(f"BOARD:  |   |   |       |   |   |")
+        print(f"BOARD:  |   |   {p(15)}---{p(16)}---{p(17)}   |   |")
+        print(f"BOARD:  |   |       |       |   |")
+        print(f"BOARD:  |   {p(18)}-------{p(19)}-------{p(20)}   |")
+        print(f"BOARD:  |           |           |")
+        print(f"BOARD:  {p(21)}----------{p(22)}----------{p(23)}")
 
     def display_board_with_numbers(self):
         def p(i):
@@ -338,11 +338,12 @@ def play_game(game_num, match_stats):
 
     print()
     print("=" * 60)
-    print(f"GAME {game_num}")
-    print(f"Agent-1: {AGENT1_INFO}")
-    print(f"Agent-2: {AGENT2_INFO}")
-    print(f"{b_name} plays B (Black), {w_name} plays W (White)")
-    print("=" * 60)
+    print(f"Game {game_num}")
+    a1_color = 'B' if b_name == "Agent-1" else 'W'
+    a2_color = 'B' if b_name == "Agent-2" else 'W'
+    print(f"Agent-1: {AGENT1_INFO} ({a1_color})")
+    print(f"Agent-2: {AGENT2_INFO} ({a2_color})")
+    print("-" * 60)
 
     try:
         b_agent = b_agent_class(b_name, 'B')
@@ -354,6 +355,19 @@ def play_game(game_num, match_stats):
         match_stats[w_name]["score"] += 7
         match_stats[b_name]["losses"] += 1
         match_stats[b_name]["score"] -= 7
+        
+        print(f"Final Position: N/A (initialization crash)")
+        print("-" * 40)
+        print(f"Final Result: {w_name} wins.")
+        print("-" * 40)
+        print("Points:")
+        print(f"{w_name}: 3")
+        print(f"{b_name}: 0")
+        print("-" * 40)
+        print("Scores:")
+        print(f"{w_name}: 7")
+        print(f"{b_name}: -7")
+        print("=" * 60)
         return w_name
 
     try:
@@ -366,6 +380,19 @@ def play_game(game_num, match_stats):
         match_stats[b_name]["score"] += 7
         match_stats[w_name]["losses"] += 1
         match_stats[w_name]["score"] -= 7
+        
+        print(f"Final Position: N/A (initialization crash)")
+        print("-" * 40)
+        print(f"Final Result: {b_name} wins.")
+        print("-" * 40)
+        print("Points:")
+        print(f"{b_name}: 3")
+        print(f"{w_name}: 0")
+        print("-" * 40)
+        print("Scores:")
+        print(f"{b_name}: 7")
+        print(f"{w_name}: -7")
+        print("=" * 60)
         return b_name
 
     agents = {'B': b_agent, 'W': w_agent}
@@ -458,9 +485,7 @@ def play_game(game_num, match_stats):
         game.current_player = game.opponent(color)
 
     # --- Movement Phase ---
-    if game.phase == 'movement' and not game_over:
-        print()
-        print("--- MOVEMENT PHASE ---")
+
 
     while game.phase == 'movement' and not game_over:
         # Record history and check repetition BEFORE move
@@ -562,9 +587,10 @@ def play_game(game_num, match_stats):
         result_desc = "Game ended unexpectedly"
 
     print()
+    print("Final Position:")
     game.display_board()
     print(f"Pieces: B={game.pieces_on_board['B']} W={game.pieces_on_board['W']}")
-    print(f"GAME {game_num} ENDED: {result_desc}")
+    print("----")
 
     # Determine winner/loser and scores (loser gets negative)
     winner_score = 0
@@ -595,12 +621,30 @@ def play_game(game_num, match_stats):
         winner_score = 0
         loser_score = 0
 
+    # Final Result
+    final_reason = result_desc.replace('B', names['B']).replace('W', names['W'])
+    print(f"Final Result: {final_reason}")
+    print("-" * 40)
+    
+    # Points
+    print("Points:")
     if winner != "DRAW":
-        print(f"{winner_color} ({winner}) wins with score of {winner_score}")
+        print(f"{winner}: 3")
+        print(f"{loser}: 0")
     else:
-        print(f"Game ended in a DRAW")
-
-    print(f"Winner: {winner}")
+        print("Agent-1: 1")
+        print("Agent-2: 1")
+    print("-" * 40)
+    
+    # Scores
+    print("Scores:")
+    if winner != "DRAW":
+        print(f"{winner}: {winner_score}")
+        print(f"{loser}: {loser_score}")
+    else:
+        print("Agent-1: 0")
+        print("Agent-2: 0")
+    print("=" * 60)
 
     if winner != "DRAW":
         match_stats[winner]["wins"] += 1
@@ -616,7 +660,6 @@ def play_game(game_num, match_stats):
         match_stats["Agent-2"]["points"] += 1
         match_stats["Agent-2"]["score"] += loser_score
 
-    print("=" * 60)
     sys.stdout.flush()
 
     return winner
@@ -636,16 +679,9 @@ def main():
         play_game(i + 1, match_stats)
         sys.stdout.flush()
 
-    print("\nFinal Results")
-    print(f"Agent 1 ({AGENT1_INFO}) Wins: {match_stats['Agent-1']['wins']} times")
-    print(f"Agent 2 ({AGENT2_INFO}) Wins: {match_stats['Agent-2']['wins']} times")
-    print("Points:")
-    print(f"Agent 1: {match_stats['Agent-1']['points']}")
-    print(f"Agent 2: {match_stats['Agent-2']['points']}")
-    print("Scores:")
-    print(f"Agent 1: {match_stats['Agent-1']['score']}")
-    print(f"Agent 2: {match_stats['Agent-2']['score']}")
-
+    print("=" * 60)
+    print(f"Agent-1: {AGENT1_INFO}")
+    print(f"Agent-2: {AGENT2_INFO}")
     print(f"RESULT:Agent-1={match_stats['Agent-1']['points']},Agent-2={match_stats['Agent-2']['points']}")
     print(f"SCORE:Agent-1={match_stats['Agent-1']['score']},Agent-2={match_stats['Agent-2']['score']}")
     print(f"WINS:Agent-1={match_stats['Agent-1']['wins']},Agent-2={match_stats['Agent-2']['wins']}")
@@ -1181,12 +1217,13 @@ def run_match(
             log_lines = []
             for line in result.stdout.splitlines():
                 if line.startswith((
-                    "Agent-1:", "Agent-2:", "GAME ", "Game ", "Winner:",
-                    "Running Total", "==========", "--- MOVEMENT",
-                    "Final", "Scores:", "Agent 1", "Agent 2",
+                    "Agent-1:", "Agent-2:", "Game ",
+                    "=====", "----",
+                    "Final", "Scores:", "Points:", "Pieces:",
+                    "BOARD:",
                     "CRASH", "RESULT", "SCORE", "WINS", "DRAWS",
-                    "Pieces:", "Points:",
-                )) or "ENDED" in line or line.strip() == "":
+                    "STATS",
+                )) or line.strip() == "":
                     log_lines.append(line)
 
             return {
@@ -1387,8 +1424,15 @@ async def main_async():
     total_pts1, total_pts2 = 0, 0
 
     with open(log_f, "w") as f:
-        f.write(f"Surround Morris Match - {ts}\n")
-        f.write("=" * 60 + "\n\n")
+        # Header
+        f.write(f"Match Contenders:\n")
+        # We assume 1-to-1 mapping for the log header if multiple matches are in one file, 
+        # or just list the first pair if usually one match per file.
+        # Given "There is no need to say 'Match 1' as there can be only one match per log",
+        # we will list the contenders for the FIRST match in the loop as the file header.
+        if num_matches > 0:
+             f.write(f"{folder1}:{runs1[0]}\n")
+             f.write(f"{folder2}:{runs2[0]}\n\n")
 
         for result in sorted(results, key=lambda x: x["match_id"]):
             match_id = result["match_id"]
@@ -1400,7 +1444,12 @@ async def main_async():
                 total2 += s2
                 total_pts1 += p1
                 total_pts2 += p2
-                status = f"Result: Pts {p1}-{p2}, Score {s1:.1f}-{s2:.1f}"
+                
+                # Result section
+                status = "Result:\n"
+                status += f"{folder1}:{result['agent1_run_id']} : Pts: {p1} - Score: {s1:.1f}\n"
+                status += f"{folder2}:{result['agent2_run_id']} : Pts: {p2} - Score: {s2:.1f}\n"
+
                 game_log = result.get("log", "")
                 if game_log:
                     status += f"\n{game_log}\n"
@@ -1411,13 +1460,11 @@ async def main_async():
             else:
                 status = f"FAILED: {result.get('error', 'Unknown')}"
 
-            print(f"  Match {match_id}: {status}")
-            f.write(f"Match {match_id}: {status}\n")
-            if result.get("stats_block"):
-                f.write(
-                    f"\n--- MATCH STATISTICS ---\n{result['stats_block']}\n"
-                )
-                f.write("-" * 60 + "\n\n")
+            # Only print brief status to console
+            print(f"Match Completed. Pts {p1}-{p2}")
+            
+            f.write(f"{status}\n")  # Write the formatted status which includes Result and Game logs
+            f.write("-" * 60 + "\n\n") # Separator between matches if any
 
     runs1_str = ",".join(str(r) for r in runs1)
     runs2_str = ",".join(str(r) for r in runs2)
