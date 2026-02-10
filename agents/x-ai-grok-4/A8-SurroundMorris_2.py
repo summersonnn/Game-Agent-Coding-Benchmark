@@ -2,7 +2,7 @@
 Agent Code: A8-SurroundMorris
 Model: x-ai/grok-4
 Run: 2
-Generated: 2026-02-09 19:05:17
+Generated: 2026-02-10 22:38:58
 """
 
 
@@ -13,187 +13,187 @@ class SurroundMorrisAgent:
     def __init__(self, name: str, color: str):
         self.name = name
         self.color = color
-        self.opp_color = 'W' if color == 'B' else 'B'
-        self.ADJACENCY = {
-            0: [1, 9], 1: [0, 2, 4], 2: [1, 14],
-            3: [4, 10], 4: [1, 3, 5, 7], 5: [4, 13],
-            6: [7, 11], 7: [4, 6, 8], 8: [7, 12],
-            9: [0, 10, 21], 10: [3, 9, 11, 18], 11: [6, 10, 15],
-            12: [8, 13, 17], 13: [5, 12, 14, 20], 14: [2, 13, 23],
-            15: [11, 16], 16: [15, 17, 19], 17: [12, 16],
-            18: [10, 19], 19: [16, 18, 20, 22], 20: [13, 19],
-            21: [9, 22], 22: [19, 21, 23], 23: [14, 22],
+        self.spot_values = [len(ADJACENCY[i]) for i in range(24)]
+
+    def make_move(self, state: dict, feedback: dict | None = None):
+        my_state = {
+            'board': state['board'][:],
+            'phase': state['phase'],
+            'current_player': state['your_color'],
+            'pieces_in_hand': state['pieces_in_hand'].copy(),
+            'pieces_on_board': state['pieces_on_board'].copy(),
+            'move_count': state['move_count'],
+            'history': state['history'][:],
         }
+
+        legal_moves = self.get_legal_moves(my_state)
+        if not legal_moves:
+            return 0 if my_state['phase'] == 'placement' else (0, 1)
+
+        best_move = None
+        best_score = -float('inf')
+        for move in legal_moves:
+            result = self.apply_move(my_state, move)
+            if isinstance(result, dict):
+                score = self.minimax(result, 3, -float('inf'), float('inf'))
+            else:
+                end_type, *args = result
+                if end_type == 'elimination':
+                    winner, sc = args
+                    score = sc if winner == self.color else -sc
+                elif end_type == 'turn_limit' or end_type == 'elimination_draw':
+                    score = 0
+            if score > best_score or (score == best_score and random.random() < 0.5):
+                best_score = score
+                best_move = move
+        return best_move
+
+    def get_legal_moves(self, my_state):
+        color = my_state['current_player']
+        board = my_state['board']
+        phase = my_state['phase']
+        if phase == 'placement':
+            return [i for i in range(24) if board[i] == '']
+        else:
+            moves = []
+            for spot in range(24):
+                if board[spot] == color:
+                    for n in ADJACENCY[spot]:
+                        if board[n] == '':
+                            moves.append((spot, n))
+            return moves
 
     def is_captured(self, spot, board):
         color = board[spot]
         if color == '':
             return False
-        neighbors = self.ADJACENCY[spot]
+        neighbors = ADJACENCY[spot]
         empty = 0
         friendly = 0
         opponent = 0
         opp = 'W' if color == 'B' else 'B'
         for n in neighbors:
             b = board[n]
-            if b == '':
-                empty += 1
-            elif b == color:
-                friendly += 1
-            else:
-                opponent += 1
+            if b == '': empty += 1
+            elif b == color: friendly += 1
+            else: opponent += 1
         return empty == 0 and opponent > friendly
 
-    def apply_move(self, state, move):
-        new_state = {}
-        for k in state:
-            if k == 'board':
-                new_state[k] = state[k].copy()
-            elif k == 'history':
-                new_state[k] = state[k].copy()
-            elif k == 'pieces_in_hand' or k == 'pieces_on_board':
-                new_state[k] = state[k].copy()
-            else:
-                new_state[k] = state[k]
-        phase = new_state['phase']
-        color = new_state['current_player']
-        opp = 'W' if color == 'B' else 'B'
-        board = new_state['board']
+    def process_captures(self, board, active_spot, active_color):
+        board = board[:]
+        if self.is_captured(active_spot, board):
+            board[active_spot] = ''
+            return board
+        friendly_captured = [s for s in range(24) if board[s] == active_color and self.is_captured(s, board)]
+        for s in friendly_captured:
+            board[s] = ''
+        opp_color = 'W' if active_color == 'B' else 'B'
+        opp_captured = [s for s in range(24) if board[s] == opp_color and self.is_captured(s, board)]
+        for s in opp_captured:
+            board[s] = ''
+        return board
+
+    def apply_move(self, my_state, move):
+        new_s = {k: v.copy() if isinstance(v, (list, dict)) else v for k, v in my_state.items()}
+        color = new_s['current_player']
+        opp_color = 'W' if color == 'B' else 'B'
+        phase = new_s['phase']
         if phase == 'placement':
             spot = move
-            if board[spot] != '' or spot < 0 or spot > 23:
-                return None
-            board[spot] = color
-            new_state['pieces_in_hand'][color] -= 1
-            if self.is_captured(spot, board):
-                board[spot] = ''
-            else:
-                to_remove = [s for s in range(24) if board[s] == color and self.is_captured(s, board)]
-                for s in to_remove:
-                    board[s] = ''
-                to_remove = [s for s in range(24) if board[s] == opp and self.is_captured(s, board)]
-                for s in to_remove:
-                    board[s] = ''
+            new_s['board'][spot] = color
+            new_s['pieces_in_hand'][color] -= 1
+            new_s['pieces_on_board'][color] += 1
+            active_spot = spot
         else:
             from_sp, to_sp = move
-            if board[from_sp] != color or board[to_sp] != '' or to_sp not in self.ADJACENCY[from_sp]:
-                return None
-            board[to_sp] = color
-            board[from_sp] = ''
-            if self.is_captured(to_sp, board):
-                board[to_sp] = ''
-            else:
-                to_remove = [s for s in range(24) if board[s] == color and self.is_captured(s, board)]
-                for s in to_remove:
-                    board[s] = ''
-                to_remove = [s for s in range(24) if board[s] == opp and self.is_captured(s, board)]
-                for s in to_remove:
-                    board[s] = ''
-            new_state['move_count'] += 1
+            new_s['board'][to_sp] = color
+            new_s['board'][from_sp] = ''
+            active_spot = to_sp
+            new_s['move_count'] += 1
+        new_s['board'] = self.process_captures(new_s['board'], active_spot, color)
         pob = {'B': 0, 'W': 0}
-        for i in range(24):
-            c = board[i]
-            if c == 'B':
-                pob['B'] += 1
-            elif c == 'W':
-                pob['W'] += 1
-        new_state['pieces_on_board'] = pob
-        if phase == 'placement' and new_state['pieces_in_hand']['B'] == 0 and new_state['pieces_in_hand']['W'] == 0:
-            new_state['phase'] = 'movement'
-            new_state['history'] = []
-        new_state['current_player'] = opp
-        return new_state
+        for i, p in enumerate(new_s['board']):
+            if p in pob:
+                pob[p] += 1
+        new_s['pieces_on_board'] = pob
+        if phase == 'placement' and all(v == 0 for v in new_s['pieces_in_hand'].values()):
+            new_s['phase'] = 'movement'
+            new_s['history'] = []
+            new_s['move_count'] = 0
+        elim = []
+        for c in ['B', 'W']:
+            if pob[c] == 0 and (new_s['phase'] != 'placement' or new_s['pieces_in_hand'][c] == 0):
+                elim.append(c)
+        if len(elim) == 2:
+            return 'elimination_draw', 0
+        elif len(elim) == 1:
+            loser = elim[0]
+            winner = 'W' if loser == 'B' else 'B'
+            score = pob[winner]
+            return 'elimination', winner, score
+        if new_s['phase'] == 'movement' and new_s['move_count'] >= 200:
+            return 'turn_limit', 'draw'
+        new_s['current_player'] = opp_color
+        return new_s
 
-    def get_legal_moves(self, state):
-        phase = state['phase']
-        color = state['current_player']
-        board = state['board']
-        if phase == 'placement':
-            return [i for i in range(24) if board[i] == '']
-        else:
-            moves = []
-            for s in range(24):
-                if board[s] == color:
-                    for n in self.ADJACENCY[s]:
-                        if board[n] == '':
-                            moves.append((s, n))
-            return moves
+    def evaluate_board(self, my_state):
+        my_color = self.color
+        opp_color = 'W' if my_color == 'B' else 'B'
+        my_p = my_state['pieces_on_board'][my_color] + my_state['pieces_in_hand'][my_color]
+        opp_p = my_state['pieces_on_board'][opp_color] + my_state['pieces_in_hand'][opp_color]
+        my_control = sum(self.spot_values[s] for s in range(24) if my_state['board'][s] == my_color)
+        opp_control = sum(self.spot_values[s] for s in range(24) if my_state['board'][s] == opp_color)
+        return (my_p - opp_p) * 10 + (my_control - opp_control)
 
-    def evaluate(self, state):
-        my_p = state['pieces_on_board'][self.color] + state['pieces_in_hand'][self.color]
-        opp_p = state['pieces_on_board'][self.opp_color] + state['pieces_in_hand'][self.opp_color]
-        return my_p - opp_p
-
-    def minimax(self, state, depth, alpha, beta, maximizing):
+    def minimax(self, my_state, depth, alpha, beta):
+        my_color = self.color
+        current = my_state['current_player']
+        is_max = (current == my_color)
+        pos = (tuple(my_state['board']), current)
+        temp_history = my_state['history'] + [pos]
+        if temp_history.count(pos) >= 3:
+            return 0
+        if my_state['phase'] == 'movement' and my_state['move_count'] >= 200:
+            return 0
+        legal = self.get_legal_moves(my_state)
+        if not legal:
+            winner = 'W' if current == 'B' else 'B'
+            return 7 if winner == my_color else -7
         if depth == 0:
-            return self.evaluate(state)
-        color = state['current_player']
-        opp = 'W' if color == 'B' else 'B'
-        pob = state['pieces_on_board']
-        pih = state['pieces_in_hand']
-        phase = state['phase']
-        if pob[color] == 0 and (phase == 'movement' or pih[color] == 0):
-            winner = opp
-            if winner == self.color:
-                return pob[opp]
-            else:
-                return 0
-        legal_moves = self.get_legal_moves(state)
-        if phase == 'movement' and not legal_moves:
-            winner = opp
-            if winner == self.color:
-                return 7
-            else:
-                return -7
-        if maximizing:
+            return self.evaluate_board(my_state)
+        if is_max:
             max_eval = -float('inf')
-            for move in legal_moves:
-                new_state = self.apply_move(state, move)
-                if new_state is None:
-                    continue
-                eval = self.minimax(new_state, depth - 1, alpha, beta, False)
+            for move in legal:
+                result = self.apply_move(my_state, move)
+                if isinstance(result, dict):
+                    eval = self.minimax(result, depth - 1, alpha, beta)
+                else:
+                    end_type, *args = result
+                    if end_type == 'elimination_draw' or end_type == 'turn_limit':
+                        eval = 0
+                    elif end_type == 'elimination':
+                        w, sc = args
+                        eval = sc if w == my_color else -sc
                 max_eval = max(max_eval, eval)
-                alpha = max(alpha, max_eval)
+                alpha = max(alpha, eval)
                 if beta <= alpha:
                     break
             return max_eval
         else:
             min_eval = float('inf')
-            for move in legal_moves:
-                new_state = self.apply_move(state, move)
-                if new_state is None:
-                    continue
-                eval = self.minimax(new_state, depth - 1, alpha, beta, True)
+            for move in legal:
+                result = self.apply_move(my_state, move)
+                if isinstance(result, dict):
+                    eval = self.minimax(result, depth - 1, alpha, beta)
+                else:
+                    end_type, *args = result
+                    if end_type == 'elimination_draw' or end_type == 'turn_limit':
+                        eval = 0
+                    elif end_type == 'elimination':
+                        w, sc = args
+                        eval = sc if w == my_color else -sc
                 min_eval = min(min_eval, eval)
-                beta = min(beta, min_eval)
+                beta = min(beta, eval)
                 if beta <= alpha:
                     break
             return min_eval
-
-    def make_move(self, state: dict, feedback: dict | None = None):
-        phase = state["phase"]
-        board = state["board"]
-        legal = []
-        if phase == "placement":
-            legal = [i for i in range(24) if board[i] == '']
-        else:
-            for spot in range(24):
-                if board[spot] == self.color:
-                    for n in self.ADJACENCY[spot]:
-                        if board[n] == '':
-                            legal.append((spot, n))
-        if not legal:
-            return 0 if phase == "placement" else (0, 1)
-        best_value = -float('inf')
-        best_moves = []
-        for move in legal:
-            new_state = self.apply_move(state, move)
-            if new_state is None:
-                continue
-            value = self.minimax(new_state, 3, -float('inf'), float('inf'), False)
-            if value > best_value:
-                best_value = value
-                best_moves = [move]
-            elif value == best_value:
-                best_moves.append(move)
-        return random.choice(best_moves)

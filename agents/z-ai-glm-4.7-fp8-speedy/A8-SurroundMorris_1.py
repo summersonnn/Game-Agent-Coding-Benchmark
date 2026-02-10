@@ -2,275 +2,202 @@
 Agent Code: A8-SurroundMorris
 Model: z-ai/glm-4.7@preset/fp8-speedy
 Run: 1
-Generated: 2026-02-09 19:15:26
+Generated: 2026-02-10 22:37:41
 """
 
 
 
 import random
 
-# Global Adjacency Graph
-ADJACENCY = {
-    0: [1, 9],       1: [0, 2, 4],     2: [1, 14],
-    3: [4, 10],      4: [1, 3, 5, 7],  5: [4, 13],
-    6: [7, 11],      7: [4, 6, 8],     8: [7, 12],
-    9: [0, 10, 21],  10: [3, 9, 11, 18], 11: [6, 10, 15],
-    12: [8, 13, 17], 13: [5, 12, 14, 20], 14: [2, 13, 23],
-    15: [11, 16],    16: [15, 17, 19],  17: [12, 16],
-    18: [10, 19],    19: [16, 18, 20, 22], 20: [13, 19],
-    21: [9, 22],     22: [19, 21, 23], 23: [14, 22],
-}
-
-# Positional weights: 2-neighbor spots (corners/inner) are weak (1), 
-# 3-neighbor spots (sides) are medium (3), 4-neighbor spots (crossroads) are strong (5).
-POSITION_WEIGHTS = [
-    1, 3, 1,
-    1, 5, 1,
-    1, 3, 1,
-    3, 5, 3,
-    3, 5, 3,
-    1, 3, 1,
-    1, 5, 1,
-    1, 3, 1
-]
-
 class SurroundMorrisAgent:
     """
-    A strategic agent for Surround Morris using Minimax with Alpha-Beta pruning.
+    A strategic agent for Surround Morris.
     """
     def __init__(self, name: str, color: str):
         self.name = name
         self.color = color
-        self.max_depth = 3  # Search depth
+        self.piece_values = {
+            'crossroad': 4,  # Spots 4, 10, 13, 19
+            't_junction': 2, # Spots 1, 3, 5, 7, 9, 11, 12, 14, 16, 17, 18, 20
+            'corner': 1      # Spots 0, 2, 6, 8, 15, 21, 22, 23
+        }
+        self.spot_types = {
+            0: 'corner', 1: 't_junction', 2: 'corner',
+            3: 't_junction', 4: 'crossroad', 5: 't_junction',
+            6: 'corner', 7: 't_junction', 8: 'corner',
+            9: 't_junction', 10: 'crossroad', 11: 't_junction',
+            12: 't_junction', 13: 'crossroad', 14: 't_junction',
+            15: 'corner', 16: 't_junction', 17: 't_junction',
+            18: 't_junction', 19: 'crossroad', 20: 't_junction',
+            21: 'corner', 22: 'corner', 23: 'corner'
+        }
 
     def make_move(self, state: dict, feedback: dict | None = None):
         board = state["board"]
         phase = state["phase"]
-        player = state["your_color"]
-        opponent = state["opponent_color"]
-        history = state["history"]
-
+        my_color = state["your_color"]
+        opp_color = state["opponent_color"]
+        
+        # Generate all legal moves
         if phase == "placement":
-            return self._decide_placement(board, player, opponent, history)
+            legal_moves = [i for i in range(24) if board[i] == '']
         else:
-            return self._decide_movement(board, player, opponent, history)
+            legal_moves = []
+            for spot in range(24):
+                if board[spot] == my_color:
+                    for neighbor in ADJACENCY[spot]:
+                        if board[neighbor] == '':
+                            legal_moves.append((spot, neighbor))
 
-    def _decide_placement(self, board, player, opponent, history):
-        """Select a placement spot using minimax."""
-        legal_moves = [i for i in range(24) if board[i] == '']
         if not legal_moves:
-            return 0 # Should not happen
+            # Fallback if no moves (should be caught by engine as Mate, but safe to handle)
+            return 0 if phase == "placement" else (0, 1)
 
+        # Search for the best move using 1-ply simulation
         best_score = -float('inf')
-        best_move = legal_moves[0]
-        random.shuffle(legal_moves)
+        best_moves = []
 
-        for move in legal_moves:
-            new_board, _ = self._simulate(board, move, "placement", player, opponent)
-            
-            # Check for 3-fold repetition (Draw)
-            if self._is_repetition(new_board, opponent, history):
-                current_score = 0
-            else:
-                current_score = self._minimax(new_board, self.max_depth - 1, False, player, opponent, -float('inf'), float('inf'))
-
-            if current_score > best_score:
-                best_score = current_score
-                best_move = move
+        # Evaluate current state to determine if we are winning/losing for repetition logic
+        current_material_diff = self.count_pieces(board, my_color) - self.count_pieces(board, opp_color)
         
-        return best_move
-
-    def _decide_movement(self, board, player, opponent, history):
-        """Select a movement using minimax."""
-        legal_moves = []
-        for spot in range(24):
-            if board[spot] == player:
-                for neighbor in ADJACENCY[spot]:
-                    if board[neighbor] == '':
-                        legal_moves.append((spot, neighbor))
-        
-        if not legal_moves:
-            return (0, 1) # No moves, loss is imminent
-
-        best_score = -float('inf')
-        best_move = legal_moves[0]
-        random.shuffle(legal_moves)
-
         for move in legal_moves:
-            new_board, _ = self._simulate(board, move, "movement", player, opponent)
+            # Simulate the move and capture resolution
+            next_board, captured_enemies, captured_friendlies = self.simulate_move(board, move, phase, my_color)
             
-            # Check for Mate (Opponent has no moves)
-            if not self._has_moves(new_board, opponent):
-                return move # Immediate win
+            # Check for repetition draw
+            # The next state will be (next_board, opp_color)
+            next_state_key = (tuple(next_board), opp_color)
+            history = state["history"]
             
-            # Check for 3-fold repetition
-            if self._is_repetition(new_board, opponent, history):
-                current_score = 0
-            else:
-                current_score = self._minimax(new_board, self.max_depth - 1, False, player, opponent, -float('inf'), float('inf'))
+            # Avoid 3-fold repetition
+            if history.count(next_state_key) >= 2:
+                # If we are winning, avoid draw heavily. If losing, maybe we want it, 
+                # but for simplicity we treat draw as neutral/slightly negative unless desperate.
+                # Here we just penalize it to avoid premature draws.
+                continue
 
-            if current_score > best_score:
-                best_score = current_score
-                best_move = move
-                
-        return best_move
+            # Evaluate the board
+            score = self.evaluate(next_board, my_color, opp_color)
+            
+            # Add capture bonuses/penalties
+            score += captured_enemies * 15
+            score -= captured_friendlies * 15
+            
+            if score > best_score:
+                best_score = score
+                best_moves = [move]
+            elif score == best_score:
+                best_moves.append(move)
 
-    def _simulate(self, board, move, phase, player, opponent):
-        """
-        Simulates a move and applies capture logic (Suicide First, Self-Harm Priority).
-        Returns (new_board_list, active_piece_died_bool).
-        """
+        # If all moves lead to draw or we filtered everything, pick random from legal
+        if not best_moves:
+            return random.choice(legal_moves)
+            
+        return random.choice(best_moves)
+
+    def simulate_move(self, board, move, phase, color):
+        """Simulates a move and returns the resulting board state and capture counts."""
         new_board = list(board)
-        active_spot = -1
-
+        opp_color = 'W' if color == 'B' else 'B'
+        active_spot = None
+        
+        # 1. Apply Move
         if phase == "placement":
-            spot = move
-            new_board[spot] = player
-            active_spot = spot
+            active_spot = move
+            new_board[active_spot] = color
         else:
-            from_s, to_s = move
-            new_board[from_s] = ''
-            new_board[to_s] = player
-            active_spot = to_s
-
-        # 1. Active Piece Suicide Check
-        if self._is_overwhelmed(active_spot, new_board, player):
+            from_spot, to_spot = move
+            new_board[from_spot] = ''
+            new_board[to_spot] = color
+            active_spot = to_spot
+            
+        captured_friendlies = 0
+        captured_enemies = 0
+        
+        # 2. Active Piece Suicide Check
+        if self.is_overwhelmed(new_board, active_spot, color):
             new_board[active_spot] = ''
-            return new_board, True
+            return new_board, 0, 1 # Active piece dies
 
-        # 2. Friendly Sweep (Self-Harm Priority)
-        dead_friendlies = []
+        # 3. Universal Sweep (Self-Harm Priority)
+        
+        # Step 3a: Remove overwhelmed friendlies
+        friendlies_to_remove = []
         for i in range(24):
-            if new_board[i] == player and self._is_overwhelmed(i, new_board, player):
-                dead_friendlies.append(i)
-        for i in dead_friendlies:
+            if new_board[i] == color:
+                # Check if overwhelmed. 
+                # Note: Active piece is checked again technically, but if it survived step 2 
+                # and board hasn't changed, it's safe. But checking all is robust.
+                if self.is_overwhelmed(new_board, i, color):
+                    friendlies_to_remove.append(i)
+        
+        for i in friendlies_to_remove:
             new_board[i] = ''
-
-        # 3. Enemy Sweep
-        dead_enemies = []
+            captured_friendlies += 1
+            
+        # Step 3b: Remove overwhelmed enemies (after friendlies removed)
+        enemies_to_remove = []
         for i in range(24):
-            if new_board[i] == opponent and self._is_overwhelmed(i, new_board, opponent):
-                dead_enemies.append(i)
-        for i in dead_enemies:
+            if new_board[i] == opp_color:
+                if self.is_overwhelmed(new_board, i, opp_color):
+                    enemies_to_remove.append(i)
+                    
+        for i in enemies_to_remove:
             new_board[i] = ''
+            captured_enemies += 1
+            
+        return new_board, captured_enemies, captured_friendlies
 
-        return new_board, False
-
-    def _is_overwhelmed(self, spot, board, color):
-        """Checks if a piece is surrounded (0 empty neighbors) and outnumbered."""
+    def is_overwhelmed(self, board, spot, piece_color):
+        """Checks if a piece at spot is overwhelmed."""
         neighbors = ADJACENCY[spot]
-        empty = 0
-        opp = 0
-        friend = 0
+        empty_count = 0
+        opp_count = 0
+        friendly_count = 0
+        opp_color = 'W' if piece_color == 'B' else 'B'
         
         for n in neighbors:
             val = board[n]
             if val == '':
-                empty += 1
-            elif val == color:
-                friend += 1
-            else:
-                opp += 1
+                empty_count += 1
+            elif val == piece_color:
+                friendly_count += 1
+            elif val == opp_color:
+                opp_count += 1
         
-        return (empty == 0) and (opp > friend)
-
-    def _has_moves(self, board, color):
-        """Checks if a player has any legal moves."""
-        for spot in range(24):
-            if board[spot] == color:
-                for neighbor in ADJACENCY[spot]:
-                    if board[neighbor] == '':
-                        return True
-        return False
-
-    def _is_repetition(self, board, next_player, history):
-        """Checks if the resulting board state has occurred twice before (3rd rep)."""
-        state_key = (tuple(board), next_player)
-        return history.count(state_key) >= 2
-
-    def _minimax(self, board, depth, is_maximizing, player, opponent, alpha, beta):
-        """Minimax algorithm with Alpha-Beta pruning."""
-        # Determine phase based on piece count
-        total_pieces = 24 - board.count('')
-        phase = "placement" if total_pieces < 14 else "movement"
-
-        # Terminal Conditions
-        p_count = board.count(player)
-        o_count = board.count(opponent)
-
-        if p_count == 0: return -10000 # Loss
-        if o_count == 0: return 10000  # Win
-        
-        if depth == 0:
-            return self._evaluate(board, player, opponent)
-
-        if is_maximizing:
-            # Generate Moves
-            legal_moves = []
-            if phase == "placement":
-                legal_moves = [i for i in range(24) if board[i] == '']
-            else:
-                if not self._has_moves(board, player): return -10000 # Mate
-                for s in range(24):
-                    if board[s] == player:
-                        for n in ADJACENCY[s]:
-                            if board[n] == '':
-                                legal_moves.append((s, n))
+        # Must be completely blocked
+        if empty_count > 0:
+            return False
             
-            max_eval = -float('inf')
-            for move in legal_moves:
-                new_board, _ = self._simulate(board, move, phase, player, opponent)
-                eval_val = self._minimax(new_board, depth - 1, False, player, opponent, alpha, beta)
-                max_eval = max(max_eval, eval_val)
-                alpha = max(alpha, eval_val)
-                if beta <= alpha:
-                    break
-            return max_eval
-        else:
-            # Generate Moves for Opponent
-            legal_moves = []
-            if phase == "placement":
-                legal_moves = [i for i in range(24) if board[i] == '']
-            else:
-                if not self._has_moves(board, opponent): return 10000 # Opponent Mated
-                for s in range(24):
-                    if board[s] == opponent:
-                        for n in ADJACENCY[s]:
-                            if board[n] == '':
-                                legal_moves.append((s, n))
-            
-            min_eval = float('inf')
-            for move in legal_moves:
-                new_board, _ = self._simulate(board, move, phase, opponent, player)
-                eval_val = self._minimax(new_board, depth - 1, True, player, opponent, alpha, beta)
-                min_eval = min(min_eval, eval_val)
-                beta = min(beta, eval_val)
-                if beta <= alpha:
-                    break
-            return min_eval
+        # Opponents must strictly outnumber friendlies
+        return opp_count > friendly_count
 
-    def _evaluate(self, board, player, opponent):
+    def evaluate(self, board, my_color, opp_color):
         """Heuristic evaluation of the board state."""
         score = 0
+        my_mobility = 0
+        opp_mobility = 0
         
-        # 1. Material Difference
-        score += (board.count(player) - board.count(opponent)) * 100
-        
-        # 2. Positional Value
-        p_pos = sum(POSITION_WEIGHTS[i] for i in range(24) if board[i] == player)
-        o_pos = sum(POSITION_WEIGHTS[i] for i in range(24) if board[i] == opponent)
-        score += (p_pos - o_pos) * 5
-        
-        # 3. Mobility
-        p_mob = 0
-        o_mob = 0
         for i in range(24):
-            if board[i] == player:
+            p = board[i]
+            if p == my_color:
+                # Material value
+                score += 20
+                # Positional value
+                score += self.piece_values[self.spot_types[i]]
+                # Mobility
                 for n in ADJACENCY[i]:
-                    if board[n] == '': p_mob += 1
-            elif board[i] == opponent:
+                    if board[n] == '':
+                        my_mobility += 1
+            elif p == opp_color:
+                score -= 20
+                score -= self.piece_values[self.spot_types[i]]
                 for n in ADJACENCY[i]:
-                    if board[n] == '': o_mob += 1
-        score += (p_mob - o_mob) * 2
+                    if board[n] == '':
+                        opp_mobility += 1
         
+        score += (my_mobility - opp_mobility) * 2
         return score
+
+    def count_pieces(self, board, color):
+        return sum(1 for p in board if p == color)

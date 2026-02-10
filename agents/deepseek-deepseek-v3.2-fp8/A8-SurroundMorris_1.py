@@ -2,400 +2,390 @@
 Agent Code: A8-SurroundMorris
 Model: deepseek/deepseek-v3.2@preset/fp8
 Run: 1
-Generated: 2026-02-09 18:54:48
+Generated: 2026-02-09 18:53:48
 """
 
-from typing import List, Tuple, Dict, Optional
-import math
+import random
+from copy import deepcopy
 
 class SurroundMorrisAgent:
     """
-    Smart agent for Surround Morris game.
-    Uses minimax with alpha-beta pruning and heuristic evaluation.
+    Strategic agent for Surround Morris game.
     """
     
     def __init__(self, name: str, color: str):
+        """
+        Initialize your agent.
+        """
         self.name = name
         self.color = color
         self.opponent_color = 'W' if color == 'B' else 'B'
+        self.spot_values = self._calculate_spot_values()
         
-        # Position values based on strategic importance
-        self.position_values = {
-            4: 3.0, 10: 3.0, 13: 3.0, 19: 3.0,  # Crossroads - most valuable
-            1: 2.0, 3: 2.0, 5: 2.0, 7: 2.0,     # T-junctions
-            9: 2.0, 11: 2.0, 12: 2.0, 14: 2.0,
-            15: 2.0, 17: 2.0, 18: 2.0, 20: 2.0,
-            21: 2.0, 23: 2.0,
-            0: 1.5, 2: 1.5, 6: 1.5, 8: 1.5,     # Corners - easier to trap
-            16: 1.5, 22: 1.5
-        }
-        
-        # Search depth - adjust based on performance
-        self.placement_depth = 3
-        self.movement_depth = 3
-        
-        # Transposition table for caching evaluations
-        self.transposition_table = {}
-        
-    def make_move(self, state: dict, feedback: dict | None = None):
+    def _calculate_spot_values(self):
         """
-        Make a move based on the current game state.
+        Calculate strategic values for each board position.
+        Higher values indicate more important positions.
         """
-        board = state["board"]
-        phase = state["phase"]
+        # Define position importance based on connectivity and strategic value
+        values = {}
         
-        if phase == "placement":
-            # Get all legal placements (all empty spots)
-            legal_moves = [i for i in range(24) if board[i] == '']
+        # Crossroads (4 neighbors) - most valuable
+        crossroads = [4, 10, 13, 19]
+        for spot in crossroads:
+            values[spot] = 4.0
             
-            # If few pieces left or first few moves, use simpler evaluation
-            if len(legal_moves) > 18 or state["pieces_in_hand"][self.color] >= 6:
-                # Early game - prioritize strategic positions
-                return self._choose_best_placement(state, legal_moves)
-            else:
-                # Mid-late placement - use minimax
-                best_move = self._minimax_placement(state, depth=self.placement_depth)
-                return best_move if best_move is not None else legal_moves[0]
-                
-        else:  # Movement phase
-            # Get all legal movements
-            legal_moves = []
-            for spot in range(24):
-                if board[spot] == self.color:
-                    for neighbor in ADJACENCY[spot]:
-                        if board[neighbor] == '':
-                            legal_moves.append((spot, neighbor))
+        # T-junctions (3 neighbors) - medium value
+        tjunctions = [1, 3, 5, 6, 8, 9, 14, 15, 17, 18, 20, 22]
+        for spot in tjunctions:
+            values[spot] = 2.5
             
-            if not legal_moves:
-                # No legal moves - shouldn't happen as game would end
-                return (0, 1) if 0 < 24 and 1 < 24 else legal_moves[0] if legal_moves else (0, 1)
+        # Corners (2 neighbors) - low value (easy to trap)
+        corners = [0, 2, 21, 23]
+        for spot in corners:
+            values[spot] = 1.5
             
-            # Use minimax for movement
-            best_move = self._minimax_movement(state, depth=self.movement_depth)
-            return best_move if best_move is not None else legal_moves[0]
+        # Edge midpoints (3 neighbors but less central)
+        edges = [7, 11, 12, 16]
+        for spot in edges:
+            values[spot] = 2.0
+            
+        return values
     
-    def _choose_best_placement(self, state: dict, legal_moves: List[int]) -> int:
-        """
-        Choose placement based on heuristic evaluation.
-        Prioritizes central positions and avoids immediate capture.
-        """
-        board = state["board"]
-        best_score = -float('inf')
-        best_move = legal_moves[0]
-        
-        for move in legal_moves:
-            # Simulate placement
-            new_board = board.copy()
-            new_board[move] = self.color
-            
-            # Check if this move would cause suicide
-            if self._is_captured(move, new_board, self.color):
-                # Suicide is bad unless it achieves something special
-                score = -1000
-            else:
-                # Evaluate position
-                score = self._evaluate_board(new_board, self.color)
-                
-                # Add position value
-                score += self.position_values.get(move, 1.0)
-                
-                # Check if this threatens opponent pieces
-                for neighbor in ADJACENCY[move]:
-                    if new_board[neighbor] == self.opponent_color:
-                        # Count how many opponent neighbors this piece has
-                        opp_neighbors = sum(1 for n in ADJACENCY[neighbor] 
-                                          if new_board[n] == self.opponent_color)
-                        empty_neighbors = sum(1 for n in ADJACENCY[neighbor] 
-                                            if new_board[n] == '')
-                        friendly_neighbors = sum(1 for n in ADJACENCY[neighbor] 
-                                               if new_board[n] == self.color)
-                        
-                        # If opponent piece is now surrounded or close to being surrounded
-                        if empty_neighbors == 0 and friendly_neighbors > opp_neighbors:
-                            score += 5.0  # Threat bonus
-                        elif empty_neighbors == 1 and friendly_neighbors >= opp_neighbors:
-                            score += 2.0  # Potential threat
-            
-            if score > best_score:
-                best_score = score
-                best_move = move
-        
-        return best_move
+    def _get_adjacent_empty_spots(self, board, spot):
+        """Get empty adjacent spots for a given position."""
+        return [n for n in ADJACENCY[spot] if board[n] == '']
     
-    def _minimax_placement(self, state: dict, depth: int) -> Optional[int]:
-        """
-        Minimax search for placement phase.
-        """
-        board = state["board"]
-        legal_moves = [i for i in range(24) if board[i] == '']
-        
-        if not legal_moves:
-            return None
-        
-        best_score = -float('inf')
-        best_move = legal_moves[0]
-        alpha = -float('inf')
-        beta = float('inf')
-        
-        for move in legal_moves:
-            # Simulate move
-            new_state = self._simulate_placement(state, move)
+    def _get_neighbor_counts(self, board, spot, color):
+        """Count friendly, opponent, and empty neighbors."""
+        if board[spot] == '':
+            return 0, 0, 0
             
-            # Evaluate with minimax
-            score = self._minimax(new_state, depth-1, False, alpha, beta)
-            
-            if score > best_score:
-                best_score = score
-                best_move = move
-            
-            alpha = max(alpha, score)
-            if alpha >= beta:
-                break
-        
-        return best_move
-    
-    def _minimax_movement(self, state: dict, depth: int) -> Optional[Tuple[int, int]]:
-        """
-        Minimax search for movement phase.
-        """
-        board = state["board"]
-        legal_moves = []
-        for spot in range(24):
-            if board[spot] == self.color:
-                for neighbor in ADJACENCY[spot]:
-                    if board[neighbor] == '':
-                        legal_moves.append((spot, neighbor))
-        
-        if not legal_moves:
-            return None
-        
-        best_score = -float('inf')
-        best_move = legal_moves[0]
-        alpha = -float('inf')
-        beta = float('inf')
-        
-        for move in legal_moves:
-            # Simulate move
-            new_state = self._simulate_movement(state, move)
-            
-            # Evaluate with minimax
-            score = self._minimax(new_state, depth-1, False, alpha, beta)
-            
-            if score > best_score:
-                best_score = score
-                best_move = move
-            
-            alpha = max(alpha, score)
-            if alpha >= beta:
-                break
-        
-        return best_move
-    
-    def _minimax(self, state: dict, depth: int, maximizing: bool, 
-                 alpha: float, beta: float) -> float:
-        """
-        Minimax algorithm with alpha-beta pruning.
-        """
-        # Check terminal conditions
-        terminal_score = self._check_terminal(state)
-        if terminal_score is not None:
-            return terminal_score
-        
-        if depth == 0:
-            return self._evaluate_state(state)
-        
-        board = state["board"]
-        phase = state["phase"]
-        current_player = state["your_color"] if maximizing else state["opponent_color"]
-        
-        if phase == "placement":
-            legal_moves = [i for i in range(24) if board[i] == '']
-            if not legal_moves:
-                return self._evaluate_state(state)
-            
-            if maximizing:
-                max_eval = -float('inf')
-                for move in legal_moves:
-                    new_state = self._simulate_placement(state, move)
-                    eval_score = self._minimax(new_state, depth-1, False, alpha, beta)
-                    max_eval = max(max_eval, eval_score)
-                    alpha = max(alpha, eval_score)
-                    if beta <= alpha:
-                        break
-                return max_eval
-            else:
-                min_eval = float('inf')
-                for move in legal_moves:
-                    new_state = self._simulate_placement(state, move)
-                    eval_score = self._minimax(new_state, depth-1, True, alpha, beta)
-                    min_eval = min(min_eval, eval_score)
-                    beta = min(beta, eval_score)
-                    if beta <= alpha:
-                        break
-                return min_eval
-        else:  # Movement phase
-            legal_moves = []
-            for spot in range(24):
-                if board[spot] == current_player:
-                    for neighbor in ADJACENCY[spot]:
-                        if board[neighbor] == '':
-                            legal_moves.append((spot, neighbor))
-            
-            if not legal_moves:  # Stalemate
-                return -7 if maximizing else 7
-            
-            if maximizing:
-                max_eval = -float('inf')
-                for move in legal_moves:
-                    new_state = self._simulate_movement(state, move)
-                    eval_score = self._minimax(new_state, depth-1, False, alpha, beta)
-                    max_eval = max(max_eval, eval_score)
-                    alpha = max(alpha, eval_score)
-                    if beta <= alpha:
-                        break
-                return max_eval
-            else:
-                min_eval = float('inf')
-                for move in legal_moves:
-                    new_state = self._simulate_movement(state, move)
-                    eval_score = self._minimax(new_state, depth-1, True, alpha, beta)
-                    min_eval = min(min_eval, eval_score)
-                    beta = min(beta, eval_score)
-                    if beta <= alpha:
-                        break
-                return min_eval
-    
-    def _simulate_placement(self, state: dict, spot: int) -> dict:
-        """
-        Simulate a placement move and return new state.
-        """
-        board = state["board"].copy()
-        board[spot] = self.color if state["your_color"] == self.color else self.opponent_color
-        
-        # Apply capture rules
-        board = self._apply_captures(board, spot, state["your_color"])
-        
-        # Create new state
-        new_state = state.copy()
-        new_state["board"] = board
-        new_state["pieces_in_hand"] = state["pieces_in_hand"].copy()
-        new_state["pieces_on_board"] = state["pieces_on_board"].copy()
-        
-        player = state["your_color"]
-        new_state["pieces_in_hand"][player] -= 1
-        new_state["pieces_on_board"][player] = sum(1 for p in board if p == player)
-        new_state["pieces_on_board"][self.opponent_color if player == self.color else self.color] = \
-            sum(1 for p in board if p == (self.opponent_color if player == self.color else self.color))
-        
-        # Switch player
-        new_state["your_color"], new_state["opponent_color"] = \
-            new_state["opponent_color"], new_state["your_color"]
-        
-        # Check if placement phase is over
-        if new_state["pieces_in_hand"]["B"] == 0 and new_state["pieces_in_hand"]["W"] == 0:
-            new_state["phase"] = "movement"
-        
-        return new_state
-    
-    def _simulate_movement(self, state: dict, move: Tuple[int, int]) -> dict:
-        """
-        Simulate a movement move and return new state.
-        """
-        from_spot, to_spot = move
-        board = state["board"].copy()
-        player = state["your_color"]
-        
-        # Move the piece
-        board[to_spot] = board[from_spot]
-        board[from_spot] = ''
-        
-        # Apply capture rules
-        board = self._apply_captures(board, to_spot, player)
-        
-        # Create new state
-        new_state = state.copy()
-        new_state["board"] = board
-        new_state["pieces_on_board"] = {
-            "B": sum(1 for p in board if p == "B"),
-            "W": sum(1 for p in board if p == "W")
-        }
-        new_state["move_count"] = state["move_count"] + 1
-        
-        # Switch player
-        new_state["your_color"], new_state["opponent_color"] = \
-            new_state["opponent_color"], new_state["your_color"]
-        
-        return new_state
-    
-    def _apply_captures(self, board: List[str], moved_spot: int, mover_color: str) -> List[str]:
-        """
-        Apply capture rules after a move.
-        Returns new board after captures.
-        """
-        board_copy = board.copy()
-        opponent_color = 'W' if mover_color == 'B' else 'B'
-        
-        # Step 1: Check if moved piece is captured (suicide)
-        if board_copy[moved_spot] == mover_color:
-            if self._is_captured(moved_spot, board_copy, mover_color):
-                board_copy[moved_spot] = ''
-                return board_copy  # Suicide - no further captures
-        
-        # Step 2a: Remove overwhelmed friendly pieces
-        friendly_to_remove = []
-        for spot in range(24):
-            if board_copy[spot] == mover_color:
-                if self._is_captured(spot, board_copy, mover_color):
-                    friendly_to_remove.append(spot)
-        
-        for spot in friendly_to_remove:
-            board_copy[spot] = ''
-        
-        # Step 2b: Remove overwhelmed enemy pieces
-        enemy_to_remove = []
-        for spot in range(24):
-            if board_copy[spot] == opponent_color:
-                if self._is_captured(spot, board_copy, opponent_color):
-                    enemy_to_remove.append(spot)
-        
-        for spot in enemy_to_remove:
-            board_copy[spot] = ''
-        
-        return board_copy
-    
-    def _is_captured(self, spot: int, board: List[str], color: str) -> bool:
-        """
-        Check if piece at spot is captured according to rules.
-        """
-        if board[spot] != color:
-            return False
-        
-        empty_neighbors = 0
-        friendly_neighbors = 0
-        opponent_neighbors = 0
+        friendly = 0
+        opponent = 0
+        empty = 0
         
         for neighbor in ADJACENCY[spot]:
             if board[neighbor] == '':
-                empty_neighbors += 1
+                empty += 1
             elif board[neighbor] == color:
-                friendly_neighbors += 1
+                friendly += 1
             else:
-                opponent_neighbors += 1
-        
-        # Capture condition: zero empty neighbors AND more opponent neighbors than friendly
-        return empty_neighbors == 0 and opponent_neighbors > friendly_neighbors
+                opponent += 1
+                
+        return friendly, opponent, empty
     
-    def _check_terminal(self, state: dict) -> Optional[float]:
+    def _would_be_captured(self, board, spot, color):
         """
-        Check for terminal game states.
-        Returns score if terminal, None otherwise.
+        Check if placing/moving to spot would cause immediate capture.
+        """
+        # Temporarily place piece
+        temp_board = board[:]
+        temp_board[spot] = color
+        
+        friendly, opponent, empty = self._get_neighbor_counts(temp_board, spot, color)
+        
+        # Check suicide condition (active piece first)
+        if empty == 0 and opponent > friendly:
+            return True
+            
+        return False
+    
+    def _evaluate_position(self, board, color):
+        """
+        Evaluate board position from perspective of given color.
+        Returns a score where higher is better for the color.
+        """
+        score = 0
+        opponent = 'W' if color == 'B' else 'B'
+        
+        # Material count (pieces on board)
+        material_score = (board.count(color) - board.count(opponent)) * 100
+        
+        # Position control
+        position_score = 0
+        for i in range(24):
+            if board[i] == color:
+                position_score += self.spot_values.get(i, 1.0)
+            elif board[i] == opponent:
+                position_score -= self.spot_values.get(i, 1.0)
+        
+        # Mobility (empty adjacent spots)
+        mobility_score = 0
+        for i in range(24):
+            if board[i] == color:
+                empty_neighbors = len(self._get_adjacent_empty_spots(board, i))
+                mobility_score += empty_neighbors * 3
+            elif board[i] == opponent:
+                empty_neighbors = len(self._get_adjacent_empty_spots(board, i))
+                mobility_score -= empty_neighbors * 2
+        
+        # Threat assessment (pieces that could be captured)
+        threat_score = 0
+        for i in range(24):
+            if board[i] == color:
+                friendly, opponent_count, empty = self._get_neighbor_counts(board, i, color)
+                if empty == 0 and opponent_count > friendly:
+                    threat_score -= 50  # Our piece is threatened
+            elif board[i] == opponent:
+                opponent_friendly, my_count, empty = self._get_neighbor_counts(board, i, opponent)
+                if empty == 0 and my_count > opponent_friendly:
+                    threat_score += 40  # Opponent piece is threatened
+        
+        # Control of crossroads
+        crossroads = [4, 10, 13, 19]
+        crossroad_score = 0
+        for spot in crossroads:
+            if board[spot] == color:
+                crossroad_score += 15
+            elif board[spot] == opponent:
+                crossroad_score -= 10
+        
+        # Avoid repetition penalty
+        repetition_penalty = 0
+        # Already handled in main move selection
+        
+        total_score = (
+            material_score +
+            position_score * 5 +
+            mobility_score +
+            threat_score +
+            crossroad_score
+        )
+        
+        return total_score
+    
+    def _simulate_move(self, board, move, color, phase):
+        """
+        Simulate a move and return resulting board.
+        """
+        new_board = board[:]
+        
+        if phase == "placement":
+            spot = move
+            new_board[spot] = color
+            
+            # Apply capture rules (simplified simulation)
+            # Active piece suicide check
+            friendly, opponent, empty = self._get_neighbor_counts(new_board, spot, color)
+            if empty == 0 and opponent > friendly:
+                new_board[spot] = ''  # Suicide
+                return new_board
+            
+            # Check for other captures (simplified - doesn't handle self-harm priority perfectly)
+            # This is a heuristic approximation
+            for i in range(24):
+                if new_board[i] != '' and new_board[i] != color:  # Only check opponent pieces
+                    opp = new_board[i]
+                    f, o, e = self._get_neighbor_counts(new_board, i, opp)
+                    if e == 0 and o > f:
+                        new_board[i] = ''
+                        
+        else:  # movement
+            from_spot, to_spot = move
+            new_board[from_spot] = ''
+            new_board[to_spot] = color
+            
+            # Apply capture rules (simplified simulation)
+            # Active piece suicide check
+            friendly, opponent, empty = self._get_neighbor_counts(new_board, to_spot, color)
+            if empty == 0 and opponent > friendly:
+                new_board[to_spot] = ''  # Suicide
+                return new_board
+            
+            # Simplified capture sweep (heuristic)
+            # Check our pieces first (self-harm priority)
+            for i in range(24):
+                if new_board[i] == color:
+                    f, o, e = self._get_neighbor_counts(new_board, i, color)
+                    if e == 0 and o > f:
+                        new_board[i] = ''
+            
+            # Then check opponent pieces
+            for i in range(24):
+                if new_board[i] == self.opponent_color:
+                    f, o, e = self._get_neighbor_counts(new_board, i, self.opponent_color)
+                    if e == 0 and o > f:
+                        new_board[i] = ''
+        
+        return new_board
+    
+    def _get_placement_moves(self, board):
+        """Get all possible placement moves."""
+        return [i for i in range(24) if board[i] == '']
+    
+    def _get_movement_moves(self, board, color):
+        """Get all possible movement moves."""
+        moves = []
+        for spot in range(24):
+            if board[spot] == color:
+                for neighbor in ADJACENCY[spot]:
+                    if board[neighbor] == '':
+                        moves.append((spot, neighbor))
+        return moves
+    
+    def make_move(self, state: dict, feedback: dict | None = None):
+        """
+        Called each turn. Return your move based on the current game state.
         """
         board = state["board"]
-        pieces_on_board = state["pieces_on_board"]
         phase = state["phase"]
+        color = state["your_color"]
+        opponent = state["opponent_color"]
+        history = state["history"]
         
-        # Check elimination
-        if pieces_on_board[self.color] == 0:
-            return -1000  # We lose
-        if pieces_on_board[self.opponent_color] == 0:
-            return 1000  # We win
+        if phase == "placement":
+            # Get all possible placements
+            possible_moves = self._get_placement_moves(board)
+            
+            # Avoid suicide unless it's strategically advantageous
+            safe_moves = []
+            risky_moves = []
+            
+            for spot in possible_moves:
+                if self._would_be_captured(board, spot, color):
+                    risky_moves.append(spot)
+                else:
+                    safe_moves.append(spot)
+            
+            # Prefer safe moves
+            if safe_moves:
+                move_pool = safe_moves
+            else:
+                move_pool = possible_moves  # All moves if no safe ones
+            
+            # Evaluate each move
+            best_score = -float('inf')
+            best_moves = []
+            
+            for spot in move_pool:
+                # Quick filter: avoid placing in opponent's strong positions early
+                if board.count(color) < 4:  # Early game
+                    opponent_adjacent = 0
+                    for neighbor in ADJACENCY[spot]:
+                        if board[neighbor] == opponent:
+                            opponent_adjacent += 1
+                    if opponent_adjacent >= 2:
+                        continue  # Avoid placing between two opponents
+                
+                # Simulate move
+                new_board = self._simulate_move(board, spot, color, phase)
+                score = self._evaluate_position(new_board, color)
+                
+                # Bonus for controlling valuable spots
+                score += self.spot_values.get(spot, 1.0) * 2
+                
+                # Bonus for creating threats
+                for neighbor in ADJACENCY[spot]:
+                    if board[neighbor] == opponent:
+                        f, o, e = self._get_neighbor_counts(new_board, neighbor, opponent)
+                        if e == 0 and o > f:
+                            score += 20  # We threaten this piece
+                
+                if score > best_score:
+                    best_score = score
+                    best_moves = [spot]
+                elif abs(score - best_score) < 0.1:
+                    best_moves.append(spot)
+            
+            # Choose randomly among best moves
+            return random.choice(best_moves) if best_moves else random.choice(move_pool)
+            
+        else:  # Movement phase
+            # Get all possible movements
+            possible_moves = self._get_movement_moves(board, color)
+            
+            if not possible_moves:
+                # No legal moves - we're mated (return any move, engine will handle loss)
+                return (0, 1)
+            
+            # Check for immediate winning moves
+            for from_spot, to_spot in possible_moves:
+                # Simulate the move
+                new_board = self._simulate_move(board, (from_spot, to_spot), color, phase)
+                
+                # Check if opponent has no pieces left
+                if new_board.count(opponent) == 0:
+                    return (from_spot, to_spot)
+                
+                # Check if we put opponent in mate
+                opponent_moves = self._get_movement_moves(new_board, opponent)
+                if not opponent_moves:
+                    return (from_spot, to_spot)
+            
+            # Avoid moves that lead to repetition if we're winning
+            current_eval = self._evaluate_position(board, color)
+            avoid_repetition = current_eval > 20  # If we're winning, avoid draws
+            
+            # Evaluate each move
+            best_score = -float('inf')
+            best_moves = []
+            
+            for from_spot, to_spot in possible_moves:
+                # Avoid suicide unless it captures many opponent pieces
+                if self._would_be_captured(board, to_spot, color):
+                    # Check if this suicide captures important opponent pieces
+                    new_board = self._simulate_move(board, (from_spot, to_spot), color, phase)
+                    opponent_pieces_before = board.count(opponent)
+                    opponent_pieces_after = new_board.count(opponent)
+                    if opponent_pieces_before - opponent_pieces_after < 2:
+                        continue  # Suicide not worth it
+                
+                # Simulate move
+                new_board = self._simulate_move(board, (from_spot, to_spot), color, phase)
+                score = self._evaluate_position(new_board, color)
+                
+                # Penalize moving from valuable positions to less valuable ones
+                from_value = self.spot_values.get(from_spot, 1.0)
+                to_value = self.spot_values.get(to_spot, 1.0)
+                if to_value < from_value * 0.7:
+                    score -= 15
+                
+                # Bonus for capturing opponent pieces
+                opponent_before = board.count(opponent)
+                opponent_after = new_board.count(opponent)
+                captures = opponent_before - opponent_after
+                score += captures * 80
+                
+                # Penalty for losing our pieces
+                our_before = board.count(color)
+                our_after = new_board.count(color)
+                losses = our_before - our_after
+                score -= losses * 100
+                
+                # Bonus for improving mobility
+                our_mobility_before = len(self._get_movement_moves(board, color))
+                our_mobility_after = len(self._get_movement_moves(new_board, color))
+                score += (our_mobility_after - our_mobility_before) * 5
+                
+                # Penalty for reducing opponent's mobility if it helps them avoid mate
+                opponent_mobility_before = len(self._get_movement_moves(board, opponent))
+                opponent_mobility_after = len(self._get_movement_moves(new_board, opponent))
+                
+                # Only penalize if we're not trying to mate them
+                if opponent_mobility_after == 0:
+                    score += 100  # We mated them!
+                elif opponent_mobility_before < 4 and opponent_mobility_after < opponent_mobility_before:
+                    # Be careful not to help opponent by reducing options when they're almost mated
+                    score -= 20
+                
+                # Check for repetition
+                if avoid_repetition:
+                    board_tuple = tuple(new_board)
+                    if (board_tuple, opponent) in history:
+                        # This move would repeat a position
+                        repetitions = history.count((board_tuple, opponent))
+                        if repetitions >= 1:  # Would be 2nd occurrence
+                            score -= 50 * (repetitions + 1)
+                
+                # Small random factor to avoid deterministic play
+                score += random.uniform(0, 0.1)
+                
+                if score > best_score:
+                    best_score = score
+                    best_moves = [(from_spot, to_spot)]
+                elif abs(score - best_score) < 0.1:
+                    best_moves.append((from_spot, to_spot))
+            
+            # Choose randomly among best moves
+            return random.choice(best_moves) if best_moves else random.choice(possible_moves)

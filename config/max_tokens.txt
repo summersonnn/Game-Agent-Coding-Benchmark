@@ -4,9 +4,9 @@
 
 A1-Battleship: 4
 A2-TicTacToe: 1
-A3-Wizard: 4
-A4-WordFinder: 4
-A5-Connect4RandomStart: 4
-A6-WordMatrixGame: 4
+A3-Wizard: 10
+A4-WordFinder: 6
+A5-Connect4RandomStart: 5
+A6-WordMatrixGame: 9
 A7-1D_Chess: 4
-A8-SurroundMorris: 4
+A8-SurroundMorris: 7

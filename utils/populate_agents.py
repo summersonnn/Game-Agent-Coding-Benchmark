@@ -278,13 +278,12 @@ async def populate_agents(
     
     print(f"\nFiring {len(tasks)} API calls with max {MAX_WORKERS} concurrent...")
     
-    # Await all tasks
-    responses = await asyncio.gather(*tasks)
-    
-    # Process and save each response
+    # Process responses as they complete
     results: dict[str, dict[str, list[tuple[int, str]]]] = {}  # model -> game -> [(run, status)]
     
-    for game_name, model_name, run_id, content in responses:
+    for task in asyncio.as_completed(tasks):
+        game_name, model_name, run_id, content = await task
+        
         model_short = sanitize_model_name(model_name)
         model_dir = model_dirs[model_name]
         
@@ -319,9 +318,10 @@ Generated: {timestamp}
         # Save to file
         output_file = model_dir / f"{game_name}_{run_id}.py"
         output_file.write_text(file_content)
-        results[model_short][game_name].append(
-            (run_id, f"Saved to {output_file.relative_to(AGENTS_DIR.parent)}")
-        )
+        
+        status = f"Saved to {output_file.relative_to(AGENTS_DIR.parent)}"
+        results[model_short][game_name].append((run_id, status))
+        logger.info("Saved %s for %s (run %d)", model_name, game_name, run_id)
     
     # Print summary grouped by model and game
     for model_short in sorted(results.keys()):

@@ -85,7 +85,6 @@ The game can end during **either phase** for elimination, and during the **movem
 4. **Repetition (movement only):** The exact same board position (pieces + active player) occurs **3 times**.
    * Repetition is checked **before** each move. History is recorded at the start of each turn.
    * **Result:** The game ends immediately in a **DRAW**.
-   * **Score:** Each player receives 0 score.
 
 
 ## Board Geometry & Capture Thresholds

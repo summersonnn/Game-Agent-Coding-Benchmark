@@ -163,12 +163,17 @@ class ModelAPI:
         # We need to ensure stream=False is used
         kwargs["stream"] = False
         
+        try:
+            self.timeout = float(os.getenv("MODEL_API_TIMEOUT", "600"))
+        except (ValueError, TypeError):
+            self.timeout = 600.0
+
         response = await self.client.chat.completions.create(
             model=selected_model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
-            timeout=None,
+            timeout=self.timeout,
             extra_body=extra_body,
             **kwargs
         )
