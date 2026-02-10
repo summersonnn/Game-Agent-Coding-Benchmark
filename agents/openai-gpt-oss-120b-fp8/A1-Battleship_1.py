@@ -2,7 +2,7 @@
 Agent Code: A1-Battleship
 Model: openai/gpt-oss-120b@preset/fp8
 Run: 1
-Generated: 2026-02-03 19:52:39
+Generated: 2026-02-10 16:22:20
 """
 
 from collections import deque
@@ -10,117 +10,136 @@ from collections import deque
 import random
 from collections import deque
 
+# The constants EMPTY, SHIP, HIT, MISS, SUNK are defined in the game module
+# and are available in the same namespace when this class is used.
+
 class BattleshipAgent:
     """
-    Simple but effective Battleship AI.
-
-    Strategy:
-    1. **Hunt mode** – while we have no known hits we fire on a checker‑board
-       pattern (cells where (row+col) is even).  This guarantees that a ship
-       of length ≥ 3 cannot be missed indefinitely on an 8×8 board.
-    2. **Target mode** – as soon as we hit a ship we enqueue the four
-       orthogonal neighbours of that hit (if they are still unknown).  We
-       then keep firing from this queue until it is empty or the ship is
-       sunk (the game will give us a miss for any cell that is not part of
-       the ship, automatically draining the queue).
-    3. All fired cells are removed from the set of *unknown* cells so we
-       never waste a shot.
-
-    The agent keeps its own internal view of the opponent board:
-        - `unknown_cells` : cells we have never shot at
-        - `hit_cells`     : cells that resulted in a hit
-        - `miss_cells`    : cells that resulted in a miss
-        - `target_queue`  : ordered list of cells to try next while we are
-                           chasing a hit
-    The `make_move` method receives the result of the previous shot (if any)
-    and updates the internal state before selecting the next coordinate.
+    Battleship agent with a simple but effective strategy:
+    * Placement – tries random non‑overlapping positions until a valid one is found.
+    * Bombing   – classic hunt/target approach.
+        - Hunt mode uses a checker‑board pattern to reduce the search space.
+        - When a HIT is recorded, adjacent cells are queued as target cells.
+        - Targets are never repeated.
     """
 
-    def __init__(self, name, board_size, ships_config):
+    def __init__(self, name, board_size, ships):
         self.name = name
         self.board_size = board_size
-        self.ships_config = ships_config
+        self.ships = ships
 
-        # All board positions start as unknown
-        self.unknown_cells = {
-            (r, c) for r in range(board_size) for c in range(board_size)
+        # ----- placement board (our own ships) -----
+        self.my_board = [[EMPTY for _ in range(board_size)] for _ in range(board_size)]
+
+        # ----- bombing state -----
+        self.shots_taken = set()          # {(r,c), ...}
+        self.hit_cells = set()            # cells that were hits
+        self.target_queue = deque()       # cells to try next (target mode)
+
+    # ----------------------------------------------------------------------
+    # Placement helpers
+    # ----------------------------------------------------------------------
+    def _valid_placement(self, start, orientation, length):
+        """Check that a ship of given length fits from start without overlapping."""
+        r, c = start
+        dr, dc = (0, 1) if orientation == "horizontal" else (1, 0)
+        for i in range(length):
+            nr, nc = r + dr * i, c + dc * i
+            if self.my_board[nr][nc] == SHIP:
+                return False
+        return True
+
+    def _place_ship(self, length):
+        """Try random positions until a legal one is found (up to a limit)."""
+        for _ in range(50):                     # reasonable number of attempts
+            orientation = random.choice(["horizontal", "vertical"])
+            if orientation == "horizontal":
+                r = random.randint(0, self.board_size - 1)
+                c = random.randint(0, self.board_size - length)
+            else:
+                r = random.randint(0, self.board_size - length)
+                c = random.randint(0, self.board_size - 1)
+
+            if self._valid_placement((r, c), orientation, length):
+                # commit to our internal board representation
+                dr, dc = (0, 1) if orientation == "horizontal" else (1, 0)
+                for i in range(length):
+                    self.my_board[r + dr * i][c + dc * i] = SHIP
+                return {
+                    "ship_length": length,
+                    "start": (r, c),
+                    "orientation": orientation,
+                }
+
+        # If we failed to find a non‑overlapping spot (unlikely), fall back to (0,0)
+        return {
+            "ship_length": length,
+            "start": (0, 0),
+            "orientation": "horizontal",
         }
-        self.hit_cells = set()
-        self.miss_cells = set()
-        self.target_queue = deque()
 
-    def _add_adjacent_unknowns(self, row, col):
-        """Enqueue orthogonal neighbours of (row, col) that are still unknown."""
-        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            nr, nc = row + dr, col + dc
+    # ----------------------------------------------------------------------
+    # Bombing helpers
+    # ----------------------------------------------------------------------
+    def _add_adjacent_targets(self, coord):
+        """After a hit, enqueue the four orthogonal neighbours that are still unknown."""
+        r, c = coord
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
             if 0 <= nr < self.board_size and 0 <= nc < self.board_size:
-                if (nr, nc) in self.unknown_cells:
-                    if (nr, nc) not in self.target_queue:
-                        self.target_queue.append((nr, nc))
+                if (nr, nc) not in self.shots_taken:
+                    self.target_queue.append((nr, nc))
 
-    def make_move(self, last_shot_result=None, last_shot_coord=None):
+    def _choose_hunt_target(self):
+        """Select a cell in hunt mode using a checker‑board pattern."""
+        candidates = []
+        for r in range(self.board_size):
+            for c in range(self.board_size):
+                if (r, c) in self.shots_taken:
+                    continue
+                # Checker‑board (parity) – ships are at least length 2, so this halves the space
+                if (r + c) % 2 == 0:
+                    candidates.append((r, c))
+
+        # If all parity cells are exhausted, fall back to any remaining cell
+        if not candidates:
+            for r in range(self.board_size):
+                for c in range(self.board_size):
+                    if (r, c) not in self.shots_taken:
+                        candidates.append((r, c))
+
+        return random.choice(candidates)
+
+    # ----------------------------------------------------------------------
+    # Main interface
+    # ----------------------------------------------------------------------
+    def make_move(self, state, feedback):
         """
-        Decide the next bombing coordinate.
-
-        Parameters
-        ----------
-        last_shot_result : str or None
-            'HIT' or 'MISS' describing the outcome of the previous shot
-            (None on the very first turn).
-        last_shot_coord : tuple or None
-            (row, col) of the previous shot (0‑based).
-
-        Returns
-        -------
-        ((row, col), []) : tuple
-            The coordinate to bomb and an empty list (we do not report sunk
-            ships – the game does not require it for correctness).
+        Handles both placement and bombing phases.
         """
-        # ------------------------------------------------------------------
-        # 1. Update internal knowledge based on the previous shot (if any)
-        # ------------------------------------------------------------------
-        if last_shot_coord is not None:
-            r, c = last_shot_coord
-            # Remove the cell from the pool of unknown cells
-            self.unknown_cells.discard((r, c))
-            # Also make sure it is not lingering in the target queue
-            try:
-                self.target_queue.remove((r, c))
-            except ValueError:
-                pass
+        # -------------------- Placement phase --------------------
+        if state["phase"] == "placement":
+            ship_len = state["ships_to_place"][0]          # always the first pending ship
+            return self._place_ship(ship_len)
 
-            if last_shot_result == 'HIT':
-                self.hit_cells.add((r, c))
-                # In target mode – enqueue the four orthogonal neighbours
-                self._add_adjacent_unknowns(r, c)
-            else:  # MISS or any other result
-                self.miss_cells.add((r, c))
+        # -------------------- Bombing phase --------------------
+        # Update internal knowledge from the previous shot (if any)
+        if state["last_shot_coord"] is not None:
+            coord = tuple(state["last_shot_coord"])
+            result = state["last_shot_result"]
+            self.shots_taken.add(coord)
 
-        # ------------------------------------------------------------------
-        # 2. Choose the next coordinate
-        # ------------------------------------------------------------------
-        # Target mode: we have a queue of promising cells
+            if result == "HIT":
+                self.hit_cells.add(coord)
+                self._add_adjacent_targets(coord)
+            # MISS does not require extra handling
+
+        # Target mode: exhaust queued neighbours first
         while self.target_queue:
             cand = self.target_queue.popleft()
-            if cand in self.unknown_cells:
-                next_move = cand
-                break
-        else:
-            # Hunt mode: checker‑board pattern to maximise coverage
-            checker_cells = [
-                cell for cell in self.unknown_cells
-                if (cell[0] + cell[1]) % 2 == 0
-            ]
-            # If the checker set is empty (very late game), fall back to any unknown
-            if not checker_cells:
-                checker_cells = list(self.unknown_cells)
+            if cand not in self.shots_taken:
+                return {"target": cand}
 
-            if not checker_cells:          # no cells left – should not happen
-                return None, []
-
-            next_move = random.choice(checker_cells)
-
-        # ------------------------------------------------------------------
-        # 3. Return the chosen coordinate (no sunk information)
-        # ------------------------------------------------------------------
-        return next_move, []
+        # Hunt mode: pick a new cell based on parity
+        hunt_target = self._choose_hunt_target()
+        return {"target": hunt_target}

@@ -233,13 +233,6 @@ def play_game(game_num, total_scores):
     print(f"Game scores: {{game.total_scores}}")
     print(f"Running totals: {{total_scores}}")
     
-    # Print progress
-    progress_str = f"PROGRESS:Game={{game_num}}"
-    for i in range(NUM_PLAYERS):
-        progress_str += f",P{{i+1}}={{total_scores[i]}}"
-    for i in range(NUM_PLAYERS):
-        progress_str += f",P{{i+1}}T={{stats[f'p{{i+1}}_timeout']}},P{{i+1}}C={{stats[f'p{{i+1}}_crash']}},P{{i+1}}I={{stats[f'p{{i+1}}_invalid']}}"
-    print(progress_str)
     sys.stdout.flush()
     
     return True
@@ -881,8 +874,9 @@ async def main_async(debug_mode=False):
     GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     MODEL_RESPONSES_DIR.mkdir(parents=True, exist_ok=True)
     
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_f = GAME_LOGS_DIR / f"{ts}_game.txt"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    model_suffix = "_vs_".join(m.split("/")[-1].split("@")[0] for m in models)
+    log_f = GAME_LOGS_DIR / f"{ts}_{model_suffix}_game.txt"
     resp_f = MODEL_RESPONSES_DIR / f"{ts}_responses.txt"
     
     # Fire all prompts concurrently (3 models × 2 prompts each = 6 total)
@@ -1024,8 +1018,9 @@ def main_stored(agents_str: str, game: str, debug_mode: bool = False):
     WIZARD_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_f = GAME_LOGS_DIR / f"{ts}_stored_game.txt"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    agent_suffix = "_vs_".join(f"{m}:{r}" for m, r in agent_specs)
+    log_f = GAME_LOGS_DIR / f"{ts}_{agent_suffix}_stored_game.txt"
     
     # Log agent info
     with open(log_f, "w") as f:
@@ -1256,8 +1251,9 @@ class WizardAgent_6(RandomAgent): pass
     WIZARD_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_f = GAME_LOGS_DIR / f"{ts}_match.txt"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    model_suffix = "_vs_".join(folders)
+    log_f = GAME_LOGS_DIR / f"{ts}_{model_suffix}_match.txt"
 
     print(f"\nRunning {num_games} games in parallel...")
     game_tasks = []

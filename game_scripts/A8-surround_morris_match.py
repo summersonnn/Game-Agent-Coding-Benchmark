@@ -49,7 +49,6 @@ except (ValueError, TypeError):
 
 # Results directories
 RESULTS_DIR = Path(__file__).parent.parent / "results" / "surround_morris"
-GAME_LOGS_DIR = RESULTS_DIR / "game_logs"
 
 # Stored agents directory
 AGENTS_DIR = Path(__file__).parent.parent / "agents"
@@ -319,24 +318,11 @@ class MoveTimeoutException(Exception):
 def timeout_handler(signum, frame):
     raise MoveTimeoutException("Move timeout")
 
-stats = {
-    "p1_invalid": 0,
-    "p2_invalid": 0,
-    "p1_timeout": 0,
-    "p2_timeout": 0,
-    "p1_crash": 0,
-    "p2_crash": 0,
-    "p1_captures": 0,
-    "p2_captures": 0,
-    "p1_stalemate": 0,
-    "p2_stalemate": 0,
-    "turns": 0,
-}
-
-MAX_ATTEMPTS = 3
+total_turns = 0
 
 
 def play_game(game_num, match_stats):
+    global total_turns
     game = SurroundMorrisGame()
 
     if random.random() < 0.5:
@@ -362,19 +348,28 @@ def play_game(game_num, match_stats):
         b_agent = b_agent_class(b_name, 'B')
     except Exception as e:
         print(f"{b_name} (B) init crash: {e}")
+        match_stats[b_name]["other_crash"] += 1
+        match_stats[w_name]["wins"] += 1
+        match_stats[w_name]["points"] += 3
+        match_stats[w_name]["score"] += 7
+        match_stats[b_name]["losses"] += 1
+        match_stats[b_name]["score"] -= 7
         return w_name
 
     try:
         w_agent = w_agent_class(w_name, 'W')
     except Exception as e:
         print(f"{w_name} (W) init crash: {e}")
+        match_stats[w_name]["other_crash"] += 1
+        match_stats[b_name]["wins"] += 1
+        match_stats[b_name]["points"] += 3
+        match_stats[b_name]["score"] += 7
+        match_stats[w_name]["losses"] += 1
+        match_stats[w_name]["score"] -= 7
         return b_name
 
     agents = {'B': b_agent, 'W': w_agent}
     names = {'B': b_name, 'W': w_name}
-
-    def get_p_prefix(agent_name):
-        return "p1" if agent_name == "Agent-1" else "p2"
 
     def do_random_placement(color):
         legal = game.get_legal_placements(color)
@@ -401,86 +396,58 @@ def play_game(game_num, match_stats):
         color = game.current_player
         agent = agents[color]
         agent_name = names[color]
-        p_prefix = get_p_prefix(agent_name)
-        stats["turns"] += 1
+        total_turns += 1
         placement_turn += 1
 
         state = game.get_state_for_agent(color)
-        feedback = None
-        move_made = False
+        move = None
 
-        for attempt in range(MAX_ATTEMPTS):
-            move = None
+        try:
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(max(1, int(MOVE_TIMEOUT)))
             try:
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(max(1, int(MOVE_TIMEOUT)))
-                try:
-                    move = agent.make_move(state, feedback)
-                finally:
-                    signal.alarm(0)
-            except MoveTimeoutException:
-                print(f"{agent_name} ({color}): TIMEOUT")
-                stats[f"{p_prefix}_timeout"] += 1
-                spot, captured = do_random_placement(color)
-                if spot is not None:
-                    cap_str = f" captured {captured}" if captured else ""
-                    print(f"{agent_name} ({color}): random placement at {spot}{cap_str}")
-                    stats[f"{p_prefix}_captures"] += len(captured)
-                move_made = True
-                break
-            except Exception as e:
-                print(f"{agent_name} ({color}): CRASH '{str(e)[:80]}'")
-                stats[f"{p_prefix}_crash"] += 1
-                spot, captured = do_random_placement(color)
-                if spot is not None:
-                    cap_str = f" captured {captured}" if captured else ""
-                    print(f"{agent_name} ({color}): random placement at {spot}{cap_str}")
-                    stats[f"{p_prefix}_captures"] += len(captured)
-                move_made = True
-                break
+                move = agent.make_move(state, None)
+            finally:
+                signal.alarm(0)
+        except MoveTimeoutException:
+            print(f"{agent_name} ({color}): TIMEOUT")
+            match_stats[agent_name]["timeout"] += 1
+            move = None
+        except Exception as e:
+            print(f"{agent_name} ({color}): CRASH '{str(e)[:80]}'")
+            match_stats[agent_name]["make_move_crash"] += 1
+            move = None
 
+        valid = False
+        if move is not None:
             if not isinstance(move, int):
                 try:
                     move = int(move)
                 except (ValueError, TypeError):
-                    stats[f"{p_prefix}_invalid"] += 1
-                    remaining = MAX_ATTEMPTS - attempt - 1
-                    print(f"{agent_name} ({color}): INVALID OUTPUT '{move}' ({remaining} retries)")
-                    feedback = {
-                        "error_code": "INVALID_OUTPUT",
-                        "error_message": f"Expected int, got {type(move).__name__}: {move}",
-                        "attempted_move": str(move),
-                        "attempt_number": attempt + 1,
-                    }
-                    continue
+                    match_stats[agent_name]["invalid"] += 1
+                    print(f"{agent_name} ({color}): INVALID OUTPUT '{move}'")
+                    move = None
 
+        if move is not None:
             ok, msg, error_code = game.validate_placement(move, color)
-            if not ok:
-                stats[f"{p_prefix}_invalid"] += 1
-                remaining = MAX_ATTEMPTS - attempt - 1
-                print(f"{agent_name} ({color}): INVALID placement at {move} - {msg} ({remaining} retries)")
-                feedback = {
-                    "error_code": error_code,
-                    "error_message": msg,
-                    "attempted_move": move,
-                    "attempt_number": attempt + 1,
-                }
-                continue
+            if ok:
+                valid = True
+            else:
+                match_stats[agent_name]["invalid"] += 1
+                print(f"{agent_name} ({color}): INVALID placement at {move} - {msg}")
+                move = None
 
+        if valid:
             captured = game.apply_placement(move, color)
             cap_str = f" captured {captured}" if captured else ""
             print(f"{agent_name} ({color}): placement at {move}{cap_str}")
-            stats[f"{p_prefix}_captures"] += len(captured)
-            move_made = True
-            break
-
-        if not move_made:
-            print(f"{agent_name} ({color}): 3 failed attempts, random fallback")
+            match_stats[agent_name]["captures"] += len(captured)
+        else:
             spot, captured = do_random_placement(color)
             if spot is not None:
                 cap_str = f" captured {captured}" if captured else ""
                 print(f"{agent_name} ({color}): random placement at {spot}{cap_str}")
-                stats[f"{p_prefix}_captures"] += len(captured)
+                match_stats[agent_name]["captures"] += len(captured)
 
         # Check elimination after move (self-harm priority: mover checked first)
         game_over, result_desc = game.check_elimination()
@@ -505,110 +472,76 @@ def play_game(game_num, match_stats):
         color = game.current_player
         agent = agents[color]
         agent_name = names[color]
-        p_prefix = get_p_prefix(agent_name)
-        stats["turns"] += 1
+        total_turns += 1
 
         # Check stalemate before move — stuck player loses
         legal_moves = game.get_legal_movements(color)
         if not legal_moves:
             opp_color = game.opponent(color)
             print(f"{agent_name} ({color}): no legal moves, {opp_color} wins by Mate")
-            stats[f"{p_prefix}_stalemate"] += 1
+            match_stats[agent_name]["stalemate"] += 1
             result_desc = f"{opp_color} wins by Mate ({color} has no legal moves)"
             game_over = True
             break
 
         state = game.get_state_for_agent(color)
-        feedback = None
-        move_made = False
+        move = None
 
-        for attempt in range(MAX_ATTEMPTS):
-            move = None
+        try:
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(max(1, int(MOVE_TIMEOUT)))
             try:
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(max(1, int(MOVE_TIMEOUT)))
-                try:
-                    move = agent.make_move(state, feedback)
-                finally:
-                    signal.alarm(0)
-            except MoveTimeoutException:
-                print(f"{agent_name} ({color}): TIMEOUT")
-                stats[f"{p_prefix}_timeout"] += 1
-                mv, captured = do_random_movement(color)
-                if mv:
-                    cap_str = f" captured {captured}" if captured else ""
-                    print(f"{agent_name} ({color}): random move {mv[0]}->{mv[1]}{cap_str}")
-                    stats[f"{p_prefix}_captures"] += len(captured)
-                move_made = True
-                break
-            except Exception as e:
-                print(f"{agent_name} ({color}): CRASH '{str(e)[:80]}'")
-                stats[f"{p_prefix}_crash"] += 1
-                mv, captured = do_random_movement(color)
-                if mv:
-                    cap_str = f" captured {captured}" if captured else ""
-                    print(f"{agent_name} ({color}): random move {mv[0]}->{mv[1]}{cap_str}")
-                    stats[f"{p_prefix}_captures"] += len(captured)
-                move_made = True
-                break
+                move = agent.make_move(state, None)
+            finally:
+                signal.alarm(0)
+        except MoveTimeoutException:
+            print(f"{agent_name} ({color}): TIMEOUT")
+            match_stats[agent_name]["timeout"] += 1
+            move = None
+        except Exception as e:
+            print(f"{agent_name} ({color}): CRASH '{str(e)[:80]}'")
+            match_stats[agent_name]["make_move_crash"] += 1
+            move = None
 
+        valid = False
+        if move is not None:
             if not isinstance(move, (tuple, list)) or len(move) != 2:
-                stats[f"{p_prefix}_invalid"] += 1
-                remaining = MAX_ATTEMPTS - attempt - 1
-                print(f"{agent_name} ({color}): INVALID OUTPUT '{move}' ({remaining} retries)")
-                feedback = {
-                    "error_code": "INVALID_OUTPUT",
-                    "error_message": f"Expected (from_spot, to_spot) tuple, got {type(move).__name__}",
-                    "attempted_move": str(move),
-                    "attempt_number": attempt + 1,
-                }
-                continue
+                match_stats[agent_name]["invalid"] += 1
+                print(f"{agent_name} ({color}): INVALID OUTPUT '{move}'")
+                move = None
 
+        if move is not None:
             try:
                 from_spot, to_spot = int(move[0]), int(move[1])
             except (ValueError, TypeError):
-                stats[f"{p_prefix}_invalid"] += 1
-                remaining = MAX_ATTEMPTS - attempt - 1
-                print(f"{agent_name} ({color}): INVALID non-int move {move} ({remaining} retries)")
-                feedback = {
-                    "error_code": "INVALID_OUTPUT",
-                    "error_message": f"Could not convert move to integers: {move}",
-                    "attempted_move": str(move),
-                    "attempt_number": attempt + 1,
-                }
-                continue
+                match_stats[agent_name]["invalid"] += 1
+                print(f"{agent_name} ({color}): INVALID non-int move {move}")
+                move = None
 
+        if move is not None:
             ok, msg, error_code = game.validate_movement(from_spot, to_spot, color)
-            if not ok:
-                stats[f"{p_prefix}_invalid"] += 1
-                remaining = MAX_ATTEMPTS - attempt - 1
-                print(f"{agent_name} ({color}): INVALID move {from_spot}->{to_spot} - {msg} ({remaining} retries)")
-                feedback = {
-                    "error_code": error_code,
-                    "error_message": msg,
-                    "attempted_move": (from_spot, to_spot),
-                    "attempt_number": attempt + 1,
-                }
-                continue
+            if ok:
+                valid = True
+            else:
+                match_stats[agent_name]["invalid"] += 1
+                print(f"{agent_name} ({color}): INVALID move {from_spot}->{to_spot} - {msg}")
+                move = None
 
+        if valid:
             captured = game.apply_movement(from_spot, to_spot, color)
             cap_str = f" captured {captured}" if captured else ""
             print(f"{agent_name} ({color}): move {from_spot}->{to_spot}{cap_str}")
-            stats[f"{p_prefix}_captures"] += len(captured)
-            move_made = True
-            break
-
-        if not move_made:
-            print(f"{agent_name} ({color}): 3 failed attempts, random fallback")
+            match_stats[agent_name]["captures"] += len(captured)
+        else:
             mv, captured = do_random_movement(color)
             if mv:
                 cap_str = f" captured {captured}" if captured else ""
                 print(f"{agent_name} ({color}): random move {mv[0]}->{mv[1]}{cap_str}")
-                stats[f"{p_prefix}_captures"] += len(captured)
+                match_stats[agent_name]["captures"] += len(captured)
             else:
                 opp_color = game.opponent(color)
                 print(f"{agent_name} ({color}): no legal moves after fallback, {opp_color} wins by Mate")
-                stats[f"{p_prefix}_stalemate"] += 1
+                match_stats[agent_name]["stalemate"] += 1
                 result_desc = f"{opp_color} wins by Mate ({color} has no legal moves)"
                 game_over = True
                 break
@@ -654,14 +587,13 @@ def play_game(game_num, match_stats):
     elif "Draw" in result_desc:
         winner_color = None
         winner = "DRAW"
-        total_pieces = game.pieces_on_board['B'] + game.pieces_on_board['W']
-        winner_score = total_pieces / 2.0
-        loser_score = total_pieces / 2.0
+        winner_score = 0
+        loser_score = 0
     else:
         winner_color = None
         winner = "DRAW"
-        winner_score = 0.5
-        loser_score = 0.5
+        winner_score = 0
+        loser_score = 0
 
     if winner != "DRAW":
         print(f"{winner_color} ({winner}) wins with score of {winner_score}")
@@ -671,16 +603,18 @@ def play_game(game_num, match_stats):
     print(f"Winner: {winner}")
 
     if winner != "DRAW":
-        match_stats["wins"][winner] += 1
-        match_stats["scores"][winner] += winner_score
-        match_stats["scores"][loser] += loser_score
-        match_stats["points"][winner] += 3
+        match_stats[winner]["wins"] += 1
+        match_stats[winner]["points"] += 3
+        match_stats[winner]["score"] += winner_score
+        match_stats[loser]["losses"] += 1
+        match_stats[loser]["score"] += loser_score
     else:
-        match_stats["draws"] += 1
-        match_stats["scores"]["Agent-1"] += winner_score
-        match_stats["scores"]["Agent-2"] += loser_score
-        match_stats["points"]["Agent-1"] += 1
-        match_stats["points"]["Agent-2"] += 1
+        match_stats["Agent-1"]["draws"] += 1
+        match_stats["Agent-1"]["points"] += 1
+        match_stats["Agent-1"]["score"] += winner_score
+        match_stats["Agent-2"]["draws"] += 1
+        match_stats["Agent-2"]["points"] += 1
+        match_stats["Agent-2"]["score"] += loser_score
 
     print("=" * 60)
     sys.stdout.flush()
@@ -690,10 +624,12 @@ def play_game(game_num, match_stats):
 
 def main():
     match_stats = {
-        "wins": {"Agent-1": 0, "Agent-2": 0},
-        "scores": {"Agent-1": 0, "Agent-2": 0},
-        "points": {"Agent-1": 0, "Agent-2": 0},
-        "draws": 0,
+        "Agent-1": {"wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0,
+                     "make_move_crash": 0, "other_crash": 0, "crash": 0,
+                     "timeout": 0, "invalid": 0, "captures": 0, "stalemate": 0},
+        "Agent-2": {"wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0,
+                     "make_move_crash": 0, "other_crash": 0, "crash": 0,
+                     "timeout": 0, "invalid": 0, "captures": 0, "stalemate": 0},
     }
 
     for i in range(NUM_GAMES):
@@ -701,28 +637,40 @@ def main():
         sys.stdout.flush()
 
     print("\nFinal Results")
-    print(f"Agent 1 ({AGENT1_INFO}) Wins: {match_stats['wins']['Agent-1']} times")
-    print(f"Agent 2 ({AGENT2_INFO}) Wins: {match_stats['wins']['Agent-2']} times")
+    print(f"Agent 1 ({AGENT1_INFO}) Wins: {match_stats['Agent-1']['wins']} times")
+    print(f"Agent 2 ({AGENT2_INFO}) Wins: {match_stats['Agent-2']['wins']} times")
     print("Points:")
-    print(f"Agent 1: {match_stats['points']['Agent-1']}")
-    print(f"Agent 2: {match_stats['points']['Agent-2']}")
+    print(f"Agent 1: {match_stats['Agent-1']['points']}")
+    print(f"Agent 2: {match_stats['Agent-2']['points']}")
     print("Scores:")
-    print(f"Agent 1: {match_stats['scores']['Agent-1']}")
-    print(f"Agent 2: {match_stats['scores']['Agent-2']}")
+    print(f"Agent 1: {match_stats['Agent-1']['score']}")
+    print(f"Agent 2: {match_stats['Agent-2']['score']}")
 
-    print(f"RESULT:Agent-1={match_stats['scores']['Agent-1']},Agent-2={match_stats['scores']['Agent-2']}")
-    print(f"POINTS:Agent-1={match_stats['points']['Agent-1']},Agent-2={match_stats['points']['Agent-2']}")
-    print(f"WINS:Agent-1={match_stats['wins']['Agent-1']},Agent-2={match_stats['wins']['Agent-2']}")
-    print(f"DRAWS:{match_stats['draws']}")
+    print(f"RESULT:Agent-1={match_stats['Agent-1']['points']},Agent-2={match_stats['Agent-2']['points']}")
+    print(f"SCORE:Agent-1={match_stats['Agent-1']['score']},Agent-2={match_stats['Agent-2']['score']}")
+    print(f"WINS:Agent-1={match_stats['Agent-1']['wins']},Agent-2={match_stats['Agent-2']['wins']}")
+    print(f"DRAWS:{match_stats['Agent-1']['draws']}")
+    # Aggregate crash stat for backward compatibility
+    for agent_key in ["Agent-1", "Agent-2"]:
+        match_stats[agent_key]["crash"] = match_stats[agent_key]["make_move_crash"] + match_stats[agent_key]["other_crash"]
+
     print("--- MATCH STATISTICS ---")
-
-    print(f"Agent-1 Crashes: {stats['p1_crash']}")
-    print(f"Agent-2 Crashes: {stats['p2_crash']}")
-    print(f"Agent-1 Captures: {stats['p1_captures']}")
-    print(f"Agent-2 Captures: {stats['p2_captures']}")
-    print(f"Agent-1 Stalemates: {stats['p1_stalemate']}")
-    print(f"Agent-2 Stalemates: {stats['p2_stalemate']}")
-    print(f"Total Turns: {stats['turns']}")
+    print(f"Agent-1 make_move_crash: {match_stats['Agent-1']['make_move_crash']}")
+    print(f"Agent-2 make_move_crash: {match_stats['Agent-2']['make_move_crash']}")
+    print(f"Agent-1 other_crash: {match_stats['Agent-1']['other_crash']}")
+    print(f"Agent-2 other_crash: {match_stats['Agent-2']['other_crash']}")
+    print(f"Agent-1 crash (total): {match_stats['Agent-1']['crash']}")
+    print(f"Agent-2 crash (total): {match_stats['Agent-2']['crash']}")
+    print(f"Agent-1 Timeouts: {match_stats['Agent-1']['timeout']}")
+    print(f"Agent-2 Timeouts: {match_stats['Agent-2']['timeout']}")
+    print(f"Agent-1 Invalid: {match_stats['Agent-1']['invalid']}")
+    print(f"Agent-2 Invalid: {match_stats['Agent-2']['invalid']}")
+    print(f"Agent-1 Captures: {match_stats['Agent-1']['captures']}")
+    print(f"Agent-2 Captures: {match_stats['Agent-2']['captures']}")
+    print(f"Agent-1 Stalemates: {match_stats['Agent-1']['stalemate']}")
+    print(f"Agent-2 Stalemates: {match_stats['Agent-2']['stalemate']}")
+    print(f"Total Turns: {total_turns}")
+    print(f"STATS:Agent-1={match_stats['Agent-1']},Agent-2={match_stats['Agent-2']}")
 
 
 if __name__ == "__main__":
@@ -988,10 +936,10 @@ if __name__ == "__main__":
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"surround_morris_{GAME_MODE}_{ts}.txt"
         log_dir = "."
-        if os.path.exists("../results/surround_morris/game_logs"):
-            log_dir = "../results/surround_morris/game_logs"
-        elif os.path.exists("results/surround_morris/game_logs"):
-            log_dir = "results/surround_morris/game_logs"
+        if os.path.exists("../results/surround_morris"):
+            log_dir = "../results/surround_morris"
+        elif os.path.exists("results/surround_morris"):
+            log_dir = "results/surround_morris"
         filepath = os.path.join(log_dir, filename)
         with open(filepath, "w") as f:
             f.write(f"Surround Morris Game - {mode_title}\n")
@@ -1206,7 +1154,7 @@ def run_match(
             }
 
         match = re.search(
-            r"RESULT:Agent-1=(-?[\d.]+),Agent-2=(-?[\d.]+)", result.stdout
+            r"RESULT:Agent-1=([\d.]+),Agent-2=([\d.]+)", result.stdout
         )
 
         stats_block = ""
@@ -1218,15 +1166,17 @@ def run_match(
                 r"WINS:Agent-1=(\d+),Agent-2=(\d+)", result.stdout
             )
             draws_match = re.search(r"DRAWS:(\d+)", result.stdout)
-            points_match = re.search(
-                r"POINTS:Agent-1=(\d+),Agent-2=(\d+)", result.stdout
+            score_match = re.search(
+                r"SCORE:Agent-1=(-?[\d.]+),Agent-2=(-?[\d.]+)", result.stdout
             )
 
             agent1_wins = int(wins_match.group(1)) if wins_match else 0
             agent2_wins = int(wins_match.group(2)) if wins_match else 0
             draws = int(draws_match.group(1)) if draws_match else 0
-            agent1_points = int(points_match.group(1)) if points_match else 0
-            agent2_points = int(points_match.group(2)) if points_match else 0
+            agent1_points = int(float(match.group(1))) if match else 0
+            agent2_points = int(float(match.group(2))) if match else 0
+            agent1_score = float(score_match.group(1)) if score_match else 0.0
+            agent2_score = float(score_match.group(2)) if score_match else 0.0
 
             log_lines = []
             for line in result.stdout.splitlines():
@@ -1234,7 +1184,8 @@ def run_match(
                     "Agent-1:", "Agent-2:", "GAME ", "Game ", "Winner:",
                     "Running Total", "==========", "--- MOVEMENT",
                     "Final", "Scores:", "Agent 1", "Agent 2",
-                    "B (", "W (", " |", " -", " .", " B", " W", "Pieces:"
+                    "CRASH", "RESULT", "SCORE", "WINS", "DRAWS",
+                    "Pieces:", "Points:",
                 )) or "ENDED" in line or line.strip() == "":
                     log_lines.append(line)
 
@@ -1243,8 +1194,8 @@ def run_match(
                 "agent1_run_id": run_ids[0],
                 "agent2_run_id": run_ids[1],
                 "success": True,
-                "agent1_score": float(match.group(1)),
-                "agent2_score": float(match.group(2)),
+                "agent1_score": agent1_score,
+                "agent2_score": agent2_score,
                 "agent1_wins": agent1_wins,
                 "agent2_wins": agent2_wins,
                 "agent1_points": agent1_points,
@@ -1277,7 +1228,7 @@ def run_match(
         }
     finally:
         if os.path.exists(temp_file):
-            pass
+            os.remove(temp_file)
 
 
 async def run_match_async(
@@ -1394,10 +1345,10 @@ async def main_async():
     print("=" * 60)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_f = GAME_LOGS_DIR / f"{ts}_match.txt"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    agent_suffix = f"{folder1}_vs_{folder2}"
+    log_f = RESULTS_DIR / f"{ts}_{agent_suffix}_match.txt"
 
     match_tasks = []
 

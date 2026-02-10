@@ -85,7 +85,7 @@ The game can end during **either phase** for elimination, and during the **movem
 4. **Repetition (movement only):** The exact same board position (pieces + active player) occurs **3 times**.
    * Repetition is checked **before** each move. History is recorded at the start of each turn.
    * **Result:** The game ends immediately in a **DRAW**.
-   * **Score:** Each player receives half the total pieces on board.
+   * **Score:** Each player receives 0 score.
 
 
 ## Board Geometry & Capture Thresholds
@@ -144,15 +144,7 @@ class SurroundMorrisGame:
 
 ## Error Handling
 
-You get up to **3 attempts** per turn. On failure, you receive a `feedback` dict:
-```python
-{
-    "error_code": str,        # one of the error codes above
-    "error_message": str,     # human-readable description
-    "attempted_move": ...,    # what you returned
-    "attempt_number": int,    # 1-based attempt number
-}
-```
+There is no retry mechanism. On any failure (crash, timeout, or invalid move), a random valid move is made immediately on your behalf. You will not receive feedback or a second chance for that turn.
 
 ## Implementation Task
 
@@ -210,13 +202,7 @@ class SurroundMorrisAgent:
             }
 
         feedback : dict or None
-            None on first attempt. On retries after an invalid move:
-            {
-                "error_code": str,
-                "error_message": str,
-                "attempted_move": ...,
-                "attempt_number": int,
-            }
+            Always None. Kept for interface compatibility.
 
         Returns:
         --------
@@ -257,7 +243,7 @@ class SurroundMorrisAgent:
 4. **Target corners (2 neighbors):** Corner pieces are easy to trap (needs only 2 enemies).
 5. **Preserve empty neighbors:** Keep escape routes open to avoid Mate.
 6. **Placement phase is critical:** Fight for central positions while disrupting opponent clusters.
-7. **Avoid Repetition When Ahead:** If you checkmate yourself by repetition, you only get half points.
+7. **Avoid Repetition When Ahead:** If you draw by repetition, both players get 0 score.
 8. **Use History:** The `history` field in the state dict lets you detect positions that have occurred before.
 
 ## Competition Format
@@ -266,4 +252,4 @@ class SurroundMorrisAgent:
 - Scoring Rules:
     - Win by Elimination: Score = Winner's remaining pieces (e.g., 5 pieces vs 0 -> 5 points).
     - Win by Mate: Score = **+7 for Winner, -7 for Loser** (Fixed).
-    - Draw (Turn Limit or Repetition): Each player receives half the total pieces on board (e.g., 6 total pieces / 2 = 3 points each).
+    - Draw (Turn Limit or Repetition): Each player receives 0 score.

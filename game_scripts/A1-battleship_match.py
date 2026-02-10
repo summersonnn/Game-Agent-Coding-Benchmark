@@ -23,6 +23,7 @@ sys.path.append(str(Path(__file__).parent.parent / "utils"))
 
 from model_api import ModelAPI
 from logging_config import setup_logging
+from scoreboard import update_scoreboard
 
 logger = setup_logging(__name__)
 
@@ -31,9 +32,9 @@ load_dotenv()
 
 # Configuration
 try:
-    NUM_ROUNDS_PER_BATTLESHIP_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
+    NUM_GAMES_PER_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
 except (ValueError, TypeError):
-    NUM_ROUNDS_PER_BATTLESHIP_MATCH = 100
+    NUM_GAMES_PER_MATCH = 100
 
 try:
     MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
@@ -43,13 +44,20 @@ except (ValueError, TypeError):
 BOARD_SIZE = 8
 SHIPS = [5, 4, 3]
 
-# Results directories
-BATTLESHIP_RESULTS_DIR = Path(__file__).parent.parent / "results" / "battleship"
-GAME_LOGS_DIR = BATTLESHIP_RESULTS_DIR / "game_logs"
+BASE_DIR = Path(__file__).parent.parent
+RESULTS_DIR = BASE_DIR / "results" / "battleship"
+SCOREBOARD_PATH = BASE_DIR / "scoreboard" / "A1-scoreboard.txt"
+AGENTS_DIR = BASE_DIR / "agents"
 
-# Stored agents directory
-AGENTS_DIR = Path(__file__).parent.parent / "agents"
+
 GAME_NAME = "A1-Battleship"
+
+MODE_TITLES = {
+    "humanvsbot": "Human vs Random Bot",
+    "humanvshuman": "Human vs Human",
+    "humanvsagent": "Human vs Stored Agent",
+}
+
 
 # The game code template with placeholders for agent implementations
 GAME_CODE_TEMPLATE = '''
@@ -59,8 +67,9 @@ import signal
 from collections import deque
 
 # Move timeout in seconds
+# Move timeout in seconds
 MOVE_TIMEOUT = {move_timeout}
-HUMAN_MODE = {human_mode}
+GAME_MODE = "{game_mode}"
 
 class MoveTimeoutException(Exception):
     pass
@@ -70,9 +79,8 @@ def timeout_handler(signum, frame):
 
 # --- Game Configuration ---
 BOARD_SIZE = {board_size}
-SHIPS = {ships_config}
+SHIPS = {ships}
 NUM_GAMES = {num_games}
-
 # --- Board Representations ---
 EMPTY = 'O'
 SHIP = 'S'
@@ -81,6 +89,9 @@ SUNK = '#'
 MISS = 'M'
 
 {extra_imports}
+
+AGENT1_NAME = "{agent1_name}"
+AGENT2_NAME = "{agent2_name}"
 
 {agent1_code}
 
@@ -92,14 +103,38 @@ class RandomAgent:
         self.board_size = board_size
         self.ships = ships
         self.shots = set()
+        self.placed_coords = set()
 
-    def make_move(self, last_shot_result, last_shot_coord):
-        while True:
-            r = random.randint(0, self.board_size - 1)
-            c = random.randint(0, self.board_size - 1)
-            if (r, c) not in self.shots:
-                self.shots.add((r, c))
-                return (r, c)
+    def make_move(self, state, feedback):
+        if state['phase'] == 'placement':
+            # Random ship placement
+            ship_length = state['ships_to_place'][0]
+            board = state['my_board']
+
+            while True:
+                orientation = random.choice(['horizontal', 'vertical'])
+                if orientation == 'horizontal':
+                    r = random.randint(0, self.board_size - 1)
+                    c = random.randint(0, self.board_size - ship_length)
+                    coords = [(r, c + i) for i in range(ship_length)]
+                else:
+                    r = random.randint(0, self.board_size - ship_length)
+                    c = random.randint(0, self.board_size - 1)
+                    coords = [(r + i, c) for i in range(ship_length)]
+
+                if all(board[r][c] == EMPTY for r, c in coords):
+                    return {{
+                        'ship_length': ship_length,
+                        'start': coords[0],
+                        'orientation': orientation
+                    }}
+        else:  # bombing phase
+            while True:
+                r = random.randint(0, self.board_size - 1)
+                c = random.randint(0, self.board_size - 1)
+                if (r, c) not in self.shots:
+                    self.shots.add((r, c))
+                    return {{'target': (r, c)}}
 
 class HumanAgent:
     def __init__(self, name, board_size, ships):
@@ -107,54 +142,146 @@ class HumanAgent:
         self.board_size = board_size
         self.ships = ships
 
-    def make_move(self, last_shot_result, last_shot_coord):
-        while True:
-            try:
-                user_input = input(f"Enter move (row col) [0-{{self.board_size-1}}]: ").strip()
-                if not user_input: continue
-                parts = user_input.split()
-                if len(parts) != 2:
-                    print("Invalid format. Use 'row col' (e.g., '0 0').")
-                    continue
-                r, c = map(int, parts)
-                if 0 <= r < self.board_size and 0 <= c < self.board_size:
-                    return (r, c)
-                else:
-                    print("Coordinates out of bounds.")
-            except ValueError:
-                print("Invalid input. Please enter integers.")
+    def make_move(self, state, feedback):
+        if state['phase'] == 'placement':
+            ship_length = state['ships_to_place'][0]
+            print(f"\\nPlace ship of length {{ship_length}}")
+            while True:
+                try:
+                    user_input = input("Enter start (row col) and orientation (h/v): ").strip()
+                    parts = user_input.split()
+                    if len(parts) != 3:
+                        print("Invalid format. Use 'row col orientation' (e.g., '0 0 h').")
+                        continue
+                    r, c = int(parts[0]), int(parts[1])
+                    orientation = 'horizontal' if parts[2].lower() == 'h' else 'vertical'
+                    return {{
+                        'ship_length': ship_length,
+                        'start': (r, c),
+                        'orientation': orientation
+                    }}
+                except ValueError:
+                    print("Invalid input.")
+        else:  # bombing
+            while True:
+                try:
+                    user_input = input(f"Enter move (row col) [0-{{self.board_size-1}}]: ").strip()
+                    if not user_input: continue
+                    parts = user_input.split()
+                    if len(parts) != 2:
+                        print("Invalid format. Use 'row col' (e.g., '0 0').")
+                        continue
+                    r, c = map(int, parts)
+                    if 0 <= r < self.board_size and 0 <= c < self.board_size:
+                        return {{'target': (r, c)}}
+                    else:
+                        print("Coordinates out of bounds.")
+                except ValueError:
+                    print("Invalid input. Please enter integers.")
+
+
+def validate_ship_placement(placement, board, board_size, expected_length):
+    """
+    Validates a ship placement. Returns (is_valid, error_code, error_message).
+
+    placement: dict with keys 'ship_length', 'start' (row, col), 'orientation'
+    board: current board state (2D list)
+    board_size: size of the board
+    expected_length: the ship length we expect to place
+    """
+    try:
+        ship_length = placement.get('ship_length')
+        start = placement.get('start')
+        orientation = placement.get('orientation')
+
+        # Check format
+        if not isinstance(ship_length, int) or not isinstance(start, (tuple, list)) or orientation not in ['horizontal', 'vertical']:
+            return False, 'INVALID_FORMAT', 'Placement must have ship_length (int), start (row, col), and orientation (horizontal/vertical)'
+
+        if len(start) != 2:
+            return False, 'INVALID_FORMAT', 'Start coordinates must be (row, col)'
+
+        row, col = start
+
+        # Check ship length matches expected
+        if ship_length != expected_length:
+            return False, 'WRONG_SHIP_LENGTH', f'Expected ship length {{expected_length}}, got {{ship_length}}'
+
+        # Calculate ship coordinates
+        if orientation == 'horizontal':
+            coords = [(row, col + i) for i in range(ship_length)]
+        else:  # vertical
+            coords = [(row + i, col) for i in range(ship_length)]
+
+        # Check bounds
+        for r, c in coords:
+            if not (0 <= r < board_size and 0 <= c < board_size):
+                return False, 'OUT_OF_BOUNDS', f'Ship extends outside board ({{r}}, {{c}}) is invalid'
+
+        # Check intersections
+        for r, c in coords:
+            if board[r][c] != EMPTY:
+                return False, 'SHIP_INTERSECTION', f'Ship intersects with already placed ship at ({{r}}, {{c}})'
+
+        return True, None, None
+
+    except Exception as e:
+        return False, 'INVALID_FORMAT', f'Error parsing placement: {{str(e)}}'
+
+
+def place_ship_randomly(board, ship_length, board_size):
+    """Place a ship randomly on the board, avoiding existing ships."""
+    # Detect all empty cells
+    empty_cells = []
+    for r in range(board_size):
+        for c in range(board_size):
+            if board[r][c] == EMPTY:
+                empty_cells.append((r, c))
+    
+    # Randomly shuffle empty cells to try them in random order
+    random.shuffle(empty_cells)
+    tried_cells = set()
+    
+    for cell in empty_cells:
+        if cell in tried_cells:
+            continue
+        
+        tried_cells.add(cell)
+        r, c = cell
+        
+        # Try both orientations for this cell
+        orientations = ['horizontal', 'vertical']
+        random.shuffle(orientations)
+        
+        for orientation in orientations:
+            if orientation == 'horizontal':
+                # Check if ship fits horizontally from this cell
+                if c + ship_length <= board_size:
+                    coords = [(r, c + i) for i in range(ship_length)]
+                    if all(board[r][c] == EMPTY for r, c in coords):
+                        for r, c in coords:
+                            board[r][c] = SHIP
+                        return coords
+            else:  # vertical
+                # Check if ship fits vertically from this cell
+                if r + ship_length <= board_size:
+                    coords = [(r + i, c) for i in range(ship_length)]
+                    if all(board[r][c] == EMPTY for r, c in coords):
+                        for r, c in coords:
+                            board[r][c] = SHIP
+                        return coords
+    
+    return None
 
 
 class BattleshipGame:
     """Manages the state and rules of the game."""
-    def __init__(self, size, ships_config):
+    def __init__(self, size, ships):
         self.size = size
-        self.ships_config = ships_config
-        self.player1_ships_board = self._create_ship_board()
-        self.player2_ships_board = self._create_ship_board()
+        self.ships = ships
 
     def _create_empty_board(self):
         return [[EMPTY for _ in range(self.size)] for _ in range(self.size)]
-
-    def _create_ship_board(self):
-        """Creates a board and places ships on it."""
-        board = self._create_empty_board()
-        for length in self.ships_config:
-            placed = False
-            while not placed:
-                orientation = random.choice(['horizontal', 'vertical'])
-                r = random.randint(0, self.size - (length if orientation == 'vertical' else 1))
-                c = random.randint(0, self.size - (length if orientation == 'horizontal' else 1))
-                
-                if orientation == 'horizontal':
-                    if all(board[r][c+i] == EMPTY for i in range(length)):
-                        for i in range(length): board[r][c+i] = SHIP
-                        placed = True
-                else:
-                    if all(board[r+i][c] == EMPTY for i in range(length)):
-                        for i in range(length): board[r+i][c] = SHIP
-                        placed = True
-        return board
 
     def is_game_over(self, ships_board):
         """Checks if all ships on a given board have been sunk."""
@@ -162,66 +289,188 @@ class BattleshipGame:
 
 
 # --- Stats ---
-stats = {{
-    "normal": 0,
-    "draw": 0,
-    "c1": 0,
-    "c2": 0,
-    "r1_timeout": 0,
-    "r1_crash": 0,
-    "r1_invalid": 0,
-    "r2_timeout": 0,
-    "r2_crash": 0,
-    "r2_invalid": 0,
-}}
 
-def play_game(game_num, scores):
-    """Plays a single game of Battleship and returns the winner's name or crash info."""
+def play_game(game_num, match_stats):
+    """Plays a single game of Battleship and returns the winner's name or crash info, and the winning score."""
     game = BattleshipGame(BOARD_SIZE, SHIPS)
-    
-    # Try to initialize agents - if one fails, the other wins
+
     # Try to initialize agents
-    if HUMAN_MODE:
+    if GAME_MODE == "humanvsbot":
+        # Randomly assign Human to Agent-1 or Agent-2
+        if random.random() < 0.5:
+             try:
+                agent1 = HumanAgent(AGENT1_NAME, BOARD_SIZE, SHIPS)
+             except Exception as e:
+                return (AGENT2_NAME, "Crash during init (Human): " + str(e)[:100]), 0
+             try:
+                agent2 = RandomAgent(AGENT2_NAME, BOARD_SIZE, SHIPS)
+             except Exception as e:
+                 return (AGENT1_NAME, "Crash during init (RandomBot): " + str(e)[:100]), 0
+        else:
+             try:
+                agent1 = RandomAgent(AGENT1_NAME, BOARD_SIZE, SHIPS)
+             except Exception as e:
+                 return (AGENT2_NAME, "Crash during init (RandomBot): " + str(e)[:100]), 0
+             try:
+                agent2 = HumanAgent(AGENT2_NAME, BOARD_SIZE, SHIPS)
+             except Exception as e:
+                return (AGENT1_NAME, "Crash during init (Human): " + str(e)[:100]), 0
+
+    elif GAME_MODE == "humanvshuman":
         try:
-            agent1 = HumanAgent("Human", BOARD_SIZE, SHIPS)
+            agent1 = HumanAgent(AGENT1_NAME, BOARD_SIZE, SHIPS)
         except Exception as e:
-            return ("Agent-2", "Crash during init (Human): " + str(e)[:100])
+            return (AGENT2_NAME, "Crash during init (Player 1): " + str(e)[:100]), 0
         try:
-            agent2 = RandomAgent("RandomBot", BOARD_SIZE, SHIPS)
+            agent2 = HumanAgent(AGENT2_NAME, BOARD_SIZE, SHIPS)
         except Exception as e:
-            return ("Agent-1", "Crash during init (RandomBot): " + str(e)[:100])
-    else:
+            return (AGENT1_NAME, "Crash during init (Player 2): " + str(e)[:100]), 0
+
+    elif GAME_MODE == "humanvsagent":
+         # One agent is human, other is loaded from file (BattleshipAgent_1)
+         # Randomly assign
+         if random.random() < 0.5:
+              try:
+                 agent1 = HumanAgent(AGENT1_NAME, BOARD_SIZE, SHIPS)
+              except Exception as e:
+                 return (AGENT2_NAME, "Crash during init (Human): " + str(e)[:100]), 0
+              try:
+                 agent2 = BattleshipAgent_1(AGENT2_NAME, BOARD_SIZE, SHIPS)
+              except Exception as e:
+                  return (AGENT1_NAME, "Crash during init (Agent): " + str(e)[:100]), 0
+         else:
+              try:
+                 agent1 = BattleshipAgent_1(AGENT1_NAME, BOARD_SIZE, SHIPS)
+              except Exception as e:
+                  return (AGENT2_NAME, "Crash during init (Agent): " + str(e)[:100]), 0
+              try:
+                 agent2 = HumanAgent(AGENT2_NAME, BOARD_SIZE, SHIPS)
+              except Exception as e:
+                 return (AGENT1_NAME, "Crash during init (Human): " + str(e)[:100]), 0
+
+    else: # Agent vs Agent (default)
         try:
-            agent1 = BattleshipAgent_1("Agent-1", BOARD_SIZE, SHIPS)
+            agent1 = BattleshipAgent_1(AGENT1_NAME, BOARD_SIZE, SHIPS)
         except Exception as e:
-            return ("Agent-2", "Crash during init (Agent-1): " + str(e)[:100])
-        
+            return (AGENT2_NAME, "Crash during init (Agent-1): " + str(e)[:100]), 0
+
         try:
-            agent2 = BattleshipAgent_2("Agent-2", BOARD_SIZE, SHIPS)
+            agent2 = BattleshipAgent_2(AGENT2_NAME, BOARD_SIZE, SHIPS)
         except Exception as e:
-            return ("Agent-1", "Crash during init (Agent-2): " + str(e)[:100])
-    
-    p1_active_board = [row[:] for row in game.player1_ships_board]
-    p2_active_board = [row[:] for row in game.player2_ships_board]
+            return (AGENT1_NAME, "Crash during init (Agent-2): " + str(e)[:100]), 0
+
+    # Create empty boards for both players
+    p1_ships_board = game._create_empty_board()
+    p2_ships_board = game._create_empty_board()
+
+    # --- PLACEMENT PHASE ---
+    p1_ships_coords = []
+    p2_ships_coords = []
+    agents_setup = [
+        (agent1, p1_ships_board, AGENT1_NAME, p1_ships_coords),
+        (agent2, p2_ships_board, AGENT2_NAME, p2_ships_coords)
+    ]
+
+    for agent, board, agent_name, ship_tracker in agents_setup:
+        remaining_ships = list(SHIPS)
+
+        for i, ship_length in enumerate(remaining_ships):
+            placement_successful = False
+
+            state = {{
+                'phase': 'placement',
+                'board_size': BOARD_SIZE,
+                'ships_to_place': remaining_ships[i:],
+                'ships_placed': i,
+                'my_board': [row[:] for row in board]
+            }}
+
+            try:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(max(1, int(MOVE_TIMEOUT)))
+
+                try:
+                    placement = agent.make_move(state, None)
+                finally:
+                    signal.alarm(0)
+
+                # Validate placement
+                is_valid, error_code, error_message = validate_ship_placement(
+                    placement, board, BOARD_SIZE, ship_length
+                )
+
+                if is_valid:
+                    # Place the ship
+                    start = placement['start']
+                    orientation = placement['orientation']
+                    if orientation == 'horizontal':
+                        coords = [(start[0], start[1] + j) for j in range(ship_length)]
+                    else:
+                        coords = [(start[0] + j, start[1]) for j in range(ship_length)]
+
+                    for r, c in coords:
+                        board[r][c] = SHIP
+                    ship_tracker.append(coords)
+
+                    placement_successful = True
+                else:
+                    if agent_name == AGENT1_NAME:
+                        match_stats[AGENT1_NAME]["invalid"] += 1
+                    else:
+                        match_stats[AGENT2_NAME]["invalid"] += 1
+
+            except MoveTimeoutException:
+                if agent_name == AGENT1_NAME:
+                    match_stats[AGENT1_NAME]["timeout"] += 1
+                else:
+                    match_stats[AGENT2_NAME]["timeout"] += 1
+            except Exception as e:
+                if agent_name == AGENT1_NAME:
+                    match_stats[AGENT1_NAME]["make_move_crash"] += 1
+                else:
+                    match_stats[AGENT2_NAME]["make_move_crash"] += 1
+
+            if not placement_successful:
+                ship_coords = place_ship_randomly(board, ship_length, BOARD_SIZE)
+                if ship_coords is None:
+                    opponent_name = AGENT2_NAME if agent_name == AGENT1_NAME else AGENT1_NAME
+                    return (opponent_name, f"Forfeit: Impossible board state for random placement of ship length {{ship_length}}"), 0
+                ship_tracker.append(ship_coords)
+
+    # --- BOMBING PHASE ---
     p1_guess_board = [[EMPTY for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
     p2_guess_board = [[EMPTY for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
 
     players = {{
-        agent1: {{'opponent_ships_board': p2_active_board, 'guess_board': p1_guess_board}},
-        agent2: {{'opponent_ships_board': p1_active_board, 'guess_board': p2_guess_board}}
+        agent1: {{
+            'opponent_ships_board': p2_ships_board,
+            'guess_board': p1_guess_board,
+            'opponent_ships': p2_ships_coords,
+            'last_shot_coord': None,
+            'last_shot_result': None,
+            'shot_history': []
+        }},
+        agent2: {{
+            'opponent_ships_board': p1_ships_board,
+            'guess_board': p2_guess_board,
+            'opponent_ships': p1_ships_coords,
+            'last_shot_coord': None,
+            'last_shot_result': None,
+            'shot_history': []
+        }}
     }}
+
     # Randomly assign starting agent
     if random.random() < 0.5:
         current_agent, opponent_agent = agent1, agent2
     else:
         current_agent, opponent_agent = agent2, agent1
     
-    last_shot_coord, last_shot_result = None, None
     turn_continues = False
     move_count = 0
     # --- HUMAN MODE VISUALIZATION HELPER ---
     def print_state(player_agent, opponent_agent, players):
-        if player_agent.name != "Human":
+        if not isinstance(player_agent, HumanAgent):
              return # Only show for human
 
         p_data = players[player_agent]
@@ -265,137 +514,206 @@ def play_game(game_num, scores):
     while True:
         move_count += 1
         
-        if HUMAN_MODE:
+        if GAME_MODE != "":
              print_state(current_agent, opponent_agent, players)
 
         if move_count > max_moves:
             # Game exceeded max moves - return draw
-            stats["draw"] += 1
-            return "DRAW"
+            return "DRAW", 0
         
-        # Try to get move with timeout - if timeout or crash, use random move
-        move = None
-        sunk_coords = []
-        
-        try:
-            # Set up signal-based timeout
-            signal.signal(signal.SIGALRM, timeout_handler)
-            # signal.alarm() requires an integer, use max(1, ...) to ensure at least 1 second
-            signal.alarm(max(1, int(MOVE_TIMEOUT)))
-            
-            try:
-                move_data = current_agent.make_move(last_shot_result, last_shot_coord)
-                if isinstance(move_data, tuple) and len(move_data) == 2:
-                    move, sunk_coords = move_data
-                else:
-                    move, sunk_coords = move_data, []
-            finally:
-                # Always disable the alarm
-                signal.alarm(0)
-                
-        except MoveTimeoutException:
-            # Agent took too long - use random move (any cell)
-            move = (random.randint(0, BOARD_SIZE - 1), random.randint(0, BOARD_SIZE - 1))
-            sunk_coords = []
-            if current_agent.name == "Agent-1": stats["r1_timeout"] += 1
-            else: stats["r2_timeout"] += 1
-        except Exception as e:
-            # Agent crashed - use random move
-            move = (random.randint(0, BOARD_SIZE - 1), random.randint(0, BOARD_SIZE - 1))
-            sunk_coords = []
-            if current_agent.name == "Agent-1": stats["r1_crash"] += 1
-            else: stats["r2_crash"] += 1
-        
-        if move is None:
-            # Agent returned None - use random move
-            move = (random.randint(0, BOARD_SIZE - 1), random.randint(0, BOARD_SIZE - 1))
-            if current_agent.name == "Agent-1": stats["r1_invalid"] += 1
-            else: stats["r2_invalid"] += 1
-        
-        # Validate move coordinates
-        try:
-            row, col = move
-            if not (0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE):
-                # Invalid coordinates - use random move
-                row, col = random.randint(0, BOARD_SIZE - 1), random.randint(0, BOARD_SIZE - 1)
-                if current_agent.name == "Agent-1": stats["r1_invalid"] += 1
-                else: stats["r2_invalid"] += 1
-        except Exception:
-            row, col = random.randint(0, BOARD_SIZE - 1), random.randint(0, BOARD_SIZE - 1)
-            if current_agent.name == "Agent-1": stats["r1_invalid"] += 1
-            else: stats["r2_invalid"] += 1
-            
+        # Create state for bombing phase
         p_data = players[current_agent]
+        state = {{
+            'phase': 'bombing',
+            'board_size': BOARD_SIZE,
+            'last_shot_result': p_data['last_shot_result'],
+            'last_shot_coord': p_data['last_shot_coord'],
+            'shot_history': [h.copy() for h in p_data['shot_history']],
+            'turn_continues': turn_continues
+        }}
+
+        # Try to get move with timeout
+        move = None
+
+        try:
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(max(1, int(MOVE_TIMEOUT)))
+
+            try:
+                move_data = current_agent.make_move(state, None)
+
+                # Parse response - support dict and list/tuple formats
+                if isinstance(move_data, dict):
+                    move = move_data.get('target')
+                elif isinstance(move_data, (tuple, list)) and len(move_data) >= 2:
+                    if isinstance(move_data[0], (int, float)):
+                        # Format: (row, col)
+                        move = move_data
+                    elif isinstance(move_data[0], (tuple, list)):
+                        # Format: ((row, col), ...) for backward compatibility
+                        move = move_data[0]
+                elif isinstance(move_data, (tuple, list)) and len(move_data) == 1:
+                    # Format: [(row, col)]
+                    move = move_data[0]
+                else:
+                    move = None
+
+            finally:
+                signal.alarm(0)
+
+        except MoveTimeoutException:
+            move = None
+            if current_agent.name == AGENT1_NAME: match_stats[AGENT1_NAME]["timeout"] += 1
+            else: match_stats[AGENT2_NAME]["timeout"] += 1
+        except Exception as e:
+            move = None
+            if current_agent.name == AGENT1_NAME: match_stats[AGENT1_NAME]["make_move_crash"] += 1
+            else: match_stats[AGENT2_NAME]["make_move_crash"] += 1
+
+        # Validate and fallback to random if invalid
+        if move is None or not isinstance(move, (tuple, list)) or len(move) != 2:
+            move = (random.randint(0, BOARD_SIZE - 1), random.randint(0, BOARD_SIZE - 1))
+            if current_agent.name == AGENT1_NAME: match_stats[AGENT1_NAME]["invalid"] += 1
+            else: match_stats[AGENT2_NAME]["invalid"] += 1
+        else:
+            try:
+                row, col = move
+                if not (0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE):
+                    move = (random.randint(0, BOARD_SIZE - 1), random.randint(0, BOARD_SIZE - 1))
+                    if current_agent.name == AGENT1_NAME: match_stats[AGENT1_NAME]["invalid"] += 1
+                    else: match_stats[AGENT2_NAME]["invalid"] += 1
+            except Exception:
+                move = (random.randint(0, BOARD_SIZE - 1), random.randint(0, BOARD_SIZE - 1))
+                if current_agent.name == AGENT1_NAME: match_stats[AGENT1_NAME]["invalid"] += 1
+                else: match_stats[AGENT2_NAME]["invalid"] += 1
+
+        row, col = move
+            
         opponent_ships_board, guess_board = p_data['opponent_ships_board'], p_data['guess_board']
-        
+        opponent_ships = p_data['opponent_ships']
+
         result = opponent_ships_board[row][col]
-        
+
         if result == SHIP:
             opponent_ships_board[row][col] = HIT
             guess_board[row][col] = HIT
             last_shot_result = 'HIT'
             turn_continues = True
+
+            # Auto-detect if ship is fully sunk for visualization
+            for ship in opponent_ships:
+                if (row, col) in ship:
+                    if all(opponent_ships_board[r][c] == HIT for r, c in ship):
+                        # Mark as sunk on boards
+                        for r, c in ship:
+                            opponent_ships_board[r][c] = SUNK
+                            guess_board[r][c] = SUNK
+                    break
+        elif result in [HIT, SUNK]:
+            # Already hit, return 'MISS' to agent and end turn (waste of move)
+            last_shot_result = 'MISS'
+            turn_continues = False
         else:
-            guess_board[row][col] = MISS
+            if guess_board[row][col] == EMPTY:
+                guess_board[row][col] = MISS
             last_shot_result = 'MISS'
             turn_continues = False
         
-        last_shot_coord = move
-
-        if sunk_coords:
-            for r, c in sunk_coords:
-                guess_board[r][c] = SUNK
+        # Update agent's history and last shot info
+        p_data['last_shot_coord'] = move
+        p_data['last_shot_result'] = last_shot_result
+        p_data['shot_history'].append({{
+            'coord': move,
+            'result': last_shot_result
+        }})
 
         if game.is_game_over(opponent_ships_board):
-            stats["normal"] += 1
-            return current_agent.name
+            # Calculate winner's score (remaining ship segments)
+            # Current agent wins; calculate points from their remaining ships.
+            # Winner's ships are found in players[opponent_agent]['opponent_ships_board'].
+            
+            opponent_agent = agent2 if current_agent == agent1 else agent1
+            my_ships_board = players[opponent_agent]['opponent_ships_board']
+            score = sum(row.count(SHIP) for row in my_ships_board)
+            return current_agent.name, score
         
         if not turn_continues:
             current_agent, opponent_agent = opponent_agent, current_agent
-            last_shot_coord, last_shot_result = None, None
 
 
 def main():
     """Main function to run the Battleship simulation."""
-    scores = {{"Agent-1": 0, "Agent-2": 0}}
-    crash_detected = None
-
+    match_stats = {{
+        AGENT1_NAME: {{"wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0, "make_move_crash": 0, "other_crash": 0, "crash": 0, "timeout": 0, "invalid": 0}},
+        AGENT2_NAME: {{"wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0, "make_move_crash": 0, "other_crash": 0, "crash": 0, "timeout": 0, "invalid": 0}},
+    }}
+    
     for i in range(NUM_GAMES):
-        result = play_game(i + 1, scores)
+        print(f"GAME {{i+1}}")
+        result, game_score = play_game(i + 1, match_stats)
         
-        # Check if result is a crash tuple, draw, or just winner name
-        if isinstance(result, tuple):
-            winner, crash_msg = result
-            crash_detected = crash_msg
-            # Award ALL remaining games to the winner
-            remaining = NUM_GAMES - i
-            scores[winner] += remaining
+        if isinstance(result, tuple): # Crash
+            winner_id, crash_msg = result
             
-            # Count crash for the loser
-            if winner == "Agent-1": stats["c2"] += 1
-            else: stats["c1"] += 1
+            # Record statistics for the crash game
+            # The crasher loses, the other wins
+            winner_id_key = winner_id
+            loser_id_key = AGENT2_NAME if winner_id == AGENT1_NAME else AGENT1_NAME
             
-            # Print intermediate progress before breaking
-            print(f"PROGRESS:Agent-1={{scores['Agent-1']}},Agent-2={{scores['Agent-2']}},N={{stats['normal']}},D={{stats['draw']}},C1={{stats['c1']}},C2={{stats['c2']}},R1T={{stats['r1_timeout']}},R1C={{stats['r1_crash']}},R1I={{stats['r1_invalid']}},R2T={{stats['r2_timeout']}},R2C={{stats['r2_crash']}},R2I={{stats['r2_invalid']}}")
-            sys.stdout.flush()
-            break
+            match_stats[winner_id_key]["wins"] += 1
+            match_stats[winner_id_key]["points"] += 3
+            match_stats[loser_id_key]["losses"] += 1
+            # Crash score (max possible score for winner, negative for loser)
+            max_score = sum(SHIPS)
+            match_stats[winner_id_key]["score"] += max_score
+            match_stats[loser_id_key]["score"] -= max_score
+            
+            # Count crash in global stats
+            if winner_id == AGENT1_NAME: match_stats[AGENT2_NAME]["other_crash"] += 1
+            else: match_stats[AGENT1_NAME]["other_crash"] += 1
+            
+            print(f"CRASH in Game {{i+1}}: {{crash_msg}}")
+
         elif result == "DRAW":
-            # Draw - both get 0.5 points
-            scores["Agent-1"] += 0.5
-            scores["Agent-2"] += 0.5
+            match_stats[AGENT1_NAME]["draws"] += 1
+            match_stats[AGENT1_NAME]["points"] += 1
+            match_stats[AGENT2_NAME]["draws"] += 1
+            match_stats[AGENT2_NAME]["points"] += 1
+            print(f"Game {{i+1}} Result: DRAW")
         else:
-            winner = result
-            if winner in scores:
-                scores[winner] += 1
+            winner_id = result # AGENT1_NAME or AGENT2_NAME
+            loser_id = AGENT2_NAME if winner_id == AGENT1_NAME else AGENT1_NAME
+            
+            match_stats[winner_id]["wins"] += 1
+            match_stats[winner_id]["points"] += 3
+            match_stats[winner_id]["score"] += game_score
+            match_stats[loser_id]["losses"] += 1
+            match_stats[loser_id]["score"] -= game_score
+            print(f"Game {{i+1}} Result: {{winner_id}} wins with score {{game_score}} ({{loser_id}} score -{{game_score}})")
         
-        # Print intermediate progress for partial result parsing on timeout
-        print(f"PROGRESS:Agent-1={{scores['Agent-1']}},Agent-2={{scores['Agent-2']}},N={{stats['normal']}},D={{stats['draw']}},C1={{stats['c1']}},C2={{stats['c2']}},R1T={{stats['r1_timeout']}},R1C={{stats['r1_crash']}},R1I={{stats['r1_invalid']}},R2T={{stats['r2_timeout']}},R2C={{stats['r2_crash']}},R2I={{stats['r2_invalid']}}")
         sys.stdout.flush()
     
-    print(f"RESULT:Agent-1={{scores['Agent-1']}},Agent-2={{scores['Agent-2']}}")
-    print(f"STATS:Normal={{stats['normal']}},Draw={{stats['draw']}},C1={{stats['c1']}},C2={{stats['c2']}},R1T={{stats['r1_timeout']}},R1C={{stats['r1_crash']}},R1I={{stats['r1_invalid']}},R2T={{stats['r2_timeout']}},R2C={{stats['r2_crash']}},R2I={{stats['r2_invalid']}}")
-    if crash_detected:
-        print(f"CRASH:{{crash_detected}}")
+    print(f"RESULT:Agent-1={{float(match_stats[AGENT1_NAME]['points'])}},Agent-2={{float(match_stats[AGENT2_NAME]['points'])}}")
+    print(f"SCORE:Agent-1={{float(match_stats[AGENT1_NAME]['score'])}},Agent-2={{float(match_stats[AGENT2_NAME]['score'])}}")
+    print(f"WINS:Agent-1={{match_stats[AGENT1_NAME]['wins']}},Agent-2={{match_stats[AGENT2_NAME]['wins']}}")
+    print(f"DRAWS:{{match_stats[AGENT1_NAME]['draws']}}")
+    # Aggregate crash stat for backward compatibility
+    for agent_key in [AGENT1_NAME, AGENT2_NAME]:
+        match_stats[agent_key]['crash'] = match_stats[agent_key]['make_move_crash'] + match_stats[agent_key]['other_crash']
+
+    print("--- MATCH STATISTICS ---")
+    print(f"Agent-1 make_move_crash: {{match_stats[AGENT1_NAME]['make_move_crash']}}")
+    print(f"Agent-2 make_move_crash: {{match_stats[AGENT2_NAME]['make_move_crash']}}")
+    print(f"Agent-1 other_crash: {{match_stats[AGENT1_NAME]['other_crash']}}")
+    print(f"Agent-2 other_crash: {{match_stats[AGENT2_NAME]['other_crash']}}")
+    print(f"Agent-1 crash (total): {{match_stats[AGENT1_NAME]['crash']}}")
+    print(f"Agent-2 crash (total): {{match_stats[AGENT2_NAME]['crash']}}")
+    print(f"Agent-1 Timeouts: {{match_stats[AGENT1_NAME]['timeout']}}")
+    print(f"Agent-2 Timeouts: {{match_stats[AGENT2_NAME]['timeout']}}")
+    print(f"Agent-1 Invalid: {{match_stats[AGENT1_NAME]['invalid']}}")
+    print(f"Agent-2 Invalid: {{match_stats[AGENT2_NAME]['invalid']}}")
+    print(f"STATS:Agent-1={{match_stats[AGENT1_NAME]}},Agent-2={{match_stats[AGENT2_NAME]}}")
+
 
 if __name__ == "__main__":
     main()
@@ -541,22 +859,28 @@ def build_game_code(
     agent1_code: str,
     agent2_code: str,
     extra_imports: str,
-    num_games: int = NUM_ROUNDS_PER_BATTLESHIP_MATCH,
+    num_games: int = NUM_GAMES_PER_MATCH,
     board_size: int = BOARD_SIZE,
-    ships_config: list[int] = SHIPS,
+    ships: list[int] = SHIPS,
     move_timeout: float = MOVE_TIME_LIMIT,
     human_mode: bool = False,
+    game_mode: str = "",
+    agent1_name: str = "Agent-1",
+    agent2_name: str = "Agent-2",
 ) -> str:
     """Build the complete game code with both agent implementations."""
     return GAME_CODE_TEMPLATE.format(
         num_games=num_games,
         board_size=board_size,
-        ships_config=ships_config,
+        ships=ships,
         move_timeout=move_timeout,
         extra_imports=extra_imports,
         agent1_code=agent1_code,
         agent2_code=agent2_code,
         human_mode=human_mode,
+        game_mode=game_mode,
+        agent1_name=agent1_name,
+        agent2_name=agent2_name,
     )
 
 
@@ -586,49 +910,58 @@ def run_match(game_code: str, match_id: int, run_ids: tuple[int, int], timeout: 
                 "agent1_run_id": run_ids[0],
                 "agent2_run_id": run_ids[1],
                 "success": False,
-                "agent1_wins": 0,
-                "agent2_wins": 0,
+                "agent1_score": 0,
+                "agent2_score": 0,
                 "error": result.stderr[:500],
             }
 
         # Parse results
         match = re.search(r"RESULT:Agent-1=([\d.]+),Agent-2=([\d.]+)", result.stdout)
+        
+        stats_block = ""
+        if "--- MATCH STATISTICS ---" in result.stdout:
+            stats_block = result.stdout.split("--- MATCH STATISTICS ---")[1].strip()
+
         if match:
-            # Check for crash info
-            crash_match = re.search(r"CRASH:(.+)", result.stdout)
-            crash_info = crash_match.group(1) if crash_match else None
+            wins_match = re.search(r"WINS:Agent-1=(\d+),Agent-2=(\d+)", result.stdout)
+            draws_match = re.search(r"DRAWS:(\d+)", result.stdout)
+            score_match = re.search(r"SCORE:Agent-1=([-\d.]+),Agent-2=([-\d.]+)", result.stdout)
             
-            # Parse stats
-            stats = {
-                "normal": 0, "draw": 0, "c1": 0, "c2": 0,
-                "r1_timeout": 0, "r1_crash": 0, "r1_invalid": 0,
-                "r2_timeout": 0, "r2_crash": 0, "r2_invalid": 0
-            }
-            stats_match = re.search(r"STATS:Normal=(\d+),Draw=(\d+),C1=(\d+),C2=(\d+),R1T=(\d+),R1C=(\d+),R1I=(\d+),R2T=(\d+),R2C=(\d+),R2I=(\d+)", result.stdout)
-            if stats_match:
-                stats = {
-                    "normal": int(stats_match.group(1)),
-                    "draw": int(stats_match.group(2)),
-                    "c1": int(stats_match.group(3)),
-                    "c2": int(stats_match.group(4)),
-                    "r1_timeout": int(stats_match.group(5)),
-                    "r1_crash": int(stats_match.group(6)),
-                    "r1_invalid": int(stats_match.group(7)),
-                    "r2_timeout": int(stats_match.group(8)),
-                    "r2_crash": int(stats_match.group(9)),
-                    "r2_invalid": int(stats_match.group(10)),
-                }
+            agent1_wins = int(wins_match.group(1)) if wins_match else 0
+            agent2_wins = int(wins_match.group(2)) if wins_match else 0
+            draws = int(draws_match.group(1)) if draws_match else 0
+            agent1_points = int(float(match.group(1))) if match else 0
+            agent2_points = int(float(match.group(2))) if match else 0
+            agent1_score = float(score_match.group(1)) if score_match else 0.0
+            agent2_score = float(score_match.group(2)) if score_match else 0.0
+
+            log_lines = []
+            for line in result.stdout.splitlines():
+                stripped = line.lstrip()
+                if stripped.startswith((
+                    "Agent-1:", "Agent-2:", "GAME", "Game", "Winner:",
+                    "Running Total", "==========", "--- Turn", "0 1", "YOUR",
+                    "Final", "Scores:", "Agent 1", "Agent 2",
+                    "BOARD:", "FINAL STATE:",
+                    "CRASH", "RESULT", "SCORE", "WINS", "DRAWS", "STATS"
+                )) or "ENDED" in line or line.strip() == "":
+                    log_lines.append(line)
 
             return {
                 "match_id": match_id,
                 "agent1_run_id": run_ids[0],
                 "agent2_run_id": run_ids[1],
                 "success": True,
-                "agent1_wins": float(match.group(1)),
-                "agent2_wins": float(match.group(2)),
+                "agent1_score": agent1_score,
+                "agent2_score": agent2_score,
+                "agent1_wins": agent1_wins,
+                "agent2_wins": agent2_wins,
+                "agent1_points": agent1_points,
+                "agent2_points": agent2_points,
+                "draws": draws,
                 "error": None,
-                "crash_info": crash_info,
-                "stats": stats,
+                "stats_block": stats_block,
+                "log": "\n".join(log_lines),
             }
 
         return {
@@ -636,8 +969,8 @@ def run_match(game_code: str, match_id: int, run_ids: tuple[int, int], timeout: 
             "agent1_run_id": run_ids[0],
             "agent2_run_id": run_ids[1],
             "success": False,
-            "agent1_wins": 0,
-            "agent2_wins": 0,
+            "agent1_score": 0,
+            "agent2_score": 0,
             "error": "Could not parse results from output",
         }
 
@@ -647,8 +980,8 @@ def run_match(game_code: str, match_id: int, run_ids: tuple[int, int], timeout: 
             "agent1_run_id": run_ids[0],
             "agent2_run_id": run_ids[1],
             "success": False,
-            "agent1_wins": 0,
-            "agent2_wins": 0,
+            "agent1_score": 0,
+            "agent2_score": 0,
             "error": str(e),
         }
     finally:
@@ -671,8 +1004,9 @@ def run_match_human(game_code: str) -> None:
         # Run interactively - result will be printed to stdout by the game script itself
         subprocess.call(["python", temp_file])
     finally:
-        if os.path.exists(temp_file):
-            os.remove(temp_file)
+        for file_path in [temp_file, debug_file]:
+            if os.path.exists(file_path):
+                os.remove(file_path)
 
 
 async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int]) -> dict:
@@ -684,23 +1018,70 @@ async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int
 async def main_async():
     parser = argparse.ArgumentParser(description="Run Battleship matches between stored AI agents")
     parser.add_argument("--agent", nargs="+", help="Agent specs: model1[:run1:run2] model2[:run3:run4]")
-    parser.add_argument("--human", action="store_true", help="Play interactively against a random bot")
+    
+    human_group = parser.add_mutually_exclusive_group()
+    human_group.add_argument("--humanvsbot", action="store_true", help="Play interactively against a random bot")
+    human_group.add_argument("--humanvshuman", action="store_true", help="Two humans play at the same terminal")
+    human_group.add_argument("--humanvsagent", action="store_true", help="Play against a stored agent (requires --agent with 1 spec)")
+
     args = parser.parse_args()
 
-    if args.human:
+    game_mode = ""
+    if args.humanvsbot:
+        game_mode = "humanvsbot"
+    elif args.humanvshuman:
+        game_mode = "humanvshuman"
+    elif args.humanvsagent:
+        game_mode = "humanvsagent"
+
+    if game_mode:
         print("\n" + "=" * 60)
-        print("BATTLESHIP HUMAN MODE")
-        print("You are playing against a RandomBot.")
+        mode_title = MODE_TITLES.get(game_mode, game_mode)
+        print(f"BATTLESHIP - {mode_title}")
         print("=" * 60)
         
-        # We don't need real agents, just placeholders
+        agent1_code = ""
+        agent2_code = ""
+        agent_imports = ""
+
+        if game_mode == "humanvsagent":
+             if not args.agent or len(args.agent) != 1:
+                print("ERROR: --humanvsagent requires exactly 1 --agent spec.")
+                print("Example: --humanvsagent --agent mistral:1")
+                sys.exit(1)
+             
+             model_pattern, runs = parse_agent_spec(args.agent[0])
+             folder = find_model_folder(model_pattern)
+             if not folder:
+                 sys.exit(1)
+             if not runs:
+                 runs = get_available_runs(folder, GAME_NAME)
+             if not runs:
+                 print(f"ERROR: No runs found for {folder}/{GAME_NAME}")
+                 sys.exit(1)
+             
+             agent_code, agent_imports = load_stored_agent(folder, GAME_NAME, runs[0], 1)
+             if not agent_code:
+                 print(f"ERROR: Failed to load agent from {folder}")
+                 sys.exit(1)
+             
+             # Pass as agent1_code (logic in template handles assignment)
+             agent1_code = agent_code
+
+        # We construct the game code with empty strings for agents if they are human/random
+        # The template logic handles instantiation based on GAME_MODE
         game_code = build_game_code(
-            "", "", "", 
+            agent1_code=agent1_code,
+            agent2_code=agent2_code,
+            extra_imports=agent_imports,
             num_games=1, 
             board_size=BOARD_SIZE, 
-            ships_config=SHIPS, 
+            ships=SHIPS, 
             move_timeout=99999, # Unlimited time for human
-            human_mode=True
+            human_mode=True, # Keeps compatibility
+            game_mode=game_mode,
+            agent1_name="Human" if game_mode != "humanvsbot" else "Human",
+            agent2_name="Bot" if game_mode == "humanvsbot" else "Agent"
         )
         run_match_human(game_code)
         return
@@ -743,11 +1124,11 @@ async def main_async():
     print(f"Total Matches: {num_matches}")
     print("=" * 60)
 
-    BATTLESHIP_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_f = GAME_LOGS_DIR / f"{ts}_match.txt"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    agent_suffix = f"{folder1}_vs_{folder2}"
+    log_f = RESULTS_DIR / f"{ts}_{agent_suffix}_match.txt"
 
     match_tasks = []
     
@@ -766,7 +1147,8 @@ async def main_async():
         extra_imports = "\n".join(imp for imp in all_imports if imp.strip())
 
         game_code = build_game_code(
-            code1, code2, extra_imports, NUM_ROUNDS_PER_BATTLESHIP_MATCH, BOARD_SIZE, SHIPS, MOVE_TIME_LIMIT
+            code1, code2, extra_imports, NUM_GAMES_PER_MATCH, BOARD_SIZE, SHIPS, MOVE_TIME_LIMIT,
+            agent1_name=folder1, agent2_name=folder2
         )
         
         match_tasks.append(run_match_async(game_code, i + 1, (run1, run2)))
@@ -780,6 +1162,7 @@ async def main_async():
     
     # Process results and log
     total1, total2 = 0.0, 0.0
+    total_pts1, total_pts2 = 0, 0
     
     with open(log_f, "w") as f:
         f.write(f"Battleship Stored Agent Match - {ts}\n")
@@ -787,28 +1170,59 @@ async def main_async():
         
         for result in sorted(results, key=lambda x: x["match_id"]):
             match_id = result["match_id"]
-            r1, r2 = result["agent1_run_id"], result["agent2_run_id"]
-            
             if result["success"]:
-                a1, a2 = result["agent1_wins"], result["agent2_wins"]
-                total1 += a1
-                total2 += a2
-                status = f"Result: {a1} - {a2}"
-                if result.get("crash_info"):
-                    status += f" ({result['crash_info']})"
+                s1, s2 = result["agent1_score"], result["agent2_score"]
+                p1 = result.get("agent1_points", 0)
+                p2 = result.get("agent2_points", 0)
+                total1 += s1
+                total2 += s2
+                total_pts1 += p1
+                total_pts2 += p2
+                status = f"Result: Pts {p1}-{p2}, Score {s1:.1f}-{s2:.1f}"
+                game_log = result.get("log", "")
+                if game_log:
+                    status += f"\n{game_log}\n"
+                if result.get("stats_block"):
+                    status += (
+                        f"\n--- MATCH STATISTICS ---\n{result['stats_block']}\n"
+                    )
             else:
-                status = f"FAILED: {result.get('error', 'Unknown error')}"
+                status = f"FAILED: {result.get('error', 'Unknown')}"
                 
-            print(f"  Match {match_id} ({folder1}:{r1} vs {folder2}:{r2}): {status}")
-            f.write(f"Match {match_id}: {folder1} (run {r1}) vs {folder2} (run {r2})\n")
+            print(f"  Match {match_id}: {status.splitlines()[0]}")
+            f.write(f"Match {match_id}: {folder1} vs {folder2}\n")
             f.write(f"{status}\n")
-            if "stats" in result:
-                f.write(f"Stats: {result['stats']}\n")
             f.write("-" * 40 + "\n\n")
 
+            # Update scoreboard once per match
+            if result["success"]:
+                # Agent 1 update
+                agent1_key = f"{folder1}:{result['agent1_run_id']}"
+                update_scoreboard(
+                    SCOREBOARD_PATH, agent1_key,
+                    games_played=NUM_GAMES_PER_MATCH,
+                    wins=result["agent1_wins"], 
+                    losses=result["agent2_wins"], 
+                    draws=result.get("draws", 0),
+                    score=result["agent1_score"], 
+                    points=result.get("agent1_points", 0)
+                )
+                # Agent 2 update
+                agent2_key = f"{folder2}:{result['agent2_run_id']}"
+                update_scoreboard(
+                    SCOREBOARD_PATH, agent2_key,
+                    games_played=NUM_GAMES_PER_MATCH,
+                    wins=result["agent2_wins"], 
+                    losses=result["agent1_wins"], 
+                    draws=result.get("draws", 0),
+                    score=result["agent2_score"], 
+                    points=result.get("agent2_points", 0)
+                )
+
+
     print("\nFINAL RESULTS:")
-    print(f"  {folder1}: {total1}")
-    print(f"  {folder2}: {total2}")
+    print(f"  {folder1}: Pts {total_pts1}, Score {total1:.1f}")
+    print(f"  {folder2}: Pts {total_pts2}, Score {total2:.1f}")
     print(f"\nLogs saved to: {log_f}")
 
 if __name__ == "__main__":

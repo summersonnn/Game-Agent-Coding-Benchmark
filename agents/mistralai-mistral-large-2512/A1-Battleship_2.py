@@ -2,7 +2,7 @@
 Agent Code: A1-Battleship
 Model: mistralai/mistral-large-2512
 Run: 2
-Generated: 2026-02-04 16:48:07
+Generated: 2026-02-10 16:22:20
 """
 
 from collections import deque
@@ -11,268 +11,218 @@ import random
 from collections import deque
 
 class BattleshipAgent:
-    def __init__(self, name, board_size, ships_config):
+    def __init__(self, name, board_size, ships):
         self.name = name
         self.board_size = board_size
-        self.ships_config = sorted(ships_config, reverse=True)
-        self.remaining_ships = self.ships_config.copy()
+        self.ships = sorted(ships, reverse=True)
+        self.my_board = [[EMPTY for _ in range(board_size)] for _ in range(board_size)]
+        self.target_queue = deque()
+        self.hunt_mode = True
+        self.last_hit = None
+        self.potential_targets = []
+        self.shot_history = set()
+        self.initialize_probability_map()
 
-        # Initialize all possible moves
-        self.all_moves = [(r, c) for r in range(board_size) for c in range(board_size)]
-        self.missed_moves = set()
-        self.hit_moves = set()
-        self.sunk_ships = []
+    def initialize_probability_map(self):
+        self.probability_map = [[0 for _ in range(self.board_size)] for _ in range(self.board_size)]
 
-        # For tracking potential ship positions after hits
-        self.hunt_queue = deque()
-        self.hunt_mode = False
-        self.current_hunt_targets = []
-        self.last_hit_direction = None
-
-        # Probability grid
-        self.prob_grid = [[0 for _ in range(board_size)] for _ in range(board_size)]
-
-    def make_move(self, last_shot_result=None, last_shot_coord=None):
-        sunk_coords = []
-
-        # Update game state based on last shot result
-        if last_shot_result == 'MISS':
-            self.missed_moves.add(last_shot_coord)
-            if self.hunt_mode and last_shot_coord in self.current_hunt_targets:
-                self.current_hunt_targets.remove(last_shot_coord)
-        elif last_shot_result == 'HIT':
-            self.hit_moves.add(last_shot_coord)
-            if not self.hunt_mode:
-                self.hunt_mode = True
-                self._initialize_hunt(last_shot_coord)
-            else:
-                self._update_hunt(last_shot_coord)
-
-        # Check if we've sunk a ship
-        if self.hunt_mode and self._check_sunk_ship():
-            sunk_coords = self._get_sunk_coords()
-            self.hunt_mode = False
-            self.hunt_queue.clear()
-            self.current_hunt_targets = []
-            self.last_hit_direction = None
-            self._update_remaining_ships()
-
-        # Choose next move
-        if self.hunt_mode and self.current_hunt_targets:
-            # Hunt mode - target adjacent cells
-            move = self.current_hunt_targets.pop(0)
+    def make_move(self, state, feedback):
+        if state['phase'] == 'placement':
+            return self.place_ship(state, feedback)
         else:
-            # Probability-based search
-            self._calculate_probabilities()
-            move = self._get_highest_probability_move()
+            return self.bomb_target(state)
 
-            # If we're not in hunt mode, remove the move from possible moves
-            if move in self.all_moves:
-                self.all_moves.remove(move)
+    def place_ship(self, state, feedback):
+        ship_length = state['ships_to_place'][0]
 
-        return move, sunk_coords
+        # Try to place ships in a pattern that minimizes clustering
+        for attempt in range(MAX_PLACEMENT_ATTEMPTS):
+            # Prefer placing larger ships first in less crowded areas
+            if ship_length == max(self.ships):
+                # Place largest ship in center with some randomness
+                orientation = random.choice(['horizontal', 'vertical'])
+                if orientation == 'horizontal':
+                    row = random.randint(self.board_size//4, 3*self.board_size//4)
+                    col = random.randint(0, self.board_size - ship_length)
+                else:
+                    row = random.randint(0, self.board_size - ship_length)
+                    col = random.randint(self.board_size//4, 3*self.board_size//4)
+            else:
+                # Place smaller ships with some spacing from existing ships
+                orientation = random.choice(['horizontal', 'vertical'])
+                if orientation == 'horizontal':
+                    row = random.randint(0, self.board_size - 1)
+                    col = random.randint(0, self.board_size - ship_length)
+                    # Check if this area is too crowded
+                    if self.is_area_crowded(row, col, ship_length, orientation):
+                        continue
+                else:
+                    row = random.randint(0, self.board_size - ship_length)
+                    col = random.randint(0, self.board_size - 1)
+                    # Check if this area is too crowded
+                    if self.is_area_crowded(row, col, ship_length, orientation):
+                        continue
 
-    def _initialize_hunt(self, coord):
-        r, c = coord
-        # Add all adjacent cells to hunt queue
-        for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < self.board_size and 0 <= nc < self.board_size:
-                if (nr, nc) not in self.missed_moves and (nr, nc) not in self.hit_moves:
-                    self.hunt_queue.append((nr, nc))
+            # Validate placement
+            if self.is_valid_placement(state['my_board'], row, col, ship_length, orientation):
+                return {
+                    'ship_length': ship_length,
+                    'start': (row, col),
+                    'orientation': orientation
+                }
 
-        # Initialize hunt targets with all possible directions
-        self.current_hunt_targets = list(self.hunt_queue)
+        # If all attempts failed, place randomly
+        orientation = random.choice(['horizontal', 'vertical'])
+        if orientation == 'horizontal':
+            row = random.randint(0, self.board_size - 1)
+            col = random.randint(0, self.board_size - ship_length)
+        else:
+            row = random.randint(0, self.board_size - ship_length)
+            col = random.randint(0, self.board_size - 1)
 
-    def _update_hunt(self, coord):
-        if not self.last_hit_direction:
-            # Try to determine direction from last two hits
-            if len(self.hit_moves) >= 2:
-                hits = list(self.hit_moves)
-                last_hit = hits[-1]
-                prev_hit = hits[-2]
+        return {
+            'ship_length': ship_length,
+            'start': (row, col),
+            'orientation': orientation
+        }
 
-                dr = last_hit[0] - prev_hit[0]
-                dc = last_hit[1] - prev_hit[1]
-
-                if dr == 0:  # Horizontal
-                    self.last_hit_direction = (0, 1 if dc > 0 else -1)
-                elif dc == 0:  # Vertical
-                    self.last_hit_direction = (1 if dr > 0 else -1, 0)
-
-                # Update hunt targets based on direction
-                if self.last_hit_direction:
-                    self.current_hunt_targets = []
-                    r, c = coord
-                    dr, dc = self.last_hit_direction
-                    # Add cells in both directions
-                    for direction in [1, -1]:
-                        nr, nc = r + dr * direction, c + dc * direction
-                        while 0 <= nr < self.board_size and 0 <= nc < self.board_size:
-                            if (nr, nc) in self.missed_moves:
-                                break
-                            if (nr, nc) not in self.hit_moves and (nr, nc) not in self.current_hunt_targets:
-                                self.current_hunt_targets.append((nr, nc))
-                            nr += dr * direction
-                            nc += dc * direction
-
-    def _check_sunk_ship(self):
-        if not self.hunt_mode or len(self.hit_moves) < 2:
-            return False
-
-        # Check if we've found all parts of a ship
-        hits = list(self.hit_moves)
-        hits.sort()
-
-        # Check horizontal ships
-        for i in range(len(hits)):
-            for ship_size in self.remaining_ships:
-                if i + ship_size > len(hits):
-                    continue
-                # Check if consecutive hits form a ship
-                consecutive = True
-                for j in range(1, ship_size):
-                    if hits[i+j][0] != hits[i][0] or hits[i+j][1] != hits[i][1] + j:
-                        consecutive = False
-                        break
-                if consecutive:
-                    # Verify all positions are hits
-                    all_hits = True
-                    for j in range(ship_size):
-                        if hits[i+j] not in self.hit_moves:
-                            all_hits = False
-                            break
-                    if all_hits:
+    def is_area_crowded(self, row, col, length, orientation):
+        """Check if the area around a potential ship placement is too crowded"""
+        padding = 1  # Minimum space between ships
+        if orientation == 'horizontal':
+            for r in range(max(0, row-padding), min(self.board_size, row+padding+1)):
+                for c in range(max(0, col-padding), min(self.board_size, col+length+padding)):
+                    if r < len(self.my_board) and c < len(self.my_board[0]) and self.my_board[r][c] == SHIP:
                         return True
-
-        # Check vertical ships
-        hits.sort(key=lambda x: (x[1], x[0]))
-        for i in range(len(hits)):
-            for ship_size in self.remaining_ships:
-                if i + ship_size > len(hits):
-                    continue
-                # Check if consecutive hits form a ship
-                consecutive = True
-                for j in range(1, ship_size):
-                    if hits[i+j][1] != hits[i][1] or hits[i+j][0] != hits[i][0] + j:
-                        consecutive = False
-                        break
-                if consecutive:
-                    # Verify all positions are hits
-                    all_hits = True
-                    for j in range(ship_size):
-                        if hits[i+j] not in self.hit_moves:
-                            all_hits = False
-                            break
-                    if all_hits:
+        else:
+            for r in range(max(0, row-padding), min(self.board_size, row+length+padding)):
+                for c in range(max(0, col-padding), min(self.board_size, col+padding+1)):
+                    if r < len(self.my_board) and c < len(self.my_board[0]) and self.my_board[r][c] == SHIP:
                         return True
-
         return False
 
-    def _get_sunk_coords(self):
-        if not self.hunt_mode:
-            return []
+    def is_valid_placement(self, board, row, col, length, orientation):
+        """Check if a ship placement is valid"""
+        if orientation == 'horizontal':
+            if col + length > self.board_size:
+                return False
+            for c in range(col, col + length):
+                if board[row][c] != EMPTY:
+                    return False
+        else:
+            if row + length > self.board_size:
+                return False
+            for r in range(row, row + length):
+                if board[r][col] != EMPTY:
+                    return False
+        return True
 
-        # Find the sunk ship coordinates
-        hits = list(self.hit_moves)
-        hits.sort()
+    def bomb_target(self, state):
+        # Update shot history
+        if state['last_shot_coord']:
+            self.shot_history.add(state['last_shot_coord'])
 
-        # Check horizontal ships
-        for i in range(len(hits)):
-            for ship_size in self.remaining_ships:
-                if i + ship_size > len(hits):
-                    continue
-                consecutive = True
-                for j in range(1, ship_size):
-                    if hits[i+j][0] != hits[i][0] or hits[i+j][1] != hits[i][1] + j:
-                        consecutive = False
-                        break
-                if consecutive:
-                    coords = [(hits[i][0], hits[i][1] + j) for j in range(ship_size)]
-                    if all(c in self.hit_moves for c in coords):
-                        return coords
+        # If we have potential targets from previous hits, target those first
+        if self.target_queue:
+            target = self.target_queue.popleft()
+            if target in self.shot_history:
+                # Skip already targeted cells
+                if self.target_queue:
+                    target = self.target_queue.popleft()
+                else:
+                    # Fall back to probability-based targeting
+                    target = self.get_probability_target(state)
+            return {'target': target}
 
-        # Check vertical ships
-        hits.sort(key=lambda x: (x[1], x[0]))
-        for i in range(len(hits)):
-            for ship_size in self.remaining_ships:
-                if i + ship_size > len(hits):
-                    continue
-                consecutive = True
-                for j in range(1, ship_size):
-                    if hits[i+j][1] != hits[i][1] or hits[i+j][0] != hits[i][0] + j:
-                        consecutive = False
-                        break
-                if consecutive:
-                    coords = [(hits[i][0] + j, hits[i][1]) for j in range(ship_size)]
-                    if all(c in self.hit_moves for c in coords):
-                        return coords
+        # If we got a hit last turn, switch to target mode
+        if state['last_shot_result'] == 'HIT':
+            self.last_hit = state['last_shot_coord']
+            self.hunt_mode = False
+            self.generate_potential_targets(state['last_shot_coord'])
+            if self.target_queue:
+                target = self.target_queue.popleft()
+                return {'target': target}
 
-        return []
+        # If we're in hunt mode or no targets left, use probability-based targeting
+        target = self.get_probability_target(state)
+        return {'target': target}
 
-    def _update_remaining_ships(self):
-        sunk_coords = self._get_sunk_coords()
-        if not sunk_coords:
-            return
+    def generate_potential_targets(self, hit_coord):
+        """Generate potential targets around a hit coordinate"""
+        row, col = hit_coord
+        directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # Right, Down, Left, Up
 
-        ship_size = len(sunk_coords)
-        if ship_size in self.remaining_ships:
-            self.remaining_ships.remove(ship_size)
+        for dr, dc in directions:
+            r, c = row + dr, col + dc
+            if 0 <= r < self.board_size and 0 <= c < self.board_size and (r, c) not in self.shot_history:
+                self.target_queue.append((r, c))
 
-    def _calculate_probabilities(self):
-        # Reset probability grid
-        self.prob_grid = [[0 for _ in range(self.board_size)] for _ in range(self.board_size)]
+    def get_probability_target(self, state):
+        """Calculate probability map and return the highest probability target"""
+        self.initialize_probability_map()
 
-        # Calculate probabilities for each remaining ship
-        for ship_size in self.remaining_ships:
-            for r in range(self.board_size):
-                for c in range(self.board_size):
-                    # Horizontal placement
-                    if c + ship_size <= self.board_size:
+        # Update probability map based on remaining ships
+        remaining_ships = self.get_remaining_ships(state)
+
+        for length in remaining_ships:
+            for row in range(self.board_size):
+                for col in range(self.board_size):
+                    # Check horizontal placement
+                    if col + length <= self.board_size:
                         valid = True
-                        for i in range(ship_size):
-                            if (r, c + i) in self.missed_moves or (r, c + i) in self.hit_moves:
+                        for c in range(col, col + length):
+                            if (row, c) in self.shot_history and state['shot_history'][-1]['result'] == 'HIT':
                                 valid = False
                                 break
                         if valid:
-                            for i in range(ship_size):
-                                if (r, c + i) not in self.hit_moves:
-                                    self.prob_grid[r][c + i] += 1
+                            for c in range(col, col + length):
+                                if (row, c) not in self.shot_history:
+                                    self.probability_map[row][c] += 1
 
-                    # Vertical placement
-                    if r + ship_size <= self.board_size:
+                    # Check vertical placement
+                    if row + length <= self.board_size:
                         valid = True
-                        for i in range(ship_size):
-                            if (r + i, c) in self.missed_moves or (r + i, c) in self.hit_moves:
+                        for r in range(row, row + length):
+                            if (r, col) in self.shot_history and state['shot_history'][-1]['result'] == 'HIT':
                                 valid = False
                                 break
                         if valid:
-                            for i in range(ship_size):
-                                if (r + i, c) not in self.hit_moves:
-                                    self.prob_grid[r + i][c] += 1
+                            for r in range(row, row + length):
+                                if (r, col) not in self.shot_history:
+                                    self.probability_map[r][col] += 1
 
-    def _get_highest_probability_move(self):
+        # Find the cell with highest probability that hasn't been shot yet
         max_prob = -1
-        best_moves = []
+        best_targets = []
 
-        # Find all moves with maximum probability
-        for r in range(self.board_size):
-            for c in range(self.board_size):
-                if (r, c) in self.missed_moves or (r, c) in self.hit_moves:
-                    continue
-                if self.prob_grid[r][c] > max_prob:
-                    max_prob = self.prob_grid[r][c]
-                    best_moves = [(r, c)]
-                elif self.prob_grid[r][c] == max_prob:
-                    best_moves.append((r, c))
+        for row in range(self.board_size):
+            for col in range(self.board_size):
+                if (row, col) not in self.shot_history and self.probability_map[row][col] > max_prob:
+                    max_prob = self.probability_map[row][col]
+                    best_targets = [(row, col)]
+                elif (row, col) not in self.shot_history and self.probability_map[row][col] == max_prob:
+                    best_targets.append((row, col))
 
-        # If no moves with probability > 0, use random move
-        if max_prob == 0:
-            valid_moves = [(r, c) for r in range(self.board_size) for c in range(self.board_size)
-                          if (r, c) not in self.missed_moves and (r, c) not in self.hit_moves]
-            if not valid_moves:
-                return None
-            return random.choice(valid_moves)
+        # If multiple targets have same probability, choose randomly
+        if best_targets:
+            return random.choice(best_targets)
+        else:
+            # Fallback to random if no valid targets found (shouldn't happen)
+            while True:
+                target = (random.randint(0, self.board_size-1), random.randint(0, self.board_size-1))
+                if target not in self.shot_history:
+                    return target
 
-        # Choose randomly among best moves
-        return random.choice(best_moves)
+    def get_remaining_ships(self, state):
+        """Estimate remaining ships based on hit patterns"""
+        # This is a simplified version - a more sophisticated agent would track sunk ships
+        remaining_ships = self.ships.copy()
+
+        # Count hits and estimate which ships might be sunk
+        hits = sum(1 for shot in state['shot_history'] if shot['result'] == 'HIT')
+
+        # Very rough estimation - in a real implementation, you'd track sunk ships
+        if hits >= sum(remaining_ships):
+            return [min(remaining_ships)]
+
+        return remaining_ships

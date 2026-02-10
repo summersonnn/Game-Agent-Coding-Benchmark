@@ -1,16 +1,78 @@
 Battleship is played in two main phases: ship placement and bombing.
 
-During the placement phase, players position their ships on the grid. Ships can only be placed either horizontally or vertically—diagonal or intersecting placements are not allowed.
+# PLACEMENT PHASE
+
+During the placement phase, you must strategically position your ships on the grid. Ships can only be placed either horizontally or vertically—diagonal or intersecting placements are not allowed.
+
+**Ship Placement Rules:**
+- Each ship must be placed entirely within the board boundaries
+- Ships cannot overlap or intersect with each other
+- Ships can only be oriented horizontally or vertically (not diagonally)
+- You get a single attempt to place each ship correctly
+- If the attempt fails (invalid placement, timeout, or crash), the ship will be placed randomly as a penalty
+
+**Placement State Dictionary:**
+When it's your turn to place a ship, you'll receive a state dictionary with:
+- `phase`: 'placement'
+- `board_size`: The size of the board (e.g., 8)
+- `ships_to_place`: List of ship lengths still to be placed (e.g., [5, 4, 3])
+- `ships_placed`: Number of ships already successfully placed
+- `my_board`: Current state of your board (2D list with 'O' for empty, 'S' for ship)
+
+**Expected Response Format for Placement:**
+Return a dictionary with:
+```python
+{
+    'ship_length': int,              # Length of the ship being placed (must match first in ships_to_place)
+    'start': (row, col),             # Starting coordinates (0-indexed)
+    'orientation': 'horizontal'      # 'horizontal' or 'vertical'
+}
+```
 
 Once both players have set their ships, the bombing phase begins.
 
-The maximum number of moves in a match is equal to the area of the game board multiplied by 2 (e.g., for an 8x8 board, the limit is 128 moves). If the match does not end within this limit, it results in a draw, and half points (0.5) are awarded to each side.
+# BOMBING PHASE
 
-Players take turns guessing the coordinates of the opponent’s ships. If a shot misses, the turn passes to the other player. If it hits, the player gets another attempt. The game ends when one player loses all their ships, making the opponent the winner, or when the move limit is reached.
+The maximum number of moves in a match is equal to the area of the game board multiplied by 2 (e.g., for an 8x8 board, the limit is 128 moves). If the match does not end within this limit, it results in a draw.
 
-A key part of the game’s strategy lies in making smart bombing decisions. For instance, after scoring a hit, it’s wise to target adjacent cells—but do so with awareness that ships are always in straight lines, not crosses or irregular shapes.
+**Move Performance:**
+Efficient decision-making is critical. If an agent takes too long to respond during any phase (placement or bombing), a random fallback action will be executed as a penalty to ensure the match continues.
 
-Additionally, because the number and sizes of the ships are known before the bombing phase begins, players can deduce which ships have been sunk based on hit patterns. They can also avoid targeting certain grid areas when it's clear no remaining ship can logically fit there. And obviously, keep track of the missed shots so not to wasting any other shot later in the game on the same target. The best way to do this is too add all the possible moves at the start of the game to a data structure and remove the fired target from it as soon as we fire at it. It must be removed regardless of the outcome.
+**Scoring System:**
+- **Win**: 3 points
+- **Draw**: 1 point
+- **Loss**: 0 points
+
+**Secondary Score (Tie-breaker):**
+In addition to points, a secondary "score" is calculated based on the winning side's remaining ship segments.
+- If you win, your score is the total number of occupied cells (ships) remaining on your board.
+- If you lose, your score is the negative of the winner's remaining ship segments (e.g., if the winner has 5 segments left, you get -5).
+- If the game is a draw, both players receive a score of 0 for that round.
+
+Players take turns guessing the coordinates of the opponent's ships. If a shot misses, the turn passes to the other player. If it hits, the player gets another attempt provided that it wasn't hit before (i.e. you cannot 'farm' extra turns by hitting the same spot). Targeting any already-targeted cell (whether it was a HIT or a MISS previously) is a waste of a move: it will be reported as a 'MISS' and the turn will pass. The game ends when one player loses all their ships, making the opponent the winner, or when the move limit is reached.
+
+A key part of the game's strategy lies in making smart bombing decisions. For instance, after scoring a hit, it's wise to target adjacent cells—but do so with awareness that ships are always in straight lines, not crosses or irregular shapes.
+
+Additionally, because the number and sizes of the ships are known before the bombing phase begins, players can deduce which ships have been sunk based on hit patterns. They can also avoid targeting certain grid areas when it's clear no remaining ship can logically fit there. Keep track of missed shots to avoid wasting shots on the same target.
+
+**Bombing State Dictionary:**
+During the bombing phase, you'll receive a state dictionary with:
+- `phase`: 'bombing'
+- `board_size`: The size of the board (e.g., 8)
+- `last_shot_result`: 'HIT' or 'MISS' feedback from YOUR previous shot (Available even if your last turn ended with a MISS)
+- `last_shot_coord`: (row, col) of YOUR previous shot (None on first turn)
+- `turn_continues`: True if you get another shot (after a hit), False otherwise
+- `shot_history`: A chronologically ordered list of your previous shots, where each entry is a dictionary: `{'coord': (row, col), 'result': 'HIT'|'MISS'}`
+
+**Expected Response Format for Bombing:**
+Return a dictionary with:
+```python
+{
+    'target': (row, col)             # Coordinates to bomb (0-indexed)
+}
+```
+
+# AGENT IMPLEMENTATION
 
 You'll receive the game's source code, but the implementation of the BattleshipAgent will be empty. Your task is to develop your own algorithms and strategies to build the BattleshipAgent class. Your agent will compete head-to-head against another AI-generated agent. Ensure that your agent adheres to the game rules and is capable of playing effectively.
 
@@ -19,15 +81,13 @@ IMPORTANT: Output ONLY the BattleshipAgent class definition and any additional i
 Certain pieces of information are essential for your agent, such as:
 
 BOARD_SIZE = 8
-
 SHIPS = [5, 4, 3]
 
-This indicates that the game board is a 8x8 grid, and each player has three  ships: one of length 5, one of length 4 and another of length 3. These variables are sent as parameters to your BattleshipAgent agent when constructing.
+This indicates that the game board is a 8x8 grid, and each player has three ships: one of length 5, one of length 4 and another of length 3. These variables are sent as parameters to your BattleshipAgent agent when constructing.
 
-You are expected to write a working BattleshipAgent code that plays is smartly.
+You are expected to write a working BattleshipAgent code that plays smartly.
 
-
-```
+```python
 
 import random
 import os
@@ -38,207 +98,87 @@ from collections import deque
 BOARD_SIZE = 8
 SHIPS = [5, 4, 3]
 NUM_GAMES = 5
-
 # --- Board Representations ---
 EMPTY = 'O'
 SHIP = 'S'
 HIT = 'X'
-SUNK = '#' 
+SUNK = '#'
 MISS = 'M'
 
 class BattleshipGame:
     """ Manages the state and rules of the game. """
-    def __init__(self, size, ships_config):
+    def __init__(self, size, ships):
         self.size = size
-        self.ships_config = ships_config
-        self.player1_ships_board = self._create_ship_board()
-        self.player2_ships_board = self._create_ship_board()
+        self.ships = ships
 
     def _create_empty_board(self):
         return [[EMPTY for _ in range(self.size)] for _ in range(self.size)]
-
-    def _create_ship_board(self):
-        """Creates a board and places ships on it."""
-        board = self._create_empty_board()
-        for length in self.ships_config:
-            placed = False
-            while not placed:
-                orientation = random.choice(['horizontal', 'vertical'])
-                r = random.randint(0, self.size - (length if orientation == 'vertical' else 1))
-                c = random.randint(0, self.size - (length if orientation == 'horizontal' else 1))
-                
-                if orientation == 'horizontal':
-                    if all(board[r][c+i] == EMPTY for i in range(length)):
-                        for i in range(length): board[r][c+i] = SHIP
-                        placed = True
-                else: # vertical
-                    if all(board[r+i][c] == EMPTY for i in range(length)):
-                        for i in range(length): board[r+i][c] = SHIP
-                        placed = True
-        return board
 
     def is_game_over(self, ships_board):
         """Checks if all ships on a given board have been sunk."""
         return not any(SHIP in row for row in ships_board)
 
-class BattleshipUI:
-    """ Handles all the visual representation of the game. """
-    def display_full_game_view(self, p1_ships, p2_ships, p1_guesses, p2_guesses, game_num, scores):
-        os.system('cls' if os.name == 'nt' else 'clear')
-        title = f"BATTLESHIPS - GAME {game_num}/{NUM_GAMES}"
-        print("=" * 60)
-        print(f"{title:^60}")
-        print(f"SCORE: Agent-1 ({scores['Agent-1']}) - Agent-2 ({scores['Agent-2']})".center(60))
-        print("=" * 60)
-        
-        print("\n--- INITIAL FLEET DEPLOYMENT (GROUND TRUTH) ---")
-        header = "    " + " ".join([chr(ord('A') + i) for i in range(BOARD_SIZE)])
-        print("   AGENT-1'S FLEET" + " " * 13 + "AGENT-2'S FLEET")
-        print(header + "      " + header)
-        for i in range(BOARD_SIZE):
-            row_num = str(i + 1).rjust(2)
-            p1_row_str = f"{row_num}  " + " ".join(p1_ships[i])
-            p2_row_str = f"{row_num}  " + " ".join(p2_ships[i])
-            print(p1_row_str + "      " + p2_row_str)
-        print("\n" + "=" * 60)
-        print("\n--- BOMBING PHASE (PLAYER VIEWS) ---")
-        print("   AGENT-1'S GUESSES" + " " * 11 + "AGENT-2'S GUESSES")
-        print(header + "      " + header)
-        for i in range(BOARD_SIZE):
-            row_num = str(i + 1).rjust(2)
-            p1_row_str = f"{row_num}  " + " ".join(p1_guesses[i])
-            p2_row_str = f"{row_num}  " + " ".join(p2_guesses[i])
-            print(p1_row_str + "      " + p2_row_str)
-        
-        print("\n" + "=" * 60)
-        print("--- LOGS ---")
-
 # -------------------------------------------------------------------------------
 class BattleshipAgent:
     """
     Your agent implementation goes here.
-    Implement smart bombing logic to beat your opponent.
+    Implement smart placement and bombing logic to beat your opponent.
     """
-    def __init__(self, name, board_size, ships_config):
+    def __init__(self, name, board_size, ships):
         self.name = name
         self.board_size = board_size
-        self.ships_config = ships_config
+        self.ships = ships
         # TODO: Initialize your agent's state here
 
-    def make_move(self, last_shot_result=None, last_shot_coord=None):
+    def make_move(self, state, feedback):
         """
-        Return a tuple: ((row, col), sunk_coords)
-        - (row, col): The cell to bomb (0-indexed)
-        - sunk_coords: List of coordinates if you've sunk a ship, else []
-        
-        last_shot_result: 'HIT' or 'MISS' from your previous shot (None on first turn)
-        last_shot_coord: (row, col) of your previous shot (None on first turn)
+        Handles both placement and bombing phases based on state['phase'].
+
+        Parameters:
+        - state: Dictionary containing game state (see phase-specific documentation above)
+        - feedback: Always None (reserved for future use)
+
+        Returns:
+        - During placement phase: Dictionary with 'ship_length', 'start', and 'orientation'
+        - During bombing phase: Dictionary with 'target'
+
+        Examples:
+
+        # Placement phase
+        if state['phase'] == 'placement':
+            return {
+                'ship_length': 5,
+                'start': (0, 0),
+                'orientation': 'horizontal'
+            }
+
+        # Bombing phase
+        if state['phase'] == 'bombing':
+            return {
+                'target': (3, 4)
+            }
         """
-        # TODO: Implement your bombing strategy
-        row, col = random.randint(0, self.board_size-1), random.randint(0, self.board_size-1)
-        return (row, col), []
+        # TODO: Implement your placement and bombing strategy
+        if state['phase'] == 'placement':
+            ship_length = state['ships_to_place'][0]
+            # Random placement as example
+            orientation = random.choice(['horizontal', 'vertical'])
+            if orientation == 'horizontal':
+                row = random.randint(0, self.board_size - 1)
+                col = random.randint(0, self.board_size - ship_length)
+            else:
+                row = random.randint(0, self.board_size - ship_length)
+                col = random.randint(0, self.board_size - 1)
 
-# -------------------------------------------------------------------------------
-        
-def play_game(game_num, scores):
-    """Plays a single, observable game of Battleship and returns the winner's name."""
-    game = BattleshipGame(BOARD_SIZE, SHIPS)
-    ui = BattleshipUI()
-    agent1 = BattleshipAgent("Agent-1", BOARD_SIZE, SHIPS)
-    agent2 = BattleshipAgent("Agent-2", BOARD_SIZE, SHIPS)
-    
-    p1_active_board = [row[:] for row in game.player1_ships_board]
-    p2_active_board = [row[:] for row in game.player2_ships_board]
-    p1_guess_board = [[EMPTY for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
-    p2_guess_board = [[EMPTY for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
-
-    players = {
-        agent1: {'opponent_ships_board': p2_active_board, 'guess_board': p1_guess_board},
-        agent2: {'opponent_ships_board': p1_active_board, 'guess_board': p2_guess_board}
-    }
-    current_agent, opponent_agent = agent1, agent2
-    
-    last_shot_coord, last_shot_result = None, None
-    turn_continues = False
-
-    while True:
-        ui.display_full_game_view(game.player1_ships_board, game.player2_ships_board, p1_guess_board, p2_guess_board, game_num, scores)
-        
-        if turn_continues:
-            print(f"-> {current_agent.name} gets to go again!")
-
-        move, sunk_coords = current_agent.make_move(last_shot_result, last_shot_coord)
-        
-        if move is None: return opponent_agent.name
-            
-        row, col = move
-        p_data = players[current_agent]
-        opponent_ships_board, guess_board = p_data['opponent_ships_board'], p_data['guess_board']
-        
-        coord_str = f"{chr(ord('A') + col)}{row + 1}"
-        print(f"-> {current_agent.name} is bombing {coord_str}.")
-        
-        result = opponent_ships_board[row][col]
-        
-        if result == SHIP:
-            print("Result: HIT!")
-            opponent_ships_board[row][col] = HIT
-            guess_board[row][col] = HIT
-            last_shot_result = 'HIT'
-            turn_continues = True
-        else:
-            print("Result: MISS!")
-            guess_board[row][col] = MISS
-            last_shot_result = 'MISS'
-            turn_continues = False
-
-        last_shot_coord = move
-
-        if sunk_coords:
-            for r, c in sunk_coords:
-                guess_board[r][c] = SUNK
-
-        if game.is_game_over(opponent_ships_board):
-            ui.display_full_game_view(game.player1_ships_board, game.player2_ships_board, p1_guess_board, p2_guess_board, game_num, scores)
-            print(f"\nGAME OVER! {current_agent.name} wins game {game_num}!")
-            return current_agent.name
-        
-        if not turn_continues:
-            print(f"Turn passes to {opponent_agent.name}.")
-            current_agent, opponent_agent = opponent_agent, current_agent
-            last_shot_coord, last_shot_result = None, None
-
-        time.sleep(0.2)
-
-def main():
-    """Main function to run the Battleship simulation."""
-    scores = {"Agent-1": 0, "Agent-2": 0}
-
-    for i in range(NUM_GAMES):
-        game_num = i + 1
-        winner = play_game(game_num, scores)
-        if winner in scores:
-            scores[winner] += 1
-        
-        time.sleep(1)
-        
-    os.system('cls' if os.name == 'nt' else 'clear')
-    print("\n" + "="*45)
-    print("---            FINAL SIMULATION SCORE           ---")
-    print("="*45)
-    print(f"  Total Games Played: {NUM_GAMES}")
-    print(f"  Agent-1 Final Score: {scores['Agent-1']}")
-    print(f"  Agent-2 Final Score: {scores['Agent-2']}")
-    print("="*45)
-
-if __name__ == "__main__":
-    main()
+            return {
+                'ship_length': ship_length,
+                'start': (row, col),
+                'orientation': orientation
+            }
+        else:  # bombing phase
+            row, col = random.randint(0, self.board_size-1), random.randint(0, self.board_size-1)
+            return {
+                'target': (row, col)
+            }
 
 ```
-
-----
-Point: 4
-  - 1 point if agent runs without error
-  - +1 if win rate >= 40%
-  - +1 if win rate >= 50%
-  - +1 if win rate >= 75%

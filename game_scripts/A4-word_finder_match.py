@@ -540,13 +540,13 @@ def play_game(game_num, total_scores):
     return winner
 
 def main():
-    total_scores = {{"Agent-1": 0.0, "Agent-2": 0.0}}
+    total_scores = {{AGENT1_NAME: 0.0, AGENT2_NAME: 0.0}}
 
     for i in range(NUM_GAMES):
         play_game(i+1, total_scores)
         sys.stdout.flush()
 
-    print(f"RESULT:Agent-1={{total_scores['Agent-1']:.2f}},Agent-2={{total_scores['Agent-2']:.2f}}")
+    print(f"RESULT:Agent-1={{total_scores[AGENT1_NAME]:.2f}},Agent-2={{total_scores[AGENT2_NAME]:.2f}}")
     print("--- MATCH STATISTICS ---")
     print(f"Agent-1 Illegal Moves (game-ending): {{stats['p1_penalty']}}")
     print(f"Agent-2 Illegal Moves (game-ending): {{stats['p2_penalty']}}")
@@ -864,8 +864,9 @@ async def main_async():
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_f = GAME_LOGS_DIR / f"{ts}_match.txt"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    agent_suffix = f"{folder1}_vs_{folder2}"
+    log_f = GAME_LOGS_DIR / f"{ts}_{agent_suffix}_match.txt"
 
     match_tasks = []
     

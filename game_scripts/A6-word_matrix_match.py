@@ -1378,8 +1378,9 @@ async def main_async():
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_f = GAME_LOGS_DIR / f"{ts}_match.txt"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    agent_suffix = f"{folder1}_vs_{folder2}"
+    log_f = GAME_LOGS_DIR / f"{ts}_{agent_suffix}_match.txt"
 
     match_tasks = []
 

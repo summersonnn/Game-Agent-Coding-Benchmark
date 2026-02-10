@@ -284,7 +284,6 @@ def main():
         elif result in scores:
             scores[result] += 1
         
-        print(f"PROGRESS:Agent-1={{scores['Agent-1']}},Agent-2={{scores['Agent-2']}},N={{stats['normal']}},D={{stats['draw']}},C1={{stats['c1']}},C2={{stats['c2']}},R1T={{stats['r1_timeout']}},R1C={{stats['r1_crash']}},R1I={{stats['r1_invalid']}},R2T={{stats['r2_timeout']}},R2C={{stats['r2_crash']}},R2I={{stats['r2_invalid']}}")
         sys.stdout.flush()
 
     print(f"RESULT:Agent-1={{scores['Agent-1']}},Agent-2={{scores['Agent-2']}}")
@@ -654,8 +653,9 @@ async def main_async():
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_f = GAME_LOGS_DIR / f"{ts}_match.txt"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    agent_suffix = f"{folder1}_vs_{folder2}"
+    log_f = GAME_LOGS_DIR / f"{ts}_{agent_suffix}_match.txt"
 
     match_tasks = []
     
