@@ -2,150 +2,166 @@
 Agent Code: A2-TicTacToe
 Model: openai/gpt-5-mini
 Run: 1
-Generated: 2026-02-04 16:48:42
+Generated: 2026-02-11 20:47:17
 """
 
-
+from functools import lru_cache
 
 class TicTacToeAgent:
-    """
-    Unbeatable Tic-Tac-Toe agent using minimax with alpha-beta pruning.
-    Returns optimal moves and prefers center/corners when equal.
-    """
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol  # 'X' or 'O'
-        self.opponent = O_MARK if symbol == X_MARK else X_MARK
-        # small cache to avoid recomputing identical states at same depth
-        self._cache = {}
 
     def make_move(self, board):
-        """
-        Return the index (0-8) of the cell to mark.
-        Does not mutate the incoming board.
-        """
-        available_moves = [i for i, spot in enumerate(board) if spot == EMPTY]
-        if not available_moves:
-            return None
-        # If only one move, take it
-        if len(available_moves) == 1:
-            return available_moves[0]
-        # If board is empty (we are first), take center if possible
-        if len(available_moves) == 9:
-            return 4 if 4 in available_moves else random.choice(available_moves)
+        try:
+            # Basic validation
+            if not isinstance(board, (list, tuple)) or len(board) != 9:
+                available = [i for i, s in enumerate(board) if s == ' '] if isinstance(board, (list, tuple)) else []
+                return random.choice(available) if available else None
 
-        # Work on a copy so we don't mutate the passed board
-        local_board = board[:]
+            board_t = tuple(board)
+            my = self.symbol
+            opp = O_MARK if my == X_MARK else X_MARK  # use constants from game module
+            # determine whose turn it is (X moves when counts equal)
+            x_count = board_t.count(X_MARK)
+            o_count = board_t.count(O_MARK)
+            current_turn = X_MARK if x_count == o_count else O_MARK
 
-        # Immediate winning move
-        for m in available_moves:
-            local_board[m] = self.symbol
-            if self._check_winner(local_board) == self.symbol:
-                return m
-            local_board[m] = EMPTY
+            win_cons = (
+                (0, 1, 2), (3, 4, 5), (6, 7, 8),
+                (0, 3, 6), (1, 4, 7), (2, 5, 8),
+                (0, 4, 8), (2, 4, 6),
+            )
 
-        # Immediate block of opponent's win
-        for m in available_moves:
-            local_board[m] = self.opponent
-            if self._check_winner(local_board) == self.opponent:
-                return m
-            local_board[m] = EMPTY
+            def check_winner(bt):
+                for a, b, c in win_cons:
+                    v = bt[a]
+                    if v != ' ' and v == bt[b] == bt[c]:
+                        return v
+                if ' ' not in bt:
+                    return 'DRAW'
+                return None
 
-        # Use minimax to choose the best move
-        best_score = -float('inf')
-        best_moves = []
-        preferred_order = [4, 0, 2, 6, 8, 1, 3, 5, 7]
-        moves = [m for m in preferred_order if m in available_moves]
+            available_moves = [i for i, s in enumerate(board_t) if s == ' ']
+            if not available_moves:
+                return None
 
-        # Clear cache per move to avoid unbounded growth across many games
-        # (optional) keep cache to speed recursion within this move
-        self._cache.clear()
+            # Quick immediate win (take it)
+            for m in available_moves:
+                nb = list(board_t)
+                nb[m] = my
+                if check_winner(tuple(nb)) == my:
+                    return m
 
-        for move in moves:
-            local_board[move] = self.symbol
-            score = self._minimax(local_board, is_maximizing=False, depth=1,
-                                  alpha=-float('inf'), beta=float('inf'))
-            local_board[move] = EMPTY
-            if score > best_score:
-                best_score = score
-                best_moves = [move]
-            elif score == best_score:
-                best_moves.append(move)
+            # Detect opponent immediate winning squares
+            opp_wins = set()
+            for m in available_moves:
+                nb = list(board_t)
+                nb[m] = opp
+                if check_winner(tuple(nb)) == opp:
+                    opp_wins.add(m)
+            # If opponent has exactly one immediate winning move, block it
+            if len(opp_wins) == 1:
+                block = next(iter(opp_wins))
+                # prefer center/corner when blocking (if multiple equivalent choices exist)
+                if block in available_moves:
+                    return block
 
-        if not best_moves:
-            return random.choice(available_moves)
+            # Minimax with caching. Utility: (outcome, tie_metric)
+            # outcome: 1 = win for self, 0 = draw, -1 = loss for self
+            # tie_metric: for wins/losses use max(empty_cells, 3) (matches competition tie-breaker); for draws 0
+            @lru_cache(maxsize=None)
+            def minimax(bt, turn):
+                # Terminal check
+                for a, b, c in win_cons:
+                    v = bt[a]
+                    if v != ' ' and v == bt[b] == bt[c]:
+                        if v == my:
+                            return (1, max(bt.count(' '), 3))
+                        else:
+                            return (-1, max(bt.count(' '), 3))
+                if ' ' not in bt:
+                    return (0, 0)
 
-        # pick best move according to preferred ordering to be deterministic
-        for p in preferred_order:
-            if p in best_moves:
-                return p
-        return best_moves[0]
+                maximizing = (turn == my)
+                next_turn = O_MARK if turn == X_MARK else X_MARK
 
-    def _minimax(self, board, is_maximizing, depth, alpha, beta):
-        """
-        Minimax recursion with alpha-beta pruning.
-        Scoring: win = 10 - depth, loss = depth - 10, draw = 0
-        Cache key includes depth because returned score depends on depth.
-        """
-        key = (tuple(board), is_maximizing, depth)
-        if key in self._cache:
-            return self._cache[key]
+                best = None
+                # iterate possible moves
+                for i, spot in enumerate(bt):
+                    if spot == ' ':
+                        nb = list(bt)
+                        nb[i] = turn
+                        child = minimax(tuple(nb), next_turn)
+                        if best is None:
+                            best = child
+                        else:
+                            a_score, a_tb = child
+                            b_score, b_tb = best
+                            if a_score != b_score:
+                                choose_a = (a_score > b_score) if maximizing else (a_score < b_score)
+                            else:
+                                # tie-break on tie_metric, orientation depends on maximizing/minimizing
+                                if a_score == 1:
+                                    choose_a = (a_tb > b_tb) if maximizing else (a_tb < b_tb)
+                                elif a_score == -1:
+                                    choose_a = (a_tb < b_tb) if maximizing else (a_tb > b_tb)
+                                else:  # draw
+                                    choose_a = (a_tb > b_tb) if maximizing else (a_tb < b_tb)
+                            if choose_a:
+                                best = child
+                return best
 
-        winner = self._check_winner(board)
-        if winner is not None:
-            if winner == 'DRAW':
-                val = 0
-            elif winner == self.symbol:
-                val = 10 - depth
-            else:
-                val = depth - 10
-            self._cache[key] = val
-            return val
+            # Evaluate each candidate move (place my symbol and then let opponent move)
+            results = []
+            for m in available_moves:
+                nb = list(board_t)
+                nb[m] = my
+                win = check_winner(tuple(nb))
+                if win == my:
+                    tie = max(nb.count(' '), 3)
+                    results.append((m, (1, tie)))
+                else:
+                    # opponent moves next
+                    res = minimax(tuple(nb), opp)
+                    results.append((m, res))
 
-        available_moves = [i for i, s in enumerate(board) if s == EMPTY]
-        preferred_order = [4, 0, 2, 6, 8, 1, 3, 5, 7]
-        moves = [m for m in preferred_order if m in available_moves]
+            # Choose best move according to minimax results (we are the maximizer at this decision)
+            best_move = None
+            best_val = None
+            for m, val in results:
+                if best_val is None:
+                    best_move, best_val = m, val
+                    continue
+                a_score, a_tb = val
+                b_score, b_tb = best_val
+                if a_score != b_score:
+                    choose = a_score > b_score
+                else:
+                    if a_score == 1:
+                        choose = a_tb > b_tb
+                    elif a_score == -1:
+                        choose = a_tb < b_tb
+                    else:
+                        choose = a_tb > b_tb
+                if choose:
+                    best_move, best_val = m, val
 
-        if is_maximizing:
-            max_eval = -float('inf')
-            for m in moves:
-                board[m] = self.symbol
-                eval_score = self._minimax(board, False, depth + 1, alpha, beta)
-                board[m] = EMPTY
-                if eval_score > max_eval:
-                    max_eval = eval_score
-                alpha = max(alpha, eval_score)
-                if beta <= alpha:
-                    break
-            self._cache[key] = max_eval
-            return max_eval
-        else:
-            min_eval = float('inf')
-            for m in moves:
-                board[m] = self.opponent
-                eval_score = self._minimax(board, True, depth + 1, alpha, beta)
-                board[m] = EMPTY
-                if eval_score < min_eval:
-                    min_eval = eval_score
-                beta = min(beta, eval_score)
-                if beta <= alpha:
-                    break
-            self._cache[key] = min_eval
-            return min_eval
+            # Tie-break among equal best moves: prefer center, then corners, then edges
+            candidates = [m for m, v in results if v == best_val]
+            if len(candidates) > 1:
+                if 4 in candidates:
+                    return 4
+                for c in (0, 2, 6, 8):
+                    if c in candidates:
+                        return c
+                return candidates[0]
 
-    def _check_winner(self, board):
-        """
-        Returns 'X' or 'O' if there is a winner, 'DRAW' if board is full with no winner,
-        or None if the game is still ongoing.
-        """
-        win_conditions = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),  # Rows
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),  # Columns
-            (0, 4, 8), (2, 4, 6)              # Diagonals
-        ]
-        for a, b, c in win_conditions:
-            if board[a] == board[b] == board[c] != EMPTY:
-                return board[a]
-        if EMPTY not in board:
-            return 'DRAW'
-        return None
+            return best_move
+
+        except Exception:
+            # On any unexpected error, return a random valid move
+            pass
+
+        moves = [i for i, s in enumerate(board) if s == ' ']
+        return random.choice(moves) if moves else None

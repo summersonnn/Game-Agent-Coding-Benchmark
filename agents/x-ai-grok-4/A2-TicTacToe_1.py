@@ -2,7 +2,7 @@
 Agent Code: A2-TicTacToe
 Model: x-ai/grok-4
 Run: 1
-Generated: 2026-02-04 16:50:03
+Generated: 2026-02-11 20:47:17
 """
 
 
@@ -19,45 +19,50 @@ class TicTacToeAgent:
             (0, 3, 6), (1, 4, 7), (2, 5, 8),
             (0, 4, 8), (2, 4, 6)
         ]
-        for combo in win_conditions:
-            if board[combo[0]] == board[combo[1]] == board[combo[2]] != ' ':
-                return board[combo[0]]
+        for a, b, c in win_conditions:
+            if board[a] == board[b] == board[c] != ' ':
+                return board[a]
         if ' ' not in board:
             return 'DRAW'
         return None
 
     def minimax(self, board, is_maximizing):
-        terminal = self.check_winner(board)
-        if terminal:
-            if terminal == 'DRAW':
+        winner = self.check_winner(board)
+        if winner is not None:
+            if winner == 'DRAW':
                 return 0
-            return 1 if terminal == self.symbol else -1
-
+            empty_count = board.count(' ')
+            bonus = max(empty_count, 3)
+            if winner == self.symbol:
+                return 10 + bonus
+            else:
+                return - (10 + bonus)
+        
         if is_maximizing:
-            max_score = -float('inf')
+            max_eval = float('-inf')
             for i in range(9):
                 if board[i] == ' ':
                     board[i] = self.symbol
-                    score = self.minimax(board, False)
+                    eval = self.minimax(board, False)
                     board[i] = ' '
-                    max_score = max(max_score, score)
-            return max_score
+                    max_eval = max(max_eval, eval)
+            return max_eval
         else:
-            min_score = float('inf')
+            min_eval = float('inf')
             for i in range(9):
                 if board[i] == ' ':
                     board[i] = self.opponent
-                    score = self.minimax(board, True)
+                    eval = self.minimax(board, True)
                     board[i] = ' '
-                    min_score = min(min_score, score)
-            return min_score
+                    min_eval = min(min_eval, eval)
+            return min_eval
 
     def make_move(self, board):
         available = [i for i in range(9) if board[i] == ' ']
         if not available:
             return None
-
-        best_score = -float('inf')
+        
+        best_score = float('-inf')
         best_move = None
         for move in available:
             board[move] = self.symbol

@@ -2,122 +2,122 @@
 Agent Code: A2-TicTacToe
 Model: openai/gpt-oss-120b@preset/fp8
 Run: 1
-Generated: 2026-02-04 16:48:59
+Generated: 2026-02-11 20:47:17
 """
 
-import math
+from typing import List, Tuple, Optional
 
-import random
-import math
+from typing import List, Tuple, Optional
 
-# Assuming the constants EMPTY, X_MARK, O_MARK are defined globally in the game file.
-# If not, uncomment the following lines:
-# EMPTY = ' '
-# X_MARK = 'X'
-# O_MARK = 'O'
+EMPTY = ' '
+X_MARK = 'X'
+O_MARK = 'O'
 
 class TicTacToeAgent:
     """
-    An optimal Tic‑Tac‑Toe agent using minimax with alpha‑beta pruning.
-    It never loses and will win whenever the opponent makes a sub‑optimal move.
+    Minimax (with depth‑aware scoring) Tic‑Tac‑Toe agent.
+    Plays optimally and prefers faster wins / slower losses.
     """
+
     def __init__(self, name: str, symbol: str):
         self.name = name
-        self.symbol = symbol               # 'X' or 'O'
-        self.opponent = O_MARK if symbol == X_MARK else X_MARK
+        self.symbol = symbol.upper()          # 'X' or 'O'
+        self.opponent = X_MARK if self.symbol == O_MARK else O_MARK
 
-    # -----------------------------------------------------------------------
-    # Public interface expected by the game engine
-    # -----------------------------------------------------------------------
-    def make_move(self, board):
+    # --------------------------------------------------------------------- #
+    # Public API
+    # --------------------------------------------------------------------- #
+    def make_move(self, board: List[str]) -> int:
         """
-        Return the index (0‑8) of the best move for the current board.
-        board – list of 9 strings (EMPTY, X_MARK or O_MARK)
+        Return the index (0‑8) of the move to play.
         """
-        # If only one move is possible, just take it.
-        available = [i for i, spot in enumerate(board) if spot == EMPTY]
-        if len(available) == 1:
-            return available[0]
+        # List of empty cells
+        empty = [i for i, cell in enumerate(board) if cell == EMPTY]
+        if not empty:
+            raise ValueError("No moves left on the board")
 
-        # Run minimax to find the optimal move.
-        _, best_move = self._minimax(board, self.symbol, -math.inf, math.inf)
-        # As a safe fallback (should never happen), pick a random legal move.
-        return best_move if best_move is not None else random.choice(available)
+        # If only one move left, no need to search
+        if len(empty) == 1:
+            return empty[0]
 
-    # -----------------------------------------------------------------------
-    # Minimax implementation with alpha‑beta pruning
-    # -----------------------------------------------------------------------
-    def _minimax(self, board, player, alpha, beta):
+        # Minimax search
+        best_score = -float('inf')
+        best_move = empty[0]
+
+        for move in empty:
+            board[move] = self.symbol
+            score = self._minimax(board, depth=0, maximizing=False, alpha=-float('inf'), beta=float('inf'))
+            board[move] = EMPTY
+
+            if score > best_score:
+                best_score = score
+                best_move = move
+
+        return best_move
+
+    # --------------------------------------------------------------------- #
+    # Minimax implementation
+    # --------------------------------------------------------------------- #
+    def _minimax(self,
+                 board: List[str],
+                 depth: int,
+                 maximizing: bool,
+                 alpha: float,
+                 beta: float) -> float:
         """
-        Returns a tuple (score, move) where:
-          - score is the minimax evaluation from the perspective of self.symbol
-          - move is the board index that yields that score (or None at terminal nodes)
+        Returns a numeric evaluation of the board from the perspective of self.symbol.
+        Positive values favour the agent, negative values favour the opponent.
+        The magnitude incorporates depth so that quicker wins are higher.
         """
         winner = self._check_winner(board)
         if winner is not None:
             if winner == self.symbol:
-                return 1, None          # win
-            if winner == self.opponent:
-                return -1, None         # loss
-            return 0, None              # draw
+                return 10 - depth          # faster win = higher score
+            elif winner == self.opponent:
+                return depth - 10          # slower loss = higher (less negative) score
+            else:  # draw
+                return 0
 
-        available = [i for i, spot in enumerate(board) if spot == EMPTY]
+        empty = [i for i, cell in enumerate(board) if cell == EMPTY]
+        if not empty:                       # should not happen because winner check covers full board
+            return 0
 
-        if player == self.symbol:          # Maximising player
-            max_eval = -math.inf
-            best_moves = []
-            for move in available:
-                board[move] = player
-                eval_score, _ = self._minimax(board, self.opponent, alpha, beta)
+        if maximizing:
+            max_eval = -float('inf')
+            for move in empty:
+                board[move] = self.symbol
+                eval = self._minimax(board, depth + 1, False, alpha, beta)
                 board[move] = EMPTY
-
-                if eval_score > max_eval:
-                    max_eval = eval_score
-                    best_moves = [move]
-                elif eval_score == max_eval:
-                    best_moves.append(move)
-
-                alpha = max(alpha, eval_score)
+                max_eval = max(max_eval, eval)
+                alpha = max(alpha, eval)
                 if beta <= alpha:
-                    break  # prune
-
-            chosen_move = random.choice(best_moves) if best_moves else None
-            return max_eval, chosen_move
-
-        else:                              # Minimising player (opponent)
-            min_eval = math.inf
-            best_moves = []
-            for move in available:
-                board[move] = player
-                eval_score, _ = self._minimax(board, self.symbol, alpha, beta)
+                    break                # beta cut‑off
+            return max_eval
+        else:
+            min_eval = float('inf')
+            for move in empty:
+                board[move] = self.opponent
+                eval = self._minimax(board, depth + 1, True, alpha, beta)
                 board[move] = EMPTY
-
-                if eval_score < min_eval:
-                    min_eval = eval_score
-                    best_moves = [move]
-                elif eval_score == min_eval:
-                    best_moves.append(move)
-
-                beta = min(beta, eval_score)
+                min_eval = min(min_eval, eval)
+                beta = min(beta, eval)
                 if beta <= alpha:
-                    break  # prune
+                    break                # alpha cut‑off
+            return min_eval
 
-            chosen_move = random.choice(best_moves) if best_moves else None
-            return min_eval, chosen_move
-
-    # -----------------------------------------------------------------------
-    # Helper: evaluate terminal board states
-    # -----------------------------------------------------------------------
-    def _check_winner(self, board):
+    # --------------------------------------------------------------------- #
+    # Helper: evaluate winner
+    # --------------------------------------------------------------------- #
+    @staticmethod
+    def _check_winner(board: List[str]) -> Optional[str]:
         win_conditions = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),  # rows
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),  # columns
-            (0, 4, 8), (2, 4, 6)              # diagonals
+            (0, 1, 2), (3, 4, 5), (6, 7, 8),   # rows
+            (0, 3, 6), (1, 4, 7), (2, 5, 8),   # columns
+            (0, 4, 8), (2, 4, 6)               # diagonals
         ]
         for a, b, c in win_conditions:
             if board[a] == board[b] == board[c] != EMPTY:
                 return board[a]
-
         if EMPTY not in board:
             return 'DRAW'
         return None

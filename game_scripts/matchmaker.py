@@ -79,15 +79,23 @@ def discover_agents(game_name: str) -> dict[str, list[int]]:
 
 
 def generate_2p_fixtures(
-    agents: dict[str, list[int]], same_opponent_match: int
+    agents: dict[str, list[int]],
+    same_opponent_match: int,
+    new_model: str | None = None,
 ) -> list[tuple[tuple[str, int], tuple[str, int]]]:
-    """All cross-model agent pairs, repeated same_opponent_match times."""
+    """All cross-model agent pairs, repeated same_opponent_match times.
+
+    When *new_model* is given, only pairs where at least one side belongs
+    to that model folder are produced (incremental tournament).
+    """
     flat = [(folder, run) for folder, runs in agents.items() for run in runs]
     pairs = [
         (a, b)
         for a, b in itertools.combinations(flat, 2)
         if a[0] != b[0]
     ]
+    if new_model:
+        pairs = [(a, b) for a, b in pairs if a[0] == new_model or b[0] == new_model]
     fixtures = pairs * same_opponent_match
     random.shuffle(fixtures)
     return fixtures
@@ -99,9 +107,15 @@ def generate_2p_fixtures(
 
 
 def generate_6p_fixtures(
-    agents: dict[str, list[int]], same_opponent_match: int
+    agents: dict[str, list[int]],
+    same_opponent_match: int,
+    new_model: str | None = None,
 ) -> list[list[tuple[str, int]]]:
-    """Greedy pairwise-coverage groups of 6 agents from different models."""
+    """Greedy pairwise-coverage groups of 6 agents from different models.
+
+    When *new_model* is given, only cross-model pairs involving that model
+    need coverage, and every generated group is guaranteed to contain it.
+    """
     flat = [(folder, run) for folder, runs in agents.items() for run in runs]
     folders = list(agents.keys())
     num_models = len(folders)
@@ -111,6 +125,11 @@ def generate_6p_fixtures(
     cross_pairs = [
         (a, b) for a, b in itertools.combinations(flat, 2) if a[0] != b[0]
     ]
+    if new_model:
+        cross_pairs = [
+            (a, b) for a, b in cross_pairs
+            if a[0] == new_model or b[0] == new_model
+        ]
     coverage: Counter[tuple[tuple[str, int], tuple[str, int]]] = Counter()
     target = same_opponent_match
 
@@ -121,6 +140,9 @@ def generate_6p_fixtures(
     stall = 0
     max_stall = 200
 
+    # For incremental mode, the new model must always be in the group
+    other_folders = [f for f in folders if f != new_model] if new_model else []
+
     while under_covered() > 0:
         best_group: list[tuple[str, int]] | None = None
         best_score = 0
@@ -128,8 +150,17 @@ def generate_6p_fixtures(
         for _ in range(1000):
             if group_size > num_models:
                 break
-            chosen_models = random.sample(folders, group_size)
-            group = [(m, random.choice(agents[m])) for m in chosen_models]
+            if new_model:
+                # Force the new model into every group
+                remaining_slots = group_size - 1
+                if remaining_slots > len(other_folders):
+                    remaining_slots = len(other_folders)
+                chosen_others = random.sample(other_folders, remaining_slots)
+                group = [(new_model, random.choice(agents[new_model]))]
+                group.extend((m, random.choice(agents[m])) for m in chosen_others)
+            else:
+                chosen_models = random.sample(folders, group_size)
+                group = [(m, random.choice(agents[m])) for m in chosen_models]
 
             score = 0
             for a, b in itertools.combinations(group, 2):
@@ -209,6 +240,7 @@ async def run_tournament(
     same_opponent_match: int,
     workers: int,
     dry_run: bool,
+    new_model: str | None = None,
 ) -> None:
     game = GAME_REGISTRY[game_id]
     game_name = game["name"]
@@ -224,6 +256,11 @@ async def run_tournament(
         print(f"ERROR: No agents found for {game_name} in {AGENTS_DIR}")
         sys.exit(1)
 
+    if new_model and new_model not in agents:
+        print(f"ERROR: --new-model '{new_model}' not found among discovered agents.")
+        print(f"  Available models: {', '.join(sorted(agents.keys()))}")
+        sys.exit(1)
+
     total_agents = sum(len(runs) for runs in agents.values())
     num_models = len(agents)
 
@@ -232,18 +269,25 @@ async def run_tournament(
         sys.exit(1)
 
     # Generate fixtures
+    mode_label = f" [incremental: {new_model}]" if new_model else ""
+
     if players == 2:
-        fixtures_2p = generate_2p_fixtures(agents, same_opponent_match)
+        fixtures_2p = generate_2p_fixtures(agents, same_opponent_match, new_model)
         total_matches = len(fixtures_2p)
         # Compute unique pairings for display
-        unique_pairs = len([
+        flat_agents = [(f, r) for f, rs in agents.items() for r in rs]
+        all_pairs = [
             (a, b)
-            for a, b in itertools.combinations(
-                [(f, r) for f, rs in agents.items() for r in rs], 2
-            )
+            for a, b in itertools.combinations(flat_agents, 2)
             if a[0] != b[0]
-        ])
-        print(f"\nMATCHMAKER - {game_name}")
+        ]
+        if new_model:
+            all_pairs = [
+                (a, b) for a, b in all_pairs
+                if a[0] == new_model or b[0] == new_model
+            ]
+        unique_pairs = len(all_pairs)
+        print(f"\nMATCHMAKER - {game_name}{mode_label}")
         print(f"Agents: {total_agents} ({num_models} models)")
         print(
             f"Fixture: {total_matches} matches "
@@ -251,9 +295,9 @@ async def run_tournament(
         )
         print(f"Workers: {workers}")
     else:
-        fixtures_6p = generate_6p_fixtures(agents, same_opponent_match)
+        fixtures_6p = generate_6p_fixtures(agents, same_opponent_match, new_model)
         total_matches = len(fixtures_6p)
-        print(f"\nMATCHMAKER - {game_name}")
+        print(f"\nMATCHMAKER - {game_name}{mode_label}")
         print(f"Agents: {total_agents} ({num_models} models)")
         print(f"Fixture: {total_matches} matches (6-player groups, greedy coverage)")
         print(f"Workers: {workers}")
@@ -351,18 +395,30 @@ def main() -> None:
     parser.add_argument(
         "--workers",
         type=int,
-        default=4,
-        help="Max concurrent match subprocesses (default: 4)",
+        default=16,
+        help="Max concurrent match subprocesses (default: 16)",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print fixture list without executing matches",
     )
+    parser.add_argument(
+        "--new-model",
+        type=str,
+        default=None,
+        help="Only generate matches involving this model folder (incremental run)",
+    )
     args = parser.parse_args()
 
     asyncio.run(
-        run_tournament(args.game, args.same_opponent_match, args.workers, args.dry_run)
+        run_tournament(
+            args.game,
+            args.same_opponent_match,
+            args.workers,
+            args.dry_run,
+            args.new_model,
+        )
     )
 
 

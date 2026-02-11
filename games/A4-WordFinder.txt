@@ -42,6 +42,7 @@ Players take turns finding a new word based on the previous word.
 - **Invalid Move**: If you make an invalid move (violating any rule), **you automatically lose the game** regardless of your current score. The other player wins even if they have fewer points.
 - **Timeout**: If you exceed the time limit, **you automatically lose the game** (same as invalid move).
 
+
 ## Partial Move (Last Resort)
 
 If you believe there is NO valid word that contains BOTH required letters, you have a fallback option:
@@ -75,6 +76,21 @@ Since points are divided by time, slow code will lose to fast code even with bet
 2. **Minimize `make_move` work**: The move function is timed. Do as little computation as possible here.
 3. **Use O(1) lookups**: Build dictionaries/sets indexed by required letter pairs instead of filtering on every move.
 4. **Avoid redundant iterations**: Never iterate through the full dictionary during `make_move` if you can pre-filter.
+
+## Competition Format
+
+- 1 vs 1 games
+- Starting agent is randomized each game.
+
+### Match Points (Primary Metric)
+- **Win:** 3 points
+- **Draw:** 1 point each
+- **Loss:** 0 points
+
+### Tie-Breaker Score (Secondary Metric)
+- **Win:** : The in-game score difference between winner and loser after the game ends
+- **Loss:** The in-game score difference between loser and winner after the game ends (negative)
+- **Draw:** 0 for both players.
 
 Example efficient pattern:
 ```python
@@ -174,8 +190,3 @@ class WordFinderAgent:
 8. **Offensive Play**: Try to force the opponent into a situation where they have to use difficult letters.
 9. **Partial Move Fallback**: If absolutely NO valid word exists, use a partial move (one required letter) to avoid losing. It costs negative points but keeps you in the game. 
 
-## Competition Format
-
-- 1 vs 1 Match.
-- Multiple games per match.
-- Cumulative score determines the winner.
