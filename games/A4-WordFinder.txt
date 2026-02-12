@@ -2,8 +2,10 @@ WordFinder is a 2-player word game where you must find a word that connects to t
 
 ## Game Overview
 
-The game starts with a random word.
+The game starts with a random word from the dictionary.
 Players take turns finding a new word based on the previous word.
+Each game lasts up to 100 rounds (200 individual turns, 100 per player).
+The player with the higher score at the end wins.
 
 ## Rules
 
@@ -18,7 +20,7 @@ Players take turns finding a new word based on the previous word.
    - Invalid: "HELP" (ends with 'P', starts with 'H').
 3. **Length Constraint**: Your word's length CANNOT equal the previous word's length.
    - Example: If previous word is "TELEPHONE" (9 letters), you cannot use a 9-letter word.
-   - Valid: "ACCOMPLISHMENT" (14 letters ≠ 9).
+   - Valid: "ACCOMPLISHMENT" (14 letters != 9).
    - Invalid: "SUPERHERO" (9 letters = 9).
 4. **Uniqueness**: A word can never be repeated in the game (by either player).
 5. **Dictionary**: The word must be a valid English word (present in the game's dictionary).
@@ -28,20 +30,12 @@ Players take turns finding a new word based on the previous word.
 - **Base Points**: You gain points equal to the **length** of your valid word.
 - **Hyphen Penalty**: Words containing a hyphen ("-") get **half points** (length / 2).
   - Example: "MOTHER-IN-LAW" (13 letters) = 13 / 2 = **6 base points**
-  - Avoid hyphens when possible!
 - **Consecutive Letter Bonus**: If the two required letters (first and last of the previous word) appear **consecutively** in your word, your base points are **multiplied by 2**!
   - Example: Previous word "PUSH" (requires 'P' and 'H').
-  - Word "SHEPHERD" contains "PH" consecutively -> 8 letters x 2 = **16 base points**
-  - Word "TELEPATHY" contains 'P' and 'H' but not consecutively -> **9 base points** (no bonus)
+  - Word "SHEPHERD" contains "PH" consecutively -> 8 letters x 2 = **16 points**
+  - Word "TELEPATHY" contains 'P' and 'H' but not consecutively -> **9 points** (no bonus)
   - The letters can appear in either order: "PH" or "HP" both trigger the bonus.
-  - **Note**: The 2x bonus is applied AFTER the hyphen penalty if applicable.
-- **TIME MATTERS**: Response time factors into your final score. Faster responses earn more points.
-  - The scoring formula rewards speed - even small time differences can significantly impact your score.
-  - A quick answer with a shorter word can outscore a slow answer with a longer word.
-  - **Optimize your code for speed!**
-- **Invalid Move**: If you make an invalid move (violating any rule), **you automatically lose the game** regardless of your current score. The other player wins even if they have fewer points.
-- **Timeout**: If you exceed the time limit, **you automatically lose the game** (same as invalid move).
-
+  - The 2x bonus is applied AFTER the hyphen penalty if applicable.
 
 ## Partial Move (Last Resort)
 
@@ -49,38 +43,35 @@ If you believe there is NO valid word that contains BOTH required letters, you h
 
 - **Partial Move**: Play a word that contains only ONE of the required letters (not at start/end position).
   - The game continues (does NOT end).
-  - You receive **NEGATIVE points** (a penalty based on word length and time taken).
+  - You receive **NEGATIVE points** (a penalty based on word length).
   - Example: Previous word "QUIZ" (requires 'Q' and 'Z'). No word has both? Play "LIQUID" (contains 'Q' but not 'Z').
     - You lose points, but the game continues.
 
 **IMPORTANT**:
 - This is a LAST RESORT when no valid word exists.
 - If you play a partial move when a valid word WAS available, you're throwing away points unnecessarily.
-- If your word contains NEITHER required letter (or has them at start/end), it's an INVALID move and you lose.
+- If your word contains NEITHER required letter (or has them at start/end), it's treated as an invalid move.
 
-## Goal
+## Accessing the Word Dictionary
 
-Your goal is to maximize your total score.
-- Find valid words QUICKLY - speed is a major factor in scoring!
-- Avoid invalid moves and timeouts at all costs (automatic loss).
-- Use partial moves only as a last resort when no valid word exists.
-- Try to choose words that make it difficult for your opponent to reply (strategic play).
+**CRITICAL**: The game environment provides a global function `load_words()` that returns a set of all valid words (lowercase).
 
-## Performance Warning
+You MUST use this function to access the dictionary:
 
-**YOUR CODE EFFICIENCY DIRECTLY AFFECTS YOUR SCORE!**
+```python
+class WordFinderAgent:
+    def __init__(self, name):
+        self.name = name
+        self.dictionary = load_words()  # Returns a set of lowercase words
+```
 
-Since points are divided by time, slow code will lose to fast code even with better word choices. You MUST:
-
-1. **Pre-process in `__init__`**: Build all indexes, lookup tables, and data structures during initialization (called once).
-2. **Minimize `make_move` work**: The move function is timed. Do as little computation as possible here.
-3. **Use O(1) lookups**: Build dictionaries/sets indexed by required letter pairs instead of filtering on every move.
-4. **Avoid redundant iterations**: Never iterate through the full dictionary during `make_move` if you can pre-filter.
+**DO NOT** hardcode your own word list. **DO NOT** try to load from a file path yourself. The `load_words()` function is already available in the game environment.
 
 ## Competition Format
 
-- 1 vs 1 games
+- 1 vs 1 match, multiple games per match.
 - Starting agent is randomized each game.
+- Each game lasts up to 100 rounds (200 individual turns).
 
 ### Match Points (Primary Metric)
 - **Win:** 3 points
@@ -88,49 +79,23 @@ Since points are divided by time, slow code will lose to fast code even with bet
 - **Loss:** 0 points
 
 ### Tie-Breaker Score (Secondary Metric)
-- **Win:** : The in-game score difference between winner and loser after the game ends
-- **Loss:** The in-game score difference between loser and winner after the game ends (negative)
+- **Win:** The in-game score difference between winner and loser.
+- **Loss:** The negation of the winner's score difference (negative).
 - **Draw:** 0 for both players.
 
-Example efficient pattern:
-```python
-def __init__(self, name):
-    self.name = name
-    self.dictionary = load_words()
-    # Pre-build index: for each (char1, char2) pair, store valid candidate words
-    self.pair_index = {}
-    for word in self.dictionary:
-        # Index words by letter pairs they contain (excluding first/last positions)
-        # This allows O(1) lookup during make_move
-```
-
-## Implementation Task
-
-You are implementing the `WordFinderAgent`.
-
-**IMPORTANT**: Output ONLY the WordFinderAgent class definition and any additional imports you need (random is already valid). Do NOT output the entire game code.
-
-## Accessing the Word Dictionary
-
-**CRITICAL**: The game environment provides a global function `load_words()` that returns a set of all valid words (lowercase).
-
-You MUST use this function to access the dictionary. Here's how:
-
-```python
-class WordFinderAgent:
-    def __init__(self, name):
-        self.name = name
-        self.history = set()
-        # Load the dictionary using the provided function
-        self.dictionary = load_words()  # Returns a set of lowercase words
-```
-
-**DO NOT** hardcode your own word list. **DO NOT** try to load from a file path yourself. The `load_words()` function is already available in the game environment and handles all dictionary loading for you.
+### Error Handling
+| Failure Type         | Consequence                                           |
+| -------------------- | ----------------------------------------------------- |
+| make_move() Crash    | -10 point penalty; game continues; turn switches.     |
+| Initialization Crash | Immediate game forfeit. Opponent wins with max score. |
+| Move Timeout         | -10 point penalty; game continues; turn switches.     |
+| Invalid Move         | -10 point penalty; game continues; turn switches.     |
 
 ## WordFinderAgent Interface
 
 ```python
 import random
+
 
 class WordFinderAgent:
     """
@@ -142,21 +107,21 @@ class WordFinderAgent:
         """
         self.name = name
         self.dictionary = load_words()  # Load the full word dictionary
-    
+
     def make_move(self, current_word, word_history):
         """
         Called when it's your turn.
-        
+
         Parameters:
         -----------
         current_word : str
             The word played by the opponent (or the starting word).
-        
+
         word_history : set
             A set of all words that have been used so far in the game (by both players).
             This includes the current_word and all previous words.
             You MUST NOT return a word that is in this set.
-            
+
         Returns:
         --------
         str
@@ -171,22 +136,19 @@ class WordFinderAgent:
         #    - Is NOT in word_history (very important!)
         #    - Is in self.dictionary
         # 3. Optimize for length (points) and difficulty for opponent
-        
+
         return "example"
 ```
 
+**IMPORTANT**: Output ONLY the WordFinderAgent class definition and any additional imports you need (random is already available). Do NOT output the entire game code.
+
 ## Strategy Tips
 
-1. **SPEED IS CRITICAL**: Time significantly impacts your score! Fast code wins.
-   - Pre-process your dictionary in `__init__` - build indexes, group words by letters, etc.
-   - Avoid iterating through the entire dictionary on every move.
-   - Use efficient data structures (sets for O(1) lookups, pre-built dictionaries for letter filtering).
-2. **Balance Length vs Speed**: A longer word found slowly may score less than a shorter word found quickly!
-3. **Hunt for Bonuses**: Look for words with the required letters appearing consecutively - a 2x multiplier is huge!
-4. **Avoid Hyphens**: Words with hyphens get only half points.
-5. **Pre-compute When Possible**: Build lookup tables in `__init__` (runs once) rather than computing during `make_move` (runs every turn).
-6. **Use word_history**: The game provides you with the complete history of used words. Check against it to avoid penalties.
-7. **Defensive Play**: Avoid leaving the opponent with easy letters (common letters like 'E', 'S' at start/end of your word).
-8. **Offensive Play**: Try to force the opponent into a situation where they have to use difficult letters.
-9. **Partial Move Fallback**: If absolutely NO valid word exists, use a partial move (one required letter) to avoid losing. It costs negative points but keeps you in the game. 
-
+1. **Hunt for Bonuses**: Look for words with the required letters appearing consecutively - a 2x multiplier is huge!
+2. **Avoid Hyphens**: Words with hyphens get only half points.
+3. **Choose long words**: Longer words give more base points.
+4. **Pre-compute When Possible**: Build lookup tables in `__init__` (runs once, not timed) rather than searching the full dictionary in `make_move` (runs every turn, timed).
+5. **Use word_history**: The game provides you with the complete history of used words. Check against it to avoid penalties.
+6. **Defensive Play**: Avoid leaving the opponent with easy letters (common letters like 'E', 'S' at start/end of your word).
+7. **Offensive Play**: Try to force the opponent into a situation where they have to use difficult letters.
+8. **Partial Move Fallback**: If absolutely NO valid word exists, use a partial move (one required letter) to avoid the -10 invalid penalty. It costs negative points but is better than an invalid move.

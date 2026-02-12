@@ -2,7 +2,7 @@
 Agent Code: A4-WordFinder
 Model: mistralai/mistral-large-2512
 Run: 2
-Generated: 2026-02-05 21:09:40
+Generated: 2026-02-12 09:24:15
 """
 
 from collections import defaultdict
@@ -14,125 +14,120 @@ class WordFinderAgent:
     def __init__(self, name):
         self.name = name
         self.dictionary = load_words()
-        self.history = set()
 
-        # Pre-process the dictionary for fast lookups
-        self.letter_pair_index = defaultdict(set)
-        self.length_index = defaultdict(set)
-        self.consecutive_bonus_index = defaultdict(set)
+        # Precompute letter pair to words mapping for faster lookup
+        self.letter_pair_map = defaultdict(list)
+        self.single_letter_map = defaultdict(list)
 
         for word in self.dictionary:
-            if len(word) < 3:  # Words must have at least 3 letters to satisfy position constraints
+            if len(word) < 3:  # Words must be at least 3 letters to satisfy position constraints
                 continue
+            if '-' in word:
+                continue  # Skip hyphenated words initially (we'll handle them separately)
 
-            # Index by length
-            self.length_index[len(word)].add(word)
-
-            # Get all possible letter pairs (excluding first and last letters)
+            # Map first and last letters to words
             first_char = word[0]
             last_char = word[-1]
+            pair = (first_char, last_char)
 
-            # Find all unique pairs of letters in the word (excluding first/last positions)
-            for i in range(1, len(word)-1):
-                for j in range(i+1, len(word)):
-                    char1, char2 = sorted((word[i], word[j]))
-                    pair = (char1, char2)
-                    self.letter_pair_index[pair].add(word)
+            # Store words that contain both letters (not at start/end)
+            if first_char in word[1:-1] and last_char in word[1:-1]:
+                self.letter_pair_map[pair].append(word)
+                # Also store reverse pair
+                self.letter_pair_map[(last_char, first_char)].append(word)
 
-                    # Check for consecutive letters (bonus)
-                    if abs(i - j) == 1:
-                        self.consecutive_bonus_index[pair].add(word)
+            # Store words that contain single letters (for partial moves)
+            for char in set(word[1:-1]):
+                self.single_letter_map[char].append(word)
+
+        # Precompute hyphenated words separately
+        self.hyphenated_words = [word for word in self.dictionary if '-' in word]
 
     def make_move(self, current_word, word_history):
-        # Update history
-        self.history = word_history
-
         # Get required letters
         first_char = current_word[0].lower()
         last_char = current_word[-1].lower()
-        required_pair = tuple(sorted((first_char, last_char)))
+        required_pair = (first_char, last_char)
         current_length = len(current_word)
 
-        # Try to find a word with both letters (consecutive bonus first)
-        candidates = []
+        # Convert word_history to lowercase set for case-insensitive comparison
+        used_words = {word.lower() for word in word_history}
 
-        # 1. Check for words with consecutive letters (bonus)
-        if required_pair in self.consecutive_bonus_index:
-            candidates = self.consecutive_bonus_index[required_pair] - word_history
-            # Filter by length and position constraints
-            valid_candidates = []
-            for word in candidates:
-                if len(word) == current_length:
-                    continue
-                # Check position constraints
-                first_pos = word.find(first_char)
-                last_pos = word.find(last_char)
-                if (first_pos > 0 and first_pos < len(word)-1 and
-                    last_pos > 0 and last_pos < len(word)-1):
-                    valid_candidates.append(word)
-            if valid_candidates:
-                # Sort by length (descending) to maximize points
-                valid_candidates.sort(key=lambda x: -len(x))
-                return valid_candidates[0]
+        # First try to find words with both letters (full move)
+        candidate_words = []
 
-        # 2. Check for words with both letters (non-consecutive)
-        if required_pair in self.letter_pair_index:
-            candidates = self.letter_pair_index[required_pair] - word_history
-            # Filter by length and position constraints
-            valid_candidates = []
-            for word in candidates:
-                if len(word) == current_length:
-                    continue
-                # Check position constraints
-                first_pos = word.find(first_char)
-                last_pos = word.find(last_char)
-                if (first_pos > 0 and first_pos < len(word)-1 and
-                    last_pos > 0 and last_pos < len(word)-1):
-                    valid_candidates.append(word)
-            if valid_candidates:
-                # Sort by length (descending) to maximize points
-                valid_candidates.sort(key=lambda x: -len(x))
-                return valid_candidates[0]
+        # Check both possible orderings of the pair
+        for pair in [required_pair, (last_char, first_char)]:
+            if pair in self.letter_pair_map:
+                for word in self.letter_pair_map[pair]:
+                    word_lower = word.lower()
+                    if (word_lower not in used_words and
+                        len(word) != current_length and
+                        first_char in word[1:-1] and
+                        last_char in word[1:-1]):
 
-        # 3. Partial move fallback - try with just one letter
-        # Try first_char first
-        partial_candidates = []
-        for length in sorted(self.length_index.keys(), reverse=True):
-            if length == current_length:
-                continue
-            for word in self.length_index[length]:
-                if word in word_history:
-                    continue
-                pos = word.find(first_char)
-                if pos > 0 and pos < len(word)-1:
-                    partial_candidates.append(word)
-                    break  # Just take one per length
+                        # Check if letters appear consecutively for bonus
+                        has_consecutive = False
+                        if pair[0] + pair[1] in word or pair[1] + pair[0] in word:
+                            has_consecutive = True
 
-        if partial_candidates:
-            # Return the longest possible partial move
-            partial_candidates.sort(key=lambda x: -len(x))
-            return partial_candidates[0]
+                        candidate_words.append((word, len(word), has_consecutive, False))
 
-        # Try last_char if first_char didn't work
-        partial_candidates = []
-        for length in sorted(self.length_index.keys(), reverse=True):
-            if length == current_length:
-                continue
-            for word in self.length_index[length]:
-                if word in word_history:
-                    continue
-                pos = word.find(last_char)
-                if pos > 0 and pos < len(word)-1:
-                    partial_candidates.append(word)
-                    break
+        # Sort candidates by score potential (longest first, then bonus)
+        candidate_words.sort(key=lambda x: (-x[1], -x[2]))
 
-        if partial_candidates:
-            partial_candidates.sort(key=lambda x: -len(x))
-            return partial_candidates[0]
+        # Try to find the best valid word
+        for word, length, has_bonus, is_hyphen in candidate_words:
+            if word.lower() not in used_words:
+                return word
 
-        # If absolutely no options, return a random word (will lose)
-        # This should theoretically never happen with a proper dictionary
-        unused_words = self.dictionary - word_history
-        if unused_words:
-            return random.choice(list(unused_words))
-        return "surrender"  # Last resort
+        # If no full move found, try hyphenated words
+        for word in self.hyphenated_words:
+            word_lower = word.lower()
+            if (word_lower not in used_words and
+                len(word) != current_length and
+                first_char in word[1:-1] and
+                last_char in word[1:-1]):
+
+                # Check if letters appear consecutively
+                has_consecutive = False
+                if first_char + last_char in word or last_char + first_char in word:
+                    has_consecutive = True
+
+                return word
+
+        # If still no full move, try partial moves (one required letter)
+        # First try with first_char
+        if first_char in self.single_letter_map:
+            for word in self.single_letter_map[first_char]:
+                word_lower = word.lower()
+                if (word_lower not in used_words and
+                    len(word) != current_length and
+                    first_char in word[1:-1] and
+                    last_char not in word):  # Must not contain the other letter
+
+                    return word
+
+        # Then try with last_char
+        if last_char in self.single_letter_map:
+            for word in self.single_letter_map[last_char]:
+                word_lower = word.lower()
+                if (word_lower not in used_words and
+                    len(word) != current_length and
+                    last_char in word[1:-1] and
+                    first_char not in word):  # Must not contain the other letter
+
+                    return word
+
+        # If absolutely no valid move found, return a random word that at least follows some rules
+        # This should rarely happen with a good dictionary
+        fallback_words = [word for word in self.dictionary
+                         if len(word) != current_length and
+                         word.lower() not in used_words and
+                         len(word) > 2]
+
+        if fallback_words:
+            return random.choice(fallback_words)
+
+        # Final fallback - return a word that might get us some points
+        return "example"

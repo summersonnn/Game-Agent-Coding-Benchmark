@@ -17,8 +17,8 @@ To prevent deterministic play giving Player 1 too much advantage, the **first mo
 2.  **Turn**: Players drop a disc into one of the 7 columns.
 3.  **Gravity**: The disc falls to the lowest available empty slot in that column.
 4.  **Win Condition**: Connect 4 discs of your color vertically, horizontally, or diagonally.
-5.  **Draw**: If the board fills up with no winner, the game is a draw.
-6.  **Invalid Move**: If a player attempts to drop a disc into a full column or an invalid column index, they forfeit their turn (or lose immediately depending on implementation strictness; assume immediate loss for this agent).
+6.  **Invalid Move**: If a player attempts to drop a disc into a full column, an invalid column index, or returns a non-integer, a random valid move will be played on behalf of the agent. There are no retries.
+7.  **Timeout/Crash**: If an agent times out (1s limit) or crashes during `make_move`, a random valid move will be played on behalf of the agent.
 
 ## Game Interface
 
@@ -46,6 +46,10 @@ class Connect4Agent:
                    
         Returns:
             int: The column index (0-6) where the agent wants to drop a disc.
+            
+        Note:
+            - If your agent crashes, times out, or returns an invalid move, 
+              a random valid move will be played instead.
         """
         # TODO: Implement your strategy here
         return 0
@@ -163,8 +167,22 @@ class Connect4Game:
 
 -   **1 vs 1 Match**: Two agents compete.
 -   **Multiple Rounds**: Agents play multiple games, swapping colors (Red/Yellow) to ensure fairness, though the "Random Start" mechanic inherently reduces first-mover advantage bias.
--   **Scoring**:
-    -   Win: 1 Point
-    -   Draw: 0.5 Points
-    -   Loss: 0 Points
 
+### Match Points (Primary Metric)
+- **Win:** 3 points
+- **Draw:** 1 point each
+- **Loss:** 0 points
+
+### Tie-Breaker Score (Secondary Metric)
+- **Win:** `max(empty_cells_remaining, 3)`
+- **Loss:** `-max(empty_cells_remaining, 3)`
+- **Draw:** 0 for both players.
+- So a faster win produces a higher score for the winning agent and a faster loss produces a lower score for the losing agent.
+
+### Error Handling
+| Failure Type         | Consequence                                           |
+| -------------------- | ----------------------------------------------------- |
+| make_move() Crash    | Random valid move played; game continues.             |
+| Initialization Crash | Immediate game forfeit. Opponent wins with max score. |
+| Move Timeout (1s)    | Random valid move played; game continues.             |
+| Invalid Move         | Random valid move played; game continues.             | 

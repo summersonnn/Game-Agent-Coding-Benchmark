@@ -24,6 +24,7 @@ sys.path.append(str(Path(__file__).parent.parent / "utils"))
 
 from model_api import ModelAPI
 from logging_config import setup_logging
+from scoreboard import update_scoreboard
 
 logger = setup_logging(__name__)
 
@@ -45,6 +46,7 @@ except (ValueError, TypeError):
 RESULTS_DIR = Path(__file__).parent.parent / "results" / "connect4"
 GAME_LOGS_DIR = RESULTS_DIR / "game_logs"
 MODEL_RESPONSES_DIR = RESULTS_DIR / "model_responses"
+SCOREBOARD_PATH = Path(__file__).parent.parent / "scoreboard" / "A5-scoreboard.txt"
 
 # Stored agents directory
 AGENTS_DIR = Path(__file__).parent.parent / "agents"
@@ -66,7 +68,18 @@ class MoveTimeoutException(Exception):
 def timeout_handler(signum, frame):
     raise MoveTimeoutException("Move timeout")
 
+
 # --- Game Engine Code (from A5-Connect4RandomStart.txt) ---
+def print_board_log(board):
+    """Print board with BOARD: prefix for log filtering."""
+    print("BOARD:  0 1 2 3 4 5 6")
+    for r in range(6):
+        row_str = "BOARD: |"
+        for c in range(7):
+            row_str += board[r][c] + "|"
+        print(row_str)
+    print("BOARD: ---------------")
+
 class Connect4Game:
     ROWS = 6
     COLS = 7
@@ -137,22 +150,9 @@ class Connect4Game:
 
 {agent2_code}
 
-# --- Stats ---
-stats = {{
-    "normal": 0,
-    "draw": 0,
-    "c1": 0,
-    "c2": 0,
-    "r1_timeout": 0,
-    "r1_crash": 0,
-    "r1_invalid": 0,
-    "r2_timeout": 0,
-    "r2_crash": 0,
-    "r2_invalid": 0,
-}}
 
 def print_board(board):
-    print(" 0 1 2 3 4 5 6")
+    print("  0 1 2 3 4 5 6")
     for r in range(6):
         row_str = "|"
         for c in range(7):
@@ -160,45 +160,99 @@ def print_board(board):
         print(row_str)
     print("---------------")
 
-def play_game(game_num):
-    """Plays a single game and returns the winner's name or DRAW."""
+class MoveTimeoutException(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise MoveTimeoutException("Move timeout")
+
+def play_game(game_num, match_stats):
+    """Plays a single game and returns the winner's name or 'DRAW'."""
     game = Connect4Game()
     
     # Assign agents based on game number for alternating colors
-    # Note: Game always starts with Red piece placed, then Yellow moves.
+    # Note: Game always starts with Red piece placed (randomly), then Yellow moves.
     # We alternate who plays which color.
     
     if random.random() < 0.5:
-        # Game 1, 3, 5...
         # Agent-1 is Red, Agent-2 is Yellow
-        # Since Red moves first (randomly), Agent-2 (Yellow) makes the first CHOICE.
         red_agent_class = Connect4Agent_1
         yellow_agent_class = Connect4Agent_2
         red_name = "Agent-1"
         yellow_name = "Agent-2"
     else:
-        # Game 2, 4, 6...
         # Agent-2 is Red, Agent-1 is Yellow
         red_agent_class = Connect4Agent_2
         yellow_agent_class = Connect4Agent_1
         red_name = "Agent-2"
         yellow_name = "Agent-1"
 
-    print(f"--- GAME {{game_num}} ---")
-    print(f"Roles: {{red_name}} is RED, {{yellow_name}} is YELLOW")
-    print(f"Note: RED has already made a random start move.")
+    print(f"============================================================")
+    print(f"Game {{game_num}}")
+    print(f"{{red_name}}: RED (has random start piece)")
+    print(f"{{yellow_name}}: YELLOW (first decision)")
+    print("------------------------------------------------------------")
 
+    # --- Initialize Agents ---
     try:
         agent_red = red_agent_class(red_name, game.RED)
     except Exception as e:
-        stats["c1" if red_name == "Agent-1" else "c2"] += 1
-        return yellow_name # Crash during init is loss
+        print(f"{{red_name}} (RED) init crash: {{e}}")
+        match_stats[red_name]["other_crash"] += 1
+        
+        # Forfeit logic
+        winner_name = yellow_name
+        loser_name = red_name
+        
+        match_stats[winner_name]["wins"] += 1
+        match_stats[winner_name]["points"] += 3
+        match_stats[winner_name]["score"] += 10 # Max score heuristic
+        match_stats[loser_name]["losses"] += 1
+        match_stats[loser_name]["score"] -= 10
+        
+        print("Final Position: N/A (initialization crash)")
+        print("----------------------------------------")
+        print(f"Final Result: {{winner_name}} wins. (opponent crashed)")
+        print("----------------------------------------")
+        print("Points:")
+        print(f"{{winner_name}}: 3")
+        print(f"{{loser_name}}: 0")
+        print("----------------------------------------")
+        print("Scores:")
+        print(f"{{winner_name}}: 10")
+        print(f"{{loser_name}}: -10")
+        print("============================================================")
+        return winner_name
     
     try:
         agent_yellow = yellow_agent_class(yellow_name, game.YELLOW)
     except Exception as e:
-        stats["c1" if yellow_name == "Agent-1" else "c2"] += 1
-        return red_name 
+        print(f"{{yellow_name}} (YELLOW) init crash: {{e}}")
+        match_stats[yellow_name]["other_crash"] += 1
+        
+        # Forfeit logic
+        winner_name = red_name
+        loser_name = yellow_name
+        
+        match_stats[winner_name]["wins"] += 1
+        match_stats[winner_name]["points"] += 3
+        match_stats[winner_name]["score"] += 10 
+        match_stats[loser_name]["losses"] += 1
+        match_stats[loser_name]["score"] -= 10
+        
+        print("Final Position: N/A (initialization crash)")
+        print("----------------------------------------")
+        print(f"Final Result: {{winner_name}} wins. (opponent crashed)")
+        print("----------------------------------------")
+        print("Points:")
+        print(f"{{winner_name}}: 3")
+        print(f"{{loser_name}}: 0")
+        print("----------------------------------------")
+        print("Scores:")
+        print(f"{{winner_name}}: 10")
+        print(f"{{loser_name}}: -10")
+        print("============================================================")
+        return winner_name
 
     agents = {{game.RED: agent_red, game.YELLOW: agent_yellow}}
     names = {{game.RED: red_name, game.YELLOW: yellow_name}}
@@ -212,6 +266,8 @@ def play_game(game_num):
         board_copy = [row[:] for row in game.board]
         
         move = None
+        error_type = None
+
         try:
             signal.signal(signal.SIGALRM, timeout_handler)
             signal.alarm(int(MOVE_TIMEOUT))
@@ -220,74 +276,150 @@ def play_game(game_num):
             finally:
                 signal.alarm(0)
         except MoveTimeoutException:
-            if current_name == "Agent-1": stats["r1_timeout"] += 1
-            else: stats["r2_timeout"] += 1
-            # Timeout is a loss
+            match_stats[current_name]["timeout"] += 1
+            error_type = "timeout"
             print(f"{{current_name}} TIMEOUT")
-            return names[game.YELLOW] if current_symbol == game.RED else names[game.RED]
         except Exception as e:
-            if current_name == "Agent-1": stats["r1_crash"] += 1
-            else: stats["r2_crash"] += 1
+            match_stats[current_name]["make_move_crash"] += 1
+            error_type = "crash"
             print(f"{{current_name}} CRASH: {{e}}")
-            return names[game.YELLOW] if current_symbol == game.RED else names[game.RED]
 
         # Validate move type
-        if move is None or not isinstance(move, int):
-            if current_name == "Agent-1": stats["r1_invalid"] += 1
-            else: stats["r2_invalid"] += 1
+        if error_type is None and (move is None or not isinstance(move, int)):
+            match_stats[current_name]["invalid"] += 1
+            error_type = "invalid"
             print(f"{{current_name}} INVALID MOVE TYPE: {{move}}")
-            return names[game.YELLOW] if current_symbol == game.RED else names[game.RED]
+
+        # Validate logic (column full logic checked in game.drop_disc usually, but we check bounds here)
+        if error_type is None:
+             if not (0 <= move < game.COLS):
+                match_stats[current_name]["invalid"] += 1
+                error_type = "invalid"
+                print(f"{{current_name}} INVALID MOVE (OOB): {{move}}")
+             elif game.board[0][move] != game.EMPTY:
+                match_stats[current_name]["invalid"] += 1
+                error_type = "invalid"
+                print(f"{{current_name}} INVALID MOVE (FULL): {{move}}")
+
+        # Fallback to random if error
+        if error_type is not None:
+             # Pick random valid column
+             valid_cols = [c for c in range(game.COLS) if game.board[0][c] == game.EMPTY]
+             if valid_cols:
+                 move = random.choice(valid_cols)
+                 print(f"{{current_name}} FALLBACK: Random move {{move}}")
+             else:
+                 # Should not happen unless board is full, which is checked below
+                 break
 
         # Apply move
-        result = game.drop_disc(move, current_symbol)
+        if move is not None:
+            game.drop_disc(move, current_symbol)
+            print(f"{{current_name}} moves {{move}}")
         
-        if result is None:
-            # Invalid move (column full or out of bounds)
-            if current_name == "Agent-1": stats["r1_invalid"] += 1
-            else: stats["r2_invalid"] += 1
-            print(f"{{current_name}} INVALID MOVE: {{move}} (Full/OOB)")
-            return names[game.YELLOW] if current_symbol == game.RED else names[game.RED]
+        # Check Winner
+        winner = game.check_winner() # Returns 'R', 'Y', or None
         
-        winner = game.check_winner()
-        if winner:
-            print("Final Board:")
-            print_board(game.board)
-            if winner == 'DRAW':
-                print("Result: DRAW") # Should not happen from check_winner returning 'DRAW', handles in is_full
-                stats["draw"] += 1
-                return "DRAW"
-            else:
+        is_full = game.is_full()
+        
+        if winner or is_full:
+            print("Final Position:")
+            print_board_log(game.board)
+            print("----------------------------------------")
+            
+            empty_cells = sum(row.count(game.EMPTY) for row in game.board)
+            score_val = max(empty_cells, 3)
+            
+            if winner: # 'R' or 'Y'
                 winner_name = names[winner]
-                print(f"Result: {{winner_name}} wins!")
-                stats["normal"] += 1
+                loser_symbol = game.YELLOW if winner == game.RED else game.RED
+                loser_name = names[loser_symbol]
+                
+                print(f"Final Result: {{winner_name}} wins!")
+                print("----------------------------------------")
+                print("Points:")
+                print(f"{{winner_name}}: 3")
+                print(f"{{loser_name}}: 0")
+                print("----------------------------------------")
+                print("Scores:")
+                print(f"{{winner_name}}: {{score_val}}")
+                print(f"{{loser_name}}: -{{score_val}}")
+                print("============================================================")
+                
+                match_stats[winner_name]["wins"] += 1
+                match_stats[winner_name]["points"] += 3
+                match_stats[winner_name]["score"] += score_val
+                match_stats[loser_name]["losses"] += 1
+                match_stats[loser_name]["score"] -= score_val
+                
                 return winner_name
-        
-        if game.is_full():
-            print("Final Board:")
-            print_board(game.board)
-            print("Result: DRAW")
-            stats["draw"] += 1
-            return "DRAW"
+            else: # Draw
+                print("Final Result: Draw")
+                print("----------------------------------------")
+                print("Points:")
+                print("Agent-1: 1")
+                print("Agent-2: 1")
+                print("----------------------------------------")
+                print("Scores:")
+                print("Agent-1: 0")
+                print("Agent-2: 0")
+                print("============================================================")
+                
+                match_stats["Agent-1"]["draws"] += 1
+                match_stats["Agent-1"]["points"] += 1
+                match_stats["Agent-2"]["draws"] += 1
+                match_stats["Agent-2"]["points"] += 1
+                
+                return "DRAW"
         
         # Switch turn
         game.current_turn = game.YELLOW if game.current_turn == game.RED else game.RED
 
 def main():
-    scores = {{"Agent-1": 0, "Agent-2": 0}}
+    match_stats = {{
+        "Agent-1": {{
+            "wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0,
+            "make_move_crash": 0, "other_crash": 0, "crash": 0,
+            "timeout": 0, "invalid": 0
+        }},
+        "Agent-2": {{
+            "wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0,
+            "make_move_crash": 0, "other_crash": 0, "crash": 0,
+            "timeout": 0, "invalid": 0
+        }}
+    }}
+    
     num_games = {num_games}
+    
+    # Not using standard logging logger in subprocess for simplicity, just print
+    print(f"Match Contenders:")
+    print(f"Agent-1")
+    print(f"Agent-2")
+    print()
 
     for i in range(num_games):
-        result = play_game(i + 1)
-        if result == "DRAW":
-            scores["Agent-1"] += 0.5
-            scores["Agent-2"] += 0.5
-        elif result in scores:
-            scores[result] += 1
-        
+        play_game(i + 1, match_stats)
         sys.stdout.flush()
 
-    print(f"RESULT:Agent-1={{scores['Agent-1']}},Agent-2={{scores['Agent-2']}}")
-    print(f"STATS:Normal={{stats['normal']}},Draw={{stats['draw']}},C1={{stats['c1']}},C2={{stats['c2']}},R1T={{stats['r1_timeout']}},R1C={{stats['r1_crash']}},R1I={{stats['r1_invalid']}},R2T={{stats['r2_timeout']}},R2C={{stats['r2_crash']}},R2I={{stats['r2_invalid']}}")
+    # Aggregate crash stats
+    for agent in ["Agent-1", "Agent-2"]:
+        match_stats[agent]['crash'] = match_stats[agent]['make_move_crash'] + match_stats[agent]['other_crash']
+
+    # Final Output
+    print(f"RESULT:Agent-1={{match_stats['Agent-1']['points']}},Agent-2={{match_stats['Agent-2']['points']}}")
+    print(f"SCORE:Agent-1={{match_stats['Agent-1']['score']}},Agent-2={{match_stats['Agent-2']['score']}}")
+    print(f"WINS:Agent-1={{match_stats['Agent-1']['wins']}},Agent-2={{match_stats['Agent-2']['wins']}}")
+    print(f"DRAWS:{{match_stats['Agent-1']['draws']}}")
+    
+    print("--- MATCH STATISTICS ---")
+    print(f"Agent-1 make_move_crash: {{match_stats['Agent-1']['make_move_crash']}}")
+    print(f"Agent-2 make_move_crash: {{match_stats['Agent-2']['make_move_crash']}}")
+    print(f"Agent-1 other_crash: {{match_stats['Agent-1']['other_crash']}}")
+    print(f"Agent-2 other_crash: {{match_stats['Agent-2']['other_crash']}}")
+    print(f"Agent-1 Timeouts: {{match_stats['Agent-1']['timeout']}}")
+    print(f"Agent-2 Timeouts: {{match_stats['Agent-2']['timeout']}}")
+    print(f"Agent-1 Invalid: {{match_stats['Agent-1']['invalid']}}")
+    print(f"Agent-2 Invalid: {{match_stats['Agent-2']['invalid']}}")
 
 if __name__ == "__main__":
     main()
@@ -588,9 +720,33 @@ async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int
         f.write("-" * 40 + "\n\n")
 
     res_match = re.search(r"RESULT:Agent-1=([\d.]+),Agent-2=([\d.]+)", output)
+    
     if res_match:
-        a1, a2 = float(res_match.group(1)), float(res_match.group(2))
-        return {"success": True, "a1": a1, "a2": a2, "match_id": match_id}
+        wins_match = re.search(r"WINS:Agent-1=(\d+),Agent-2=(\d+)", output)
+        draws_match = re.search(r"DRAWS:(\d+)", output)
+        score_match = re.search(r"SCORE:Agent-1=(-?[\d.]+),Agent-2=(-?[\d.]+)", output)
+        
+        agent1_wins = int(wins_match.group(1)) if wins_match else 0
+        agent2_wins = int(wins_match.group(2)) if wins_match else 0
+        draws = int(draws_match.group(1)) if draws_match else 0
+        agent1_points = float(res_match.group(1))
+        agent2_points = float(res_match.group(2))
+        agent1_score = float(score_match.group(1)) if score_match else 0.0
+        agent2_score = float(score_match.group(2)) if score_match else 0.0
+
+        return {
+            "success": True, 
+            "match_id": match_id,
+            "agent1_run_id": run_ids[0],
+            "agent2_run_id": run_ids[1],
+            "agent1_wins": agent1_wins,
+            "agent2_wins": agent2_wins,
+            "draws": draws,
+            "agent1_points": agent1_points,
+            "agent2_points": agent2_points,
+            "agent1_score": agent1_score,
+            "agent2_score": agent2_score
+        }
     else:
         return {"success": False, "error": "Result parsing failed", "match_id": match_id}
 
@@ -691,14 +847,43 @@ async def main_async():
     results.sort(key=lambda x: x["match_id"])
     
     total1, total2 = 0.0, 0.0
+    
     for res in results:
         m_id = res["match_id"]
         r1, r2 = runs1[m_id-1], runs2[m_id-1]
+        
         if res["success"]:
-            a1, a2 = res["a1"], res["a2"]
-            total1 += a1
-            total2 += a2
-            print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): {a1} - {a2}")
+            a1_pts, a2_pts = res["agent1_points"], res["agent2_points"]
+            total1 += a1_pts
+            total2 += a2_pts
+            
+            print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): {a1_pts} - {a2_pts}")
+            
+            # SCOREBOARD INTEGRATION
+            # Agent 1
+            agent1_key = f"{folder1}:{res['agent1_run_id']}"
+            update_scoreboard(
+                SCOREBOARD_PATH, agent1_key,
+                games_played=NUM_ROUNDS_PER_MATCH,
+                wins=res["agent1_wins"],
+                losses=res["agent2_wins"],
+                draws=res["draws"],
+                score=res["agent1_score"],
+                points=res["agent1_points"]
+            )
+            
+            # Agent 2
+            agent2_key = f"{folder2}:{res['agent2_run_id']}"
+            update_scoreboard(
+                SCOREBOARD_PATH, agent2_key,
+                games_played=NUM_ROUNDS_PER_MATCH,
+                wins=res["agent2_wins"],
+                losses=res["agent1_wins"],
+                draws=res["draws"],
+                score=res["agent2_score"],
+                points=res["agent2_points"]
+            )
+            
         else:
             print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): FAILED - {res.get('error')}")
 

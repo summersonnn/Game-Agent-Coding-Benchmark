@@ -11,13 +11,13 @@ anthropic/claude-haiku-4.5
 x-ai/grok-4
 x-ai/grok-code-fast-1
 openai/gpt-oss-120b@preset/fp8
-z-ai/glm-5@preset/fp8
+z-ai/glm-5@preset/fp8-speedy
 z-ai/glm-4.7@preset/fp8-speedy
 moonshotai/kimi-k2.5
-minimax/minimax-m2.1@preset/fp8
+minimax/minimax-m2.1:nitro
 qwen/qwen3-235b-a22b-thinking-2507@preset/fp8
 qwen/qwen3-coder@preset/fp8
-qwen/qwen3-coder-next
-xiaomi/mimo-v2-flash
+qwen/qwen3-coder-next@preset/fp8
+xiaomi/mimo-v2-flash@preset/fp8-speedy
 mistralai/mistral-large-2512
 stepfun/step-3.5-flash:free
