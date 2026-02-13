@@ -2,7 +2,7 @@
 Agent Code: A2-TicTacToe
 Model: qwen/qwen3-235b-a22b-thinking-2507@preset/fp8
 Run: 2
-Generated: 2026-02-11 21:03:27
+Generated: 2026-02-13 14:53:21
 """
 
 
@@ -13,91 +13,112 @@ class TicTacToeAgent:
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
-
-    @staticmethod
-    def check_winner(board):
-        win_conditions = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),
-            (0, 4, 8), (2, 4, 6)
-        ]
-        for combo in win_conditions:
-            a, b, c = combo
-            if board[a] != ' ' and board[a] == board[b] == board[c]:
-                return board[a]
-        if ' ' not in board:
-            return 'DRAW'
-        return None
-
-    @staticmethod
-    def minimax(board, depth, alpha, beta, is_maximizing, agent_symbol):
-        winner = TicTacToeAgent.check_winner(board)
-        opponent_symbol = 'X' if agent_symbol == 'O' else 'O'
-        
-        if winner == agent_symbol:
-            empty_cells = board.count(' ')
-            return 10 + empty_cells
-        elif winner == opponent_symbol:
-            empty_cells = board.count(' ')
-            return -(10 + empty_cells)
-        elif winner == 'DRAW':
-            return 0
-
-        available_moves = [i for i, cell in enumerate(board) if cell == ' ']
-        
-        if is_maximizing:
-            max_eval = -float('inf')
-            for move in available_moves:
-                new_board = board.copy()
-                new_board[move] = agent_symbol
-                eval = TicTacToeAgent.minimax(new_board, depth + 1, alpha, beta, False, agent_symbol)
-                max_eval = max(max_eval, eval)
-                alpha = max(alpha, eval)
-                if beta <= alpha:
-                    break
-            return max_eval
-        else:
-            min_eval = float('inf')
-            for move in available_moves:
-                new_board = board.copy()
-                new_board[move] = opponent_symbol
-                eval = TicTacToeAgent.minimax(new_board, depth + 1, alpha, beta, True, agent_symbol)
-                min_eval = min(min_eval, eval)
-                beta = min(beta, eval)
-                if beta <= alpha:
-                    break
-            return min_eval
-
+        self.lines = self._get_all_lines()
+        self.cell_lines = self._get_cell_lines()
+        self.cell_values = self._compute_cell_values()
+    
+    def _get_all_lines(self):
+        lines = []
+        for r in range(5):
+            for c in range(3):
+                start = r * 5 + c
+                lines.append((start, start + 1, start + 2))
+        for c in range(5):
+            for r in range(3):
+                start = r * 5 + c
+                lines.append((start, start + 5, start + 10))
+        for r in range(3):
+            for c in range(3):
+                start = r * 5 + c
+                lines.append((start, start + 6, start + 12))
+        for r in range(3):
+            for c in range(2, 5):
+                start = r * 5 + c
+                lines.append((start, start + 4, start + 8))
+        return lines
+    
+    def _get_cell_lines(self):
+        cell_lines = [[] for _ in range(25)]
+        for line in self.lines:
+            for cell in line:
+                cell_lines[cell].append(line)
+        return cell_lines
+    
+    def _compute_cell_values(self):
+        cell_values = [0] * 25
+        for line in self.lines:
+            for cell in line:
+                cell_values[cell] += 1
+        return cell_values
+    
     def make_move(self, board):
-        available_moves = [i for i, spot in enumerate(board) if spot == ' ']
-        if not available_moves:
-            return random.choice(available_moves) if available_moves else None
-
-        for move in available_moves:
-            new_board = board.copy()
-            new_board[move] = self.symbol
-            if TicTacToeAgent.check_winner(new_board) == self.symbol:
-                return move
-
-        opponent_symbol = 'X' if self.symbol == 'O' else 'O'
-        for move in available_moves:
-            new_board = board.copy()
-            new_board[move] = opponent_symbol
-            if TicTacToeAgent.check_winner(new_board) == opponent_symbol:
-                return move
-
-        best_score = -float('inf')
-        best_move = available_moves[0]
-        alpha = -float('inf')
-        beta = float('inf')
+        available = [i for i, cell in enumerate(board) if cell == ' ']
+        if not available:
+            return None
         
-        for move in available_moves:
-            new_board = board.copy()
-            new_board[move] = self.symbol
-            score = TicTacToeAgent.minimax(new_board, 0, alpha, beta, False, self.symbol)
-            if score > best_score:
-                best_score = score
-                best_move = move
-            alpha = max(alpha, score)
+        for move in available:
+            if self.is_winning_move(board, move):
+                return move
         
-        return best_move
+        opponent = 'O' if self.symbol == 'X' else 'X'
+        for move in available:
+            if self.is_opponent_winning_move(board, move, opponent):
+                return move
+        
+        for move in available:
+            if self.creates_fork(board, move):
+                return move
+        
+        best_value = -1
+        best_moves = []
+        for move in available:
+            value = self.cell_values[move]
+            if value > best_value:
+                best_value = value
+                best_moves = [move]
+            elif value == best_value:
+                best_moves.append(move)
+        return random.choice(best_moves)
+    
+    def is_winning_move(self, board, move):
+        for line in self.cell_lines[move]:
+            count = 0
+            for cell in line:
+                if cell == move:
+                    continue
+                if board[cell] == self.symbol:
+                    count += 1
+            if count == 2:
+                return True
+        return False
+    
+    def is_opponent_winning_move(self, board, move, opponent):
+        for line in self.cell_lines[move]:
+            count = 0
+            for cell in line:
+                if cell == move:
+                    continue
+                if board[cell] == opponent:
+                    count += 1
+            if count == 2:
+                return True
+        return False
+    
+    def creates_fork(self, board, move):
+        fork_count = 0
+        for line in self.cell_lines[move]:
+            count = 0
+            empty_count = 0
+            for cell in line:
+                if cell == move:
+                    count += 1
+                else:
+                    if board[cell] == self.symbol:
+                        count += 1
+                    elif board[cell] == ' ':
+                        empty_count += 1
+            if count == 2 and empty_count == 1:
+                fork_count += 1
+                if fork_count >= 2:
+                    return True
+        return False

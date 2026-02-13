@@ -150,3 +150,6 @@ class WordMatrixAgent:
         # Example Implementation:
         # return ([(0,0), (0,1), (0,2)], "coat")
         return "PASS"
+
+Implement full agent code.
+Do not import from "__future__"

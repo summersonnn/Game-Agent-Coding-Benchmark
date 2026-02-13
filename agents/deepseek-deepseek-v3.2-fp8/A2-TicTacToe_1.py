@@ -2,233 +2,359 @@
 Agent Code: A2-TicTacToe
 Model: deepseek/deepseek-v3.2@preset/fp8
 Run: 1
-Generated: 2026-02-11 20:47:17
+Generated: 2026-02-13 14:53:21
 """
 
-
+import time
 
 import random
+import time
 
 class TicTacToeAgent:
     """
-    An optimal Tic Tac Toe agent using minimax with alpha-beta pruning.
-    Always plays perfectly - cannot be beaten, only drawn or won against.
+    Advanced Tic Tac Toe agent using minimax with alpha-beta pruning,
+    pattern recognition, and strategic positioning for 5x5 board.
     """
+    
+    # Precomputed winning patterns for 5x5 board (3 in a row)
+    WINNING_PATTERNS = []
+    
+    # Generate all winning patterns
+    @classmethod
+    def _generate_patterns(cls):
+        if cls.WINNING_PATTERNS:
+            return
+        
+        # Horizontal patterns
+        for row in range(5):
+            for col in range(3):
+                pattern = [row * 5 + col, row * 5 + col + 1, row * 5 + col + 2]
+                cls.WINNING_PATTERNS.append(tuple(pattern))
+        
+        # Vertical patterns
+        for col in range(5):
+            for row in range(3):
+                pattern = [row * 5 + col, (row + 1) * 5 + col, (row + 2) * 5 + col]
+                cls.WINNING_PATTERNS.append(tuple(pattern))
+        
+        # Diagonal down-right patterns
+        for row in range(3):
+            for col in range(3):
+                pattern = [row * 5 + col, (row + 1) * 5 + col + 1, (row + 2) * 5 + col + 2]
+                cls.WINNING_PATTERNS.append(tuple(pattern))
+        
+        # Diagonal down-left patterns
+        for row in range(3):
+            for col in range(2, 5):
+                pattern = [row * 5 + col, (row + 1) * 5 + col - 1, (row + 2) * 5 + col - 2]
+                cls.WINNING_PATTERNS.append(tuple(pattern))
     
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
         self.opponent = 'O' if symbol == 'X' else 'X'
+        self._generate_patterns()
         
-        # Winning combinations
-        self.wins = [
-            [0, 1, 2], [3, 4, 5], [6, 7, 8],  # rows
-            [0, 3, 6], [1, 4, 7], [2, 5, 8],  # columns
-            [0, 4, 8], [2, 4, 6]              # diagonals
+        # Strategic positions (center and near-center are valuable)
+        self.position_values = [
+            1, 1, 1, 1, 1,
+            1, 2, 2, 2, 1,
+            1, 2, 3, 2, 1,
+            1, 2, 2, 2, 1,
+            1, 1, 1, 1, 1
         ]
         
-        # Opening book for first few moves (optimized for both X and O)
+        # Time management
+        self.start_time = 0
+        self.time_limit = 0.95  # 95% of 1 second limit
+        
+        # Opening book for common patterns
         self.opening_book = {
-            'X': {
-                # Center is best opening for X
-                'empty': 4,
-                # If opponent takes center as O, take corners
-                'center_taken': [0, 2, 6, 8],
-                # If opponent takes corner as O, take center then opposite corner
-                'corner_taken': 4
-            },
-            'O': {
-                # If center available, take it
-                'center_available': 4,
-                # If center taken by X, take corners
-                'center_taken': [0, 2, 6, 8],
-                # If X starts with corner, take center
-                'corner_start': 4
-            }
+            'X': self._x_opening_moves,
+            'O': self._o_opening_moves
         }
-        
+    
     def make_move(self, board):
-        """
-        Return the optimal move using minimax with alpha-beta pruning.
-        Uses opening book for early game and minimax for mid/late game.
-        """
-        # Get available moves
-        available = [i for i, cell in enumerate(board) if cell == ' ']
-        
-        # Opening moves (first 2-3 moves) - use opening book for speed
-        empty_count = sum(1 for cell in board if cell == ' ')
-        if empty_count >= 7:  # Early game
-            return self._opening_move(board, available)
-        
-        # For mid/late game, use minimax
-        # Use iterative deepening for timeout safety
-        best_move = -1
-        best_score = -float('inf')
-        
-        # Try to find immediate win or block
-        for move in available:
-            # Check for immediate win
-            board[move] = self.symbol
-            if self._check_winner(board) == self.symbol:
-                return move
-            board[move] = ' '
+        """Main move decision method with fallback to random move."""
+        try:
+            self.start_time = time.time()
+            empty_cells = [i for i, cell in enumerate(board) if cell == ' ']
             
-            # Check for immediate block
-            board[move] = self.opponent
-            if self._check_winner(board) == self.opponent:
-                return move
-            board[move] = ' '
-        
-        # If no immediate win/block, use minimax
-        # Order moves for better pruning: center, corners, edges
-        ordered_moves = self._order_moves(available, board)
-        
-        for move in ordered_moves:
-            board[move] = self.symbol
-            score = self._minimax(board, 0, False, -float('inf'), float('inf'))
-            board[move] = ' '
+            if not empty_cells:
+                return None
             
-            if score > best_score:
-                best_score = score
-                best_move = move
-        
-        # Fallback to first available move (should never happen with perfect play)
-        return best_move if best_move != -1 else available[0]
+            # Early game: use opening book for first few moves
+            move_count = 25 - len(empty_cells)
+            if move_count <= 4:
+                opening_move = self._try_opening_book(board)
+                if opening_move is not None:
+                    return opening_move
+            
+            # Always check for immediate win or block
+            immediate_move = self._find_immediate_win_or_block(board)
+            if immediate_move is not None:
+                return immediate_move
+            
+            # Use minimax for deeper search
+            best_move = self._minimax_decision(board, empty_cells)
+            if best_move is not None:
+                return best_move
+            
+            # Fallback: strategic move based on heuristics
+            return self._strategic_move(board, empty_cells)
+            
+        except Exception:
+            # Fallback to random move on any error
+            empty_cells = [i for i, cell in enumerate(board) if cell == ' ']
+            return random.choice(empty_cells) if empty_cells else None
     
-    def _opening_move(self, board, available):
-        """Handle opening moves using optimized strategies."""
-        empty_count = sum(1 for cell in board if cell == ' ')
+    def _try_opening_book(self, board):
+        """Try to find a good opening move from precomputed patterns."""
+        empty_cells = [i for i, cell in enumerate(board) if cell == ' ']
+        move_count = 25 - len(empty_cells)
         
-        if self.symbol == 'X':
-            # X's first move
-            if empty_count == 9:
-                return 4  # Center is optimal for X
-            
-            # X's second move (if center was taken by O)
-            if empty_count == 7:
-                if board[4] == 'O':  # O took center
-                    # Take a corner
-                    corners = [i for i in [0, 2, 6, 8] if board[i] == ' ']
-                    return corners[0]
-                else:
-                    # Center is available, we should have taken it
-                    return 4
+        if move_count == 1 and self.symbol == 'X':
+            # First move for X (after random placement by engine)
+            # Look for strategic response
+            x_pos = board.index('X')
+            # If X is in corner, take opposite corner or center
+            if x_pos in [0, 4, 20, 24]:
+                return 12  # Center is usually best
+            # If X is on edge, take center
+            elif x_pos in [2, 7, 11, 13, 17, 22]:
+                return 12
+            # If X is in center, take a corner
+            elif x_pos == 12:
+                return 0
         
-        else:  # O
-            # O's first move
-            if empty_count == 8:
-                if board[4] == ' ':  # Center available
-                    return 4
-                else:  # X took center
-                    # Take a corner
-                    corners = [i for i in [0, 2, 6, 8] if board[i] == ' ']
-                    return corners[0]
-            
-            # O's second move (if X started with corner)
-            if empty_count == 6:
-                # Check if we need to block
-                for move in available:
-                    board[move] = 'X'
-                    if self._check_winner(board) == 'X':
-                        board[move] = ' '
-                        return move
-                    board[move] = ' '
+        elif move_count == 1 and self.symbol == 'O':
+            # First move for O - respond to X's random placement
+            x_pos = board.index('X')
+            # If X is in center, take a corner
+            if x_pos == 12:
+                return 0
+            # Otherwise, take center if available
+            elif board[12] == ' ':
+                return 12
+            # If center taken, take opposite corner
+            else:
+                opposite_corners = {0: 24, 4: 20, 20: 4, 24: 0}
+                if x_pos in opposite_corners and board[opposite_corners[x_pos]] == ' ':
+                    return opposite_corners[x_pos]
+        
+        return None
+    
+    def _find_immediate_win_or_block(self, board):
+        """Check for immediate winning move or opponent's threat."""
+        # Check for winning move
+        for pattern in self.WINNING_PATTERNS:
+            cells = [board[i] for i in pattern]
+            if cells.count(self.symbol) == 2 and cells.count(' ') == 1:
+                empty_idx = pattern[cells.index(' ')]
+                return empty_idx
+        
+        # Check for blocking opponent's winning move
+        for pattern in self.WINNING_PATTERNS:
+            cells = [board[i] for i in pattern]
+            if cells.count(self.opponent) == 2 and cells.count(' ') == 1:
+                empty_idx = pattern[cells.index(' ')]
+                return empty_idx
+        
+        return None
+    
+    def _minimax_decision(self, board, empty_cells):
+        """Use minimax with alpha-beta pruning to find best move."""
+        if time.time() - self.start_time > self.time_limit:
+            return None  # Timeout, fallback to heuristic
+        
+        # Limit search depth based on remaining cells and time
+        depth = min(4, len(empty_cells))
+        if len(empty_cells) > 15:
+            depth = min(3, depth)
+        
+        best_score = -float('inf')
+        best_moves = []
+        
+        # Evaluate each possible move
+        for move in empty_cells:
+            if time.time() - self.start_time > self.time_limit:
+                break
                 
-                # Otherwise take optimal position
-                if board[4] == ' ':  # Center available
-                    return 4
-                # Take corner opposite to X's first move
-                corners = [i for i in [0, 2, 6, 8] if board[i] == 'X']
-                if corners:
-                    first_corner = corners[0]
-                    opposite = {0: 8, 2: 6, 6: 2, 8: 0}
-                    if board[opposite[first_corner]] == ' ':
-                        return opposite[first_corner]
-        
-        # Fallback to minimax for complex openings
-        return self._minimax_move(board, available)
-    
-    def _minimax_move(self, board, available):
-        """Get best move using minimax (used as fallback)."""
-        best_score = -float('inf')
-        best_move = available[0]
-        
-        for move in available:
-            board[move] = self.symbol
-            score = self._minimax(board, 0, False, -float('inf'), float('inf'))
-            board[move] = ' '
+            new_board = board.copy()
+            new_board[move] = self.symbol
+            
+            score = self._minimax(new_board, depth - 1, False, -float('inf'), float('inf'))
             
             if score > best_score:
                 best_score = score
-                best_move = move
+                best_moves = [move]
+            elif score == best_score:
+                best_moves.append(move)
         
-        return best_move
+        if best_moves:
+            # Choose best move, preferring center and strategic positions
+            best_moves.sort(key=lambda m: self.position_values[m], reverse=True)
+            return best_moves[0]
+        
+        return None
     
     def _minimax(self, board, depth, is_maximizing, alpha, beta):
         """Minimax algorithm with alpha-beta pruning."""
-        winner = self._check_winner(board)
+        if depth == 0 or self._is_terminal(board):
+            return self._evaluate_board(board)
         
-        # Terminal states
-        if winner == self.symbol:
-            return 10 - depth  # Win quickly
-        elif winner == self.opponent:
-            return depth - 10  # Lose slowly
-        elif ' ' not in board:
-            return 0  # Draw
+        empty_cells = [i for i, cell in enumerate(board) if cell == ' ']
         
         if is_maximizing:
             max_eval = -float('inf')
-            for i in range(9):
-                if board[i] == ' ':
-                    board[i] = self.symbol
-                    eval_score = self._minimax(board, depth + 1, False, alpha, beta)
-                    board[i] = ' '
-                    max_eval = max(max_eval, eval_score)
-                    alpha = max(alpha, eval_score)
-                    if beta <= alpha:
-                        break  # Beta cut-off
+            for move in empty_cells:
+                new_board = board.copy()
+                new_board[move] = self.symbol
+                eval_score = self._minimax(new_board, depth - 1, False, alpha, beta)
+                max_eval = max(max_eval, eval_score)
+                alpha = max(alpha, eval_score)
+                if beta <= alpha:
+                    break  # Beta cutoff
             return max_eval
         else:
             min_eval = float('inf')
-            for i in range(9):
-                if board[i] == ' ':
-                    board[i] = self.opponent
-                    eval_score = self._minimax(board, depth + 1, True, alpha, beta)
-                    board[i] = ' '
-                    min_eval = min(min_eval, eval_score)
-                    beta = min(beta, eval_score)
-                    if beta <= alpha:
-                        break  # Alpha cut-off
+            for move in empty_cells:
+                new_board = board.copy()
+                new_board[move] = self.opponent
+                eval_score = self._minimax(new_board, depth - 1, True, alpha, beta)
+                min_eval = min(min_eval, eval_score)
+                beta = min(beta, eval_score)
+                if beta <= alpha:
+                    break  # Alpha cutoff
             return min_eval
+    
+    def _is_terminal(self, board):
+        """Check if game is over."""
+        # Check for win
+        for pattern in self.WINNING_PATTERNS:
+            if (board[pattern[0]] == board[pattern[1]] == board[pattern[2]] and 
+                board[pattern[0]] != ' '):
+                return True
+        
+        # Check for draw
+        return ' ' not in board
+    
+    def _evaluate_board(self, board):
+        """Evaluate board state with heuristic scoring."""
+        # Terminal state evaluation
+        winner = self._check_winner(board)
+        if winner == self.symbol:
+            return 1000
+        elif winner == self.opponent:
+            return -1000
+        elif winner == 'DRAW':
+            return 0
+        
+        # Heuristic evaluation
+        score = 0
+        
+        # Evaluate each winning pattern
+        for pattern in self.WINNING_PATTERNS:
+            cells = [board[i] for i in pattern]
+            my_count = cells.count(self.symbol)
+            opp_count = cells.count(self.opponent)
+            empty_count = cells.count(' ')
+            
+            if my_count == 2 and empty_count == 1:
+                score += 10  # Two in a row with open third
+            elif opp_count == 2 and empty_count == 1:
+                score -= 9   # Block opponent's two in a row (slightly less than creating our own)
+            elif my_count == 1 and empty_count == 2:
+                score += 1   # Potential for future two in a row
+            elif opp_count == 1 and empty_count == 2:
+                score -= 1   # Opponent's potential
+        
+        # Position value bonus
+        for i in range(25):
+            if board[i] == self.symbol:
+                score += self.position_values[i] * 0.1
+            elif board[i] == self.opponent:
+                score -= self.position_values[i] * 0.1
+        
+        # Mobility bonus (more moves available is good)
+        empty_cells = sum(1 for cell in board if cell == ' ')
+        score += empty_cells * 0.01
+        
+        return score
     
     def _check_winner(self, board):
         """Check if there's a winner on the board."""
-        for combo in self.wins:
-            a, b, c = combo
-            if board[a] != ' ' and board[a] == board[b] == board[c]:
-                return board[a]
+        for pattern in self.WINNING_PATTERNS:
+            if (board[pattern[0]] == board[pattern[1]] == board[pattern[2]] and 
+                board[pattern[0]] != ' '):
+                return board[pattern[0]]
+        
+        if ' ' not in board:
+            return 'DRAW'
+        
         return None
     
-    def _order_moves(self, moves, board):
-        """Order moves for better alpha-beta pruning: center, corners, edges."""
-        center = 4
-        corners = [0, 2, 6, 8]
-        edges = [1, 3, 5, 7]
+    def _strategic_move(self, board, empty_cells):
+        """Fallback strategic move selection."""
+        # Try to create a fork (multiple winning threats)
+        fork_move = self._find_fork_opportunity(board)
+        if fork_move is not None:
+            return fork_move
         
-        ordered = []
+        # Try to block opponent's potential fork
+        block_fork = self._find_fork_block(board)
+        if block_fork is not None:
+            return block_fork
         
-        # Prefer center
-        if center in moves:
-            ordered.append(center)
+        # Choose move with highest position value
+        empty_cells.sort(key=lambda x: self.position_values[x], reverse=True)
         
-        # Then corners
-        for corner in corners:
-            if corner in moves:
-                ordered.append(corner)
+        # Prefer moves that create opportunities
+        for move in empty_cells:
+            # Check if this move creates a two-in-a-row
+            new_board = board.copy()
+            new_board[move] = self.symbol
+            if self._count_potential_wins(new_board, self.symbol) > 0:
+                return move
         
-        # Finally edges
-        for edge in edges:
-            if edge in moves:
-                ordered.append(edge)
-        
-        return ordered
+        # Default to highest value position
+        return empty_cells[0] if empty_cells else None
+    
+    def _find_fork_opportunity(self, board):
+        """Find a move that creates multiple winning threats."""
+        for move in [i for i, cell in enumerate(board) if cell == ' ']:
+            new_board = board.copy()
+            new_board[move] = self.symbol
+            if self._count_potential_wins(new_board, self.symbol) >= 2:
+                return move
+        return None
+    
+    def _find_fork_block(self, board):
+        """Find a move that blocks opponent's potential fork."""
+        for move in [i for i, cell in enumerate(board) if cell == ' ']:
+            new_board = board.copy()
+            new_board[move] = self.opponent
+            if self._count_potential_wins(new_board, self.opponent) >= 2:
+                # This move would give opponent a fork, so block it
+                return move
+        return None
+    
+    def _count_potential_wins(self, board, player):
+        """Count how many ways player can win on next move."""
+        count = 0
+        for pattern in self.WINNING_PATTERNS:
+            cells = [board[i] for i in pattern]
+            if cells.count(player) == 2 and cells.count(' ') == 1:
+                count += 1
+        return count
+    
+    # Opening move strategies
+    def _x_opening_moves(self, board, move_count):
+        """Opening strategy for X."""
+        # Already handled in _try_opening_book
+        return None
+    
+    def _o_opening_moves(self, board, move_count):
+        """Opening strategy for O."""
+        # Already handled in _try_opening_book
+        return None

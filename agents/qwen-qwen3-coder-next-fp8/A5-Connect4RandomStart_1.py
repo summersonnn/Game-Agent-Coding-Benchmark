@@ -2,290 +2,213 @@
 Agent Code: A5-Connect4RandomStart
 Model: qwen/qwen3-coder-next@preset/fp8
 Run: 1
-Generated: 2026-02-12 14:50:42
+Generated: 2026-02-13 22:27:02
 """
 
 import time
 import math
-from connect4_engine import Connect4Game  # assuming engine code saved as connect4_engine.py
 
-import time
 import random
+import time
 import math
 
 class Connect4Agent:
-    ROWS = 6
-    COLS = 7
-    EMPTY = ' '
-    RED = 'R'
-    YELLOW = 'Y'
-    TIMEOUT_THRESHOLD = 0.9  # seconds before actual timeout (safety margin)
-
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
-        self.opponent_symbol = self.YELLOW if symbol == self.RED else self.RED
-        # Precomputed weights for heuristic scoring (center preference)
-        self.center_weights = [3, 4, 5, 7, 5, 4, 3]  # column value for position bias
+        self.opponent_symbol = 'Y' if symbol == 'R' else 'R'
+        self.start_time = None
+        self.max_depth = 6  # Reasonable depth for 1s timeout
+        self.nodes_searched = 0
 
     def make_move(self, board):
-        """Return best move using depth-limited minimax with alpha-beta & time limit."""
-        start_time = time.time()
+        self.start_time = time.time()
+        self.nodes_searched = 0
+        
+        # Get valid columns
+        valid_cols = []
+        for c in range(7):
+            if board[0][c] == ' ':
+                valid_cols.append(c)
+        
+        if not valid_cols:
+            return 0  # Should not happen, but fallback
+        
+        # If first move (only one piece on board and it's opponent's), try center
+        # Count non-empty cells to detect early game
+        non_empty = sum(1 for row in board for cell in row if cell != ' ')
+        if non_empty == 1 and self.symbol == 'Y':
+            # First decision move — prefer center (col 3)
+            if 3 in valid_cols:
+                return 3
+        
+        # Try iterative deepening with increasing depth
+        best_col = random.choice(valid_cols)
+        best_score = -math.inf
+        
+        for depth in range(1, self.max_depth + 1):
+            try:
+                if time.time() - self.start_time > 0.95:  # Leave margin
+                    break
+                col, score = self._minimax(board, depth, -math.inf, math.inf, True)
+                if col is not None and score > best_score:
+                    best_score = score
+                    best_col = col
+            except Exception:
+                break  # Time's up or error
+        
+        return best_col if best_col in valid_cols else random.choice(valid_cols)
 
-        # First, check for immediate win or block (fast path)
-        for col in range(self.COLS):
-            # Simulate drop in this column
-            if self._is_valid(board, col):
-                # Try placing move
-                row = self._get_next_open_row(board, col)
+    def _minimax(self, board, depth, alpha, beta, maximizing_player):
+        self.nodes_searched += 1
+        
+        # Time check
+        if time.time() - self.start_time > 0.95:
+            return None, -math.inf if maximizing_player else math.inf
+        
+        # Check terminal states
+        winner = self._check_winner(board)
+        if winner == self.symbol:
+            return None, 1000000 + (42 - sum(row.count(' ') for row in board))  # Prefer faster wins
+        elif winner == self.opponent_symbol:
+            return None, -1000000 - (42 - sum(row.count(' ') for row in board))
+        elif all(board[0][c] != ' ' for c in range(7)):
+            return None, 0  # Draw
+        
+        # Depth limit reached
+        if depth == 0:
+            return None, self._evaluate(board)
+        
+        # Get valid moves
+        valid_cols = [c for c in range(7) if board[0][c] == ' ']
+        if not valid_cols:
+            return None, 0
+        
+        # Move ordering: prefer center, then columns near center
+        def col_score(c):
+            return abs(c - 3)
+        valid_cols.sort(key=col_score)
+        
+        if maximizing_player:
+            max_eval = -math.inf
+            best_col = valid_cols[0]
+            for col in valid_cols:
+                # Simulate move
+                row = self._get_drop_row(board, col)
                 board[row][col] = self.symbol
-                if self._check_win_at(board, row, col, self.symbol):
-                    # Restore board before returning
-                    board[row][col] = self.EMPTY
-                    return col
-                board[row][col] = self.EMPTY
-
-        # Also check if opponent has immediate win (block it)
-        for col in range(self.COLS):
-            if self._is_valid(board, col):
-                row = self._get_next_open_row(board, col)
+                
+                _, eval_score = self._minimax(board, depth - 1, alpha, beta, False)
+                
+                board[row][col] = ' '  # Undo move
+                
+                if eval_score > max_eval:
+                    max_eval = eval_score
+                    best_col = col
+                alpha = max(alpha, eval_score)
+                if beta <= alpha:
+                    break
+            return best_col, max_eval
+        else:
+            min_eval = math.inf
+            best_col = valid_cols[0]
+            for col in valid_cols:
+                row = self._get_drop_row(board, col)
                 board[row][col] = self.opponent_symbol
-                if self._check_win_at(board, row, col, self.opponent_symbol):
-                    board[row][col] = self.EMPTY
-                    return col
-                board[row][col] = self.EMPTY
+                
+                _, eval_score = self._minimax(board, depth - 1, alpha, beta, True)
+                
+                board[row][col] = ' '  # Undo move
+                
+                if eval_score < min_eval:
+                    min_eval = eval_score
+                    best_col = col
+                beta = min(beta, eval_score)
+                if beta <= alpha:
+                    break
+            return best_col, min_eval
 
-        # If no immediate win/block, use minimax (with time limit)
-        try:
-            best_col = self._minimax(board, depth=4, alpha=-math.inf, beta=math.inf, maximizing_player=True, start_time=start_time)
-            if best_col is not None and self._is_valid(board, best_col):
-                return best_col
-        except TimeoutError:
-            pass  # Fall back to heuristic
-
-        # Last resort: heuristic-based best move
-        return self._best_heuristic_move(board)
-
-    def _is_valid(self, board, col):
-        """Check if column is not full."""
-        return 0 <= col < self.COLS and board[0][col] == self.EMPTY
-
-    def _get_next_open_row(self, board, col):
-        """Find lowest empty row in column."""
-        for r in range(self.ROWS - 1, -1, -1):
-            if board[r][col] == self.EMPTY:
+    def _get_drop_row(self, board, col):
+        for r in range(5, -1, -1):
+            if board[r][col] == ' ':
                 return r
         return -1
 
-    def _check_win_at(self, board, row, col, symbol):
-        """Check if placing at (row, col) with symbol creates 4-in-a-row."""
+    def _check_winner(self, board):
         # Horizontal
-        count = 1
-        # left
-        c = col - 1
-        while c >= 0 and board[row][c] == symbol:
-            count += 1
-            c -= 1
-        # right
-        c = col + 1
-        while c < self.COLS and board[row][c] == symbol:
-            count += 1
-            c += 1
-        if count >= 4:
-            return True
-
+        for r in range(6):
+            for c in range(4):
+                if board[r][c] != ' ' and board[r][c] == board[r][c+1] == board[r][c+2] == board[r][c+3]:
+                    return board[r][c]
         # Vertical
-        count = 1
-        r = row - 1
-        while r >= 0 and board[r][col] == symbol:
-            count += 1
-            r -= 1
-        if count >= 4:
-            return True
-
+        for r in range(3):
+            for c in range(7):
+                if board[r][c] != ' ' and board[r][c] == board[r+1][c] == board[r+2][c] == board[r+3][c]:
+                    return board[r][c]
         # Diagonal /
-        count = 1
-        r, c = row - 1, col + 1
-        while r >= 0 and c < self.COLS and board[r][c] == symbol:
-            count += 1
-            r -= 1
-            c += 1
-        r, c = row + 1, col - 1
-        while r < self.ROWS and c >= 0 and board[r][c] == symbol:
-            count += 1
-            r += 1
-            c -= 1
-        if count >= 4:
-            return True
-
+        for r in range(3, 6):
+            for c in range(4):
+                if board[r][c] != ' ' and board[r][c] == board[r-1][c+1] == board[r-2][c+2] == board[r-3][c+3]:
+                    return board[r][c]
         # Diagonal \
-        count = 1
-        r, c = row - 1, col - 1
-        while r >= 0 and c >= 0 and board[r][c] == symbol:
-            count += 1
-            r -= 1
-            c -= 1
-        r, c = row + 1, col + 1
-        while r < self.ROWS and c < self.COLS and board[r][c] == symbol:
-            count += 1
-            r += 1
-            c += 1
-        if count >= 4:
-            return True
+        for r in range(3):
+            for c in range(4):
+                if board[r][c] != ' ' and board[r][c] == board[r+1][c+1] == board[r+2][c+2] == board[r+3][c+3]:
+                    return board[r][c]
+        return None
 
-        return False
-
-    def _minimax(self, board, depth, alpha, beta, maximizing_player, start_time):
-        # Time check
-        if time.time() - start_time > self.TIMEOUT_THRESHOLD:
-            raise TimeoutError("Time limit exceeded")
-
-        valid_cols = [c for c in range(self.COLS) if self._is_valid(board, c)]
-        if not valid_cols:
-            return None  # draw
-
-        # Terminal check: win/loss/draw
-        # For speed, we approximate win/loss by checking if any move wins *now*
-        # But better: check full board state
-        if depth == 0 or self._is_terminal(board):
-            return self._evaluate_board(board)
-
-        if maximizing_player:
-            value = -math.inf
-            best_col = random.choice(valid_cols)
-            # Move ordering: prefer center
-            valid_cols.sort(key=lambda c: abs(c - 3))
-            for col in valid_cols:
-                row = self._get_next_open_row(board, col)
-                board[row][col] = self.symbol
-                # Check if this move wins (prune early)
-                if self._check_win_at(board, row, col, self.symbol):
-                    board[row][col] = self.EMPTY
-                    return col  # immediate win
-
-                result = self._minimax(board, depth - 1, alpha, beta, False, start_time)
-                # If result is a column index (i.e., terminal win), return it
-                if isinstance(result, int):
-                    board[row][col] = self.EMPTY
-                    return result
-                board[row][col] = self.EMPTY
-
-                if isinstance(result, (int, float)) and result > value:
-                    value = result
-                    best_col = col
-                alpha = max(alpha, value)
-                if alpha >= beta:
-                    break
-            return best_col
-        else:
-            value = math.inf
-            best_col = random.choice(valid_cols)
-            valid_cols.sort(key=lambda c: abs(c - 3))
-            for col in valid_cols:
-                row = self._get_next_open_row(board, col)
-                board[row][col] = self.opponent_symbol
-                if self._check_win_at(board, row, col, self.opponent_symbol):
-                    board[row][col] = self.EMPTY
-                    return col  # opponent wins → we want to avoid, but return move for engine to play
-
-                result = self._minimax(board, depth - 1, alpha, beta, True, start_time)
-                if isinstance(result, int):
-                    board[row][col] = self.EMPTY
-                    return result
-                board[row][col] = self.EMPTY
-
-                if isinstance(result, (int, float)) and result < value:
-                    value = result
-                    best_col = col
-                beta = min(beta, value)
-                if alpha >= beta:
-                    break
-            return best_col
-
-    def _is_terminal(self, board):
-        # Check if game is over (win or full)
-        # Fast path: only check win for last move? Too slow. Just check win for both.
-        # Instead, use heuristic: if board full or someone has 4-in-a-row (but expensive)
-        # Simplify: we only call this when depth=0, so skip full check here.
-        return self._is_full(board)
-
-    def _is_full(self, board):
-        return all(board[0][c] != self.EMPTY for c in range(self.COLS))
-
-    def _evaluate_board(self, board):
-        """Heuristic evaluation of board state."""
+    def _evaluate(self, board):
         score = 0
-
-        # Center column control
-        center_count = sum(1 for r in range(self.ROWS) if board[r][3] == self.symbol)
-        center_opp = sum(1 for r in range(self.ROWS) if board[r][3] == self.opponent_symbol)
-        score += center_count * 3 - center_opp * 3
-
+        # Evaluate center column control
+        center_count = sum(1 for r in range(6) if board[r][3] == self.symbol)
+        score += center_count * 3
+        
+        # Evaluate all windows of 4
         # Horizontal
-        for r in range(self.ROWS):
-            for c in range(self.COLS - 3):
-                window = [board[r][c + i] for i in range(4)]
+        for r in range(6):
+            for c in range(4):
+                window = [board[r][c+i] for i in range(4)]
                 score += self._score_window(window)
-
+        
         # Vertical
-        for c in range(self.COLS):
-            for r in range(self.ROWS - 3):
-                window = [board[r + i][c] for i in range(4)]
+        for r in range(3):
+            for c in range(7):
+                window = [board[r+i][c] for i in range(4)]
                 score += self._score_window(window)
-
+        
         # Diagonal /
-        for r in range(3, self.ROWS):
-            for c in range(self.COLS - 3):
-                window = [board[r - i][c + i] for i in range(4)]
+        for r in range(3, 6):
+            for c in range(4):
+                window = [board[r-i][c+i] for i in range(4)]
                 score += self._score_window(window)
-
+        
         # Diagonal \
-        for r in range(self.ROWS - 3):
-            for c in range(self.COLS - 3):
-                window = [board[r + i][c + i] for i in range(4)]
+        for r in range(3):
+            for c in range(4):
+                window = [board[r+i][c+i] for i in range(4)]
                 score += self._score_window(window)
-
+        
         return score
 
     def _score_window(self, window):
-        """Score a 4-cell window."""
-        my_count = window.count(self.symbol)
-        opp_count = window.count(self.opponent_symbol)
-        empty = window.count(self.EMPTY)
-
+        count_r = window.count('R')
+        count_y = window.count('Y')
+        count_empty = window.count(' ')
+        
+        if self.symbol == 'R':
+            my_count = count_r
+            opp_count = count_y
+        else:
+            my_count = count_y
+            opp_count = count_r
+        
         if my_count == 4:
             return 100
-        elif my_count == 3 and empty == 1:
+        elif my_count == 3 and count_empty == 1:
             return 5
-        elif my_count == 2 and empty == 2:
+        elif my_count == 2 and count_empty == 2:
             return 2
-        elif opp_count == 3 and empty == 1:
-            return -4  # Block opponent's 3-in-a-row
-        elif opp_count == 2 and empty == 2:
+        elif opp_count == 3 and count_empty == 1:
+            return -4
+        elif opp_count == 2 and count_empty == 2:
             return -1
         return 0
-
-    def _best_heuristic_move(self, board):
-        """Fallback: pick best column by heuristic (no search)."""
-        best_score = -math.inf
-        best_cols = []
-
-        for col in range(self.COLS):
-            if not self._is_valid(board, col):
-                continue
-            row = self._get_next_open_row(board, col)
-            board[row][col] = self.symbol
-            # Evaluate board after move
-            score = self._evaluate_board(board)
-            board[row][col] = self.EMPTY
-
-            # Prefer center in tie
-            score += self.center_weights[col] * 0.1
-
-            if score > best_score:
-                best_score = score
-                best_cols = [col]
-            elif score == best_score:
-                best_cols.append(col)
-
-        return random.choice(best_cols) if best_cols else random.choice([c for c in range(self.COLS) if self._is_valid(board, c)])

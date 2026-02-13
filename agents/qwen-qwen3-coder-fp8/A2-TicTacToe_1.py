@@ -2,7 +2,7 @@
 Agent Code: A2-TicTacToe
 Model: qwen/qwen3-coder@preset/fp8
 Run: 1
-Generated: 2026-02-11 20:47:17
+Generated: 2026-02-13 14:53:21
 """
 
 
@@ -10,99 +10,150 @@ Generated: 2026-02-11 20:47:17
 import random
 
 class TicTacToeAgent:
-    """
-    An AI agent for playing Tic Tac Toe using the minimax algorithm with alpha-beta pruning.
-    """
-
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol  # 'X' or 'O'
         self.opponent_symbol = 'O' if symbol == 'X' else 'X'
 
     def make_move(self, board):
-        """
-        Return the index (0-8) of the cell you want to mark.
-        Uses minimax with alpha-beta pruning to determine the best move.
-        """
-        # Check if any immediate winning move is available
-        for move in self._get_available_moves(board):
-            board_copy = board[:]
-            board_copy[move] = self.symbol
-            if self._check_winner(board_copy) == self.symbol:
-                return move
+        # Check for winning move
+        for i in range(25):
+            if board[i] == ' ':
+                board[i] = self.symbol
+                if self._check_winner(board, self.symbol):
+                    board[i] = ' '  # Reset the board
+                    return i
+                board[i] = ' '  # Reset the board
 
-        # Check if opponent has a winning move and block it
-        for move in self._get_available_moves(board):
-            board_copy = board[:]
-            board_copy[move] = self.opponent_symbol
-            if self._check_winner(board_copy) == self.opponent_symbol:
-                return move
+        # Block opponent's winning move
+        for i in range(25):
+            if board[i] == ' ':
+                board[i] = self.opponent_symbol
+                if self._check_winner(board, self.opponent_symbol):
+                    board[i] = ' '  # Reset the board
+                    return i
+                board[i] = ' '  # Reset the board
 
-        # Use minimax for optimal move
+        # If no immediate win or block, use minimax with depth limit
+        best_score = -float('inf')
         best_move = None
-        best_value = float('-inf')
-        alpha = float('-inf')
-        beta = float('inf')
+        available_moves = [i for i, spot in enumerate(board) if spot == ' ']
         
-        for move in self._get_available_moves(board):
-            board_copy = board[:]
-            board_copy[move] = self.symbol
-            value = self._minimax(board_copy, False, alpha, beta, 0)
-            if value > best_value:
-                best_value = value
-                best_move = move
-            alpha = max(alpha, best_value)
+        if not available_moves:
+            return None
             
-        return best_move if best_move is not None else random.choice(self._get_available_moves(board))
+        # If it's the first move and we're O, take center if available
+        if board.count('X') == 1 and board.count('O') == 0:
+            if board[12] == ' ':
+                return 12
+            # Otherwise take a corner
+            corners = [0, 4, 20, 24]
+            available_corners = [c for c in corners if board[c] == ' ']
+            if available_corners:
+                return random.choice(available_corners)
 
-    def _minimax(self, board, is_maximizing, alpha, beta, depth):
-        winner = self._check_winner(board)
-        
+        # Try to take center if available
+        if board[12] == ' ':
+            return 12
+            
+        # Use minimax with depth limit for better performance
+        for move in available_moves:
+            board[move] = self.symbol
+            score = self._minimax(board, 4, False)  # Depth limit of 4
+            board[move] = ' '
+            if score > best_score:
+                best_score = score
+                best_move = move
+                
+        if best_move is not None:
+            return best_move
+            
+        # Fallback to random move
+        return random.choice(available_moves) if available_moves else None
+
+    def _minimax(self, board, depth, is_maximizing):
+        winner = self._check_game_state(board)
         if winner == self.symbol:
-            return 10 - depth
+            return 10 + depth
         elif winner == self.opponent_symbol:
-            return depth - 10
-        elif winner == 'DRAW' or not self._get_available_moves(board):
+            return -10 - depth
+        elif winner == 'DRAW' or depth == 0:
             return 0
             
         if is_maximizing:
-            max_eval = float('-inf')
-            for move in self._get_available_moves(board):
-                board_copy = board[:]
-                board_copy[move] = self.symbol
-                eval_score = self._minimax(board_copy, False, alpha, beta, depth + 1)
-                max_eval = max(max_eval, eval_score)
-                alpha = max(alpha, eval_score)
-                if beta <= alpha:
-                    break
-            return max_eval
+            best_score = -float('inf')
+            for i in range(25):
+                if board[i] == ' ':
+                    board[i] = self.symbol
+                    score = self._minimax(board, depth - 1, False)
+                    board[i] = ' '
+                    best_score = max(score, best_score)
+            return best_score
         else:
-            min_eval = float('inf')
-            for move in self._get_available_moves(board):
-                board_copy = board[:]
-                board_copy[move] = self.opponent_symbol
-                eval_score = self._minimax(board_copy, True, alpha, beta, depth + 1)
-                min_eval = min(min_eval, eval_score)
-                beta = min(beta, eval_score)
-                if beta <= alpha:
-                    break
-            return min_eval
+            best_score = float('inf')
+            for i in range(25):
+                if board[i] == ' ':
+                    board[i] = self.opponent_symbol
+                    score = self._minimax(board, depth - 1, True)
+                    board[i] = ' '
+                    best_score = min(score, best_score)
+            return best_score
 
-    def _get_available_moves(self, board):
-        return [i for i, spot in enumerate(board) if spot == ' ']
+    def _check_game_state(self, board):
+        # Check for winner
+        win_conditions = []
+        # Rows
+        for r in range(5):
+            for c in range(3):
+                start = r * 5 + c
+                win_conditions.append((start, start + 1, start + 2))
+        # Cols
+        for c in range(5):
+            for r in range(3):
+                start = r * 5 + c
+                win_conditions.append((start, start + 5, start + 10))
+        # Diagonals (down-right)
+        for r in range(3):
+            for c in range(3):
+                start = r * 5 + c
+                win_conditions.append((start, start + 6, start + 12))
+        # Diagonals (down-left)
+        for r in range(3):
+            for c in range(2, 5):
+                start = r * 5 + c
+                win_conditions.append((start, start + 4, start + 8))
 
-    def _check_winner(self, board):
-        win_conditions = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),  # Rows
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),  # Columns
-            (0, 4, 8), (2, 4, 6)              # Diagonals
-        ]
-        
         for combo in win_conditions:
             if board[combo[0]] == board[combo[1]] == board[combo[2]] != ' ':
                 return board[combo[0]]
-                
         if ' ' not in board:
             return 'DRAW'
-            
         return None
+
+    def _check_winner(self, board, player):
+        win_conditions = []
+        # Rows
+        for r in range(5):
+            for c in range(3):
+                start = r * 5 + c
+                win_conditions.append((start, start + 1, start + 2))
+        # Cols
+        for c in range(5):
+            for r in range(3):
+                start = r * 5 + c
+                win_conditions.append((start, start + 5, start + 10))
+        # Diagonals (down-right)
+        for r in range(3):
+            for c in range(3):
+                start = r * 5 + c
+                win_conditions.append((start, start + 6, start + 12))
+        # Diagonals (down-left)
+        for r in range(3):
+            for c in range(2, 5):
+                start = r * 5 + c
+                win_conditions.append((start, start + 4, start + 8))
+
+        for combo in win_conditions:
+            if board[combo[0]] == board[combo[1]] == board[combo[2]] == player:
+                return True
+        return False

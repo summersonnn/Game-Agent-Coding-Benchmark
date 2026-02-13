@@ -236,20 +236,83 @@ async def run_match_subprocess(
 
 
 # ---------------------------------------------------------------------------
-# Syntax verification
+# Agent health verification
 # ---------------------------------------------------------------------------
 
+_BROAD_EXCEPT_TYPES = {"Exception", "BaseException"}
 
-def verify_agent_syntax(game_name: str, agents: dict[str, list[int]]) -> bool:
-    """Check all discovered agents for syntax errors.
 
-    Returns True if all agents are valid, False otherwise.
+def _find_broad_except_in_make_move(source: str) -> list[str]:
+    """Detect top-level broad exception handlers inside make_move methods.
+
+    A broad handler (except Exception / BaseException / bare except) at the
+    top level of make_move will silently swallow MoveTimeoutException raised
+    by signal.alarm, preventing the game engine from enforcing time limits.
+
+    Returns a list of human-readable violation descriptions.
     """
     import ast
 
-    print("Verifying agent syntax...", flush=True)
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []  # syntax errors are reported separately
 
-    errors = []
+    violations: list[str] = []
+
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name != "make_move":
+            continue
+
+        # Only inspect direct children (top-level statements in the body)
+        for stmt in node.body:
+            if not isinstance(stmt, ast.Try):
+                continue
+            for handler in stmt.handlers:
+                if handler.type is None:
+                    violations.append(
+                        f"line {handler.lineno}: bare 'except:' in make_move"
+                    )
+                elif (
+                    isinstance(handler.type, ast.Name)
+                    and handler.type.id in _BROAD_EXCEPT_TYPES
+                ):
+                    violations.append(
+                        f"line {handler.lineno}: "
+                        f"'except {handler.type.id}' in make_move"
+                    )
+                elif isinstance(handler.type, ast.Tuple):
+                    for elt in handler.type.elts:
+                        if (
+                            isinstance(elt, ast.Name)
+                            and elt.id in _BROAD_EXCEPT_TYPES
+                        ):
+                            violations.append(
+                                f"line {handler.lineno}: "
+                                f"'except (..., {elt.id}, ...)' in make_move"
+                            )
+                            break
+
+    return violations
+
+
+def verify_agent_syntax(game_name: str, agents: dict[str, list[int]]) -> bool:
+    """Run all health checks on discovered agents.
+
+    Checks performed:
+      1. Syntax validity (ast.parse)
+      2. Broad exception handlers in make_move (swallow MoveTimeoutException)
+
+    Returns True if all agents pass every check, False otherwise.
+    """
+    import ast
+
+    print("Running agent health checks...", flush=True)
+
+    syntax_errors: list[str] = []
+    broad_except_errors: list[str] = []
     agent_count = 0
 
     for model_name, runs in agents.items():
@@ -263,18 +326,39 @@ def verify_agent_syntax(game_name: str, agents: dict[str, list[int]]) -> bool:
                     source = f.read()
                 ast.parse(source)
             except SyntaxError as e:
-                errors.append(f"  - {model_name}/{filename}: {e}")
+                syntax_errors.append(f"  - {model_name}/{filename}: {e}")
+                continue
             except Exception as e:
-                errors.append(f"  - {model_name}/{filename}: {e}")
+                syntax_errors.append(f"  - {model_name}/{filename}: {e}")
+                continue
 
-    if errors:
-        print("Found syntax errors in the agents below:")
-        for err in errors:
+            # Passed syntax — check for prohibited broad except in make_move
+            for violation in _find_broad_except_in_make_move(source):
+                broad_except_errors.append(
+                    f"  - {model_name}/{filename}: {violation}"
+                )
+
+    passed = True
+
+    if syntax_errors:
+        print("Syntax errors:")
+        for err in syntax_errors:
             print(err)
-        return False
-    else:
-        print(f"Found no syntax errors in {agent_count} agents.")
-        return True
+        passed = False
+
+    if broad_except_errors:
+        print(
+            "Broad exception handlers in make_move "
+            "(will swallow MoveTimeoutException):"
+        )
+        for err in broad_except_errors:
+            print(err)
+        passed = False
+
+    if passed:
+        print(f"All {agent_count} agents passed health checks.")
+
+    return passed
 
 
 async def run_tournament(

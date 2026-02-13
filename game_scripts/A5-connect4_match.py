@@ -42,10 +42,7 @@ try:
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
-try:
-    GAME_TIME_LIMIT = float(os.getenv("MAX_TIME_PER_GAME", "60.0"))
-except (ValueError, TypeError):
-    GAME_TIME_LIMIT = 60.0
+
 
 # Results directories
 RESULTS_DIR = Path(__file__).parent.parent / "results" / "connect4"
@@ -62,11 +59,11 @@ import sys
 import random
 import signal
 import copy
-import time
+
 
 # Move timeout in seconds
 MOVE_TIMEOUT = {move_timeout}
-GAME_TIMEOUT = {game_timeout}
+
 AGENT1_NAME = "{agent1_name}"
 AGENT2_NAME = "{agent2_name}"
 
@@ -182,7 +179,8 @@ def play_game(game_num, match_stats):
     # Note: Game always starts with Red piece placed (randomly), then Yellow moves.
     # We alternate who plays which color.
     
-    if random.random() < 0.5:
+    # Alternate turns based on game number
+    if game_num % 2 != 0:
         # Agent-1 is Red, Agent-2 is Yellow
         red_agent_class = Connect4Agent_1
         yellow_agent_class = Connect4Agent_2
@@ -218,9 +216,11 @@ def play_game(game_num, match_stats):
         
         match_stats[winner_name]["wins"] += 1
         match_stats[winner_name]["points"] += 3
-        match_stats[winner_name]["score"] += 10 # Max score heuristic
+        # Max score calculation: 6x7=42 cells. 1 is occupied by random start.
+        # Max possible empty cells = 41.
+        match_stats[winner_name]["score"] += 41
         match_stats[loser_name]["losses"] += 1
-        match_stats[loser_name]["score"] -= 10
+        match_stats[loser_name]["score"] -= 41
         
         print("Final Position: N/A (initialization crash)")
         print("----------------------------------------")
@@ -231,8 +231,8 @@ def play_game(game_num, match_stats):
         print(f"{{loser_name}}: 0")
         print("----------------------------------------")
         print("Scores:")
-        print(f"{{winner_name}}: 10")
-        print(f"{{loser_name}}: -10")
+        print(f"{{winner_name}}: 41")
+        print(f"{{loser_name}}: -41")
         print("============================================================")
         return winner_name
     
@@ -248,9 +248,11 @@ def play_game(game_num, match_stats):
         
         match_stats[winner_name]["wins"] += 1
         match_stats[winner_name]["points"] += 3
-        match_stats[winner_name]["score"] += 10 
+        # Max score calculation: 6x7=42 cells. 1 is occupied by random start.
+        # Max possible empty cells = 41.
+        match_stats[winner_name]["score"] += 41 
         match_stats[loser_name]["losses"] += 1
-        match_stats[loser_name]["score"] -= 10
+        match_stats[loser_name]["score"] -= 41
         
         print("Final Position: N/A (initialization crash)")
         print("----------------------------------------")
@@ -261,34 +263,19 @@ def play_game(game_num, match_stats):
         print(f"{{loser_name}}: 0")
         print("----------------------------------------")
         print("Scores:")
-        print(f"{{winner_name}}: 10")
-        print(f"{{loser_name}}: -10")
+        print(f"{{winner_name}}: 41")
+        print(f"{{loser_name}}: -41")
         print("============================================================")
         return winner_name
+
+
 
     agents = {{game.RED: agent_red, game.YELLOW: agent_yellow}}
     names = {{game.RED: red_name, game.YELLOW: yellow_name}}
 
-    start_time = time.time()
+
     while True:
-        if time.time() - start_time > GAME_TIMEOUT:
-             print(f"GAME TIMEOUT (> {{GAME_TIMEOUT}}s)")
-             print("Final Result: Draw (Time Limit)")
-             print("----------------------------------------")
-             print("Points:")
-             print("Agent-1: 1")
-             print("Agent-2: 1")
-             print("----------------------------------------")
-             print("Scores:")
-             print("Agent-1: 0")
-             print("Agent-2: 0")
-             print("============================================================")
-             
-             match_stats["Agent-1"]["draws"] += 1
-             match_stats["Agent-1"]["points"] += 1
-             match_stats["Agent-2"]["draws"] += 1
-             match_stats["Agent-2"]["points"] += 1
-             return "DRAW"
+
 
         current_symbol = game.current_turn
         current_agent = agents[current_symbol]
@@ -451,7 +438,8 @@ def main():
     print(f"SCORE:Agent-1={{match_stats['Agent-1']['score']}},Agent-2={{match_stats['Agent-2']['score']}}")
     print(f"WINS:Agent-1={{match_stats['Agent-1']['wins']}},Agent-2={{match_stats['Agent-2']['wins']}}")
     print(f"DRAWS:{{match_stats['Agent-1']['draws']}}")
-    print(f"STATS:Agent-1={{match_stats['Agent-1']}},Agent-2={{match_stats['Agent-2']}}")
+    print(f"STATS:Agent-1={{match_stats['Agent-1']}}")
+    print(f"STATS:Agent-2={{match_stats['Agent-2']}}")
     
     print()
     print("--- MATCH STATISTICS ---")
@@ -747,7 +735,13 @@ def run_match(game_code: str):
     temp_file = os.path.join(tempfile.gettempdir(), f"c4_{uuid.uuid4().hex[:8]}.py")
     try:
         with open(temp_file, "w") as f: f.write(game_code)
+        # Capture BOTH stdout and stderr
         result = subprocess.run(["python", temp_file], capture_output=True, text=True)
+        
+        # If the return code is non-zero, or stdout is empty but stderr has content, return the error
+        if result.returncode != 0:
+             return f"CRASH: {result.stderr}"
+        
         return result.stdout
     except Exception as e:
         return f"ERROR: {e}"
@@ -871,7 +865,7 @@ async def main_async():
             agent2_code=code2,
             num_games=NUM_ROUNDS_PER_MATCH,
             move_timeout=MOVE_TIME_LIMIT,
-            game_timeout=GAME_TIME_LIMIT,
+
             agent1_name=f"{folder1}:{run1}",
             agent2_name=f"{folder2}:{run2}"
         )

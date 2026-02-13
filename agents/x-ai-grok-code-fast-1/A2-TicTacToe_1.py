@@ -2,81 +2,69 @@
 Agent Code: A2-TicTacToe
 Model: x-ai/grok-code-fast-1
 Run: 1
-Generated: 2026-02-11 20:47:17
+Generated: 2026-02-13 14:53:21
 """
 
 
 
-import random
-
 class TicTacToeAgent:
-    def __init__(self, name: str, symbol: str):
+    """
+    Your agent implementation goes here.
+    Implement smart logic to beat your opponent.
+    """
+    def __init__(self, name, symbol):
         self.name = name
-        self.symbol = symbol
+        self.symbol = symbol  # 'X' or 'O'
         self.opponent = 'O' if symbol == 'X' else 'X'
-        self.EMPTY = ' '
 
-    def make_move(self, board: list[str]) -> int:
-        available_moves = [i for i, spot in enumerate(board) if spot == self.EMPTY]
+    def make_move(self, board):
+        """
+        Return the index (0-24) of the cell you want to mark.
+        board: List of 25 strings representing the current board state.
+              Each element is ' ' (empty), 'X', or 'O'.
+        """
+        available_moves = [i for i, spot in enumerate(board) if spot == ' ']
         if not available_moves:
-            return None  # Though this shouldn't happen in a valid game
-        
-        best_move = None
-        best_value = -float('inf')
-        
+            return None
+
+        # Generate all winning lines (3 in a row)
+        win_lines = []
+        # Rows
+        for r in range(5):
+            for c in range(3):
+                win_lines.append([r * 5 + c, r * 5 + c + 1, r * 5 + c + 2])
+        # Columns
+        for c in range(5):
+            for r in range(3):
+                win_lines.append([r * 5 + c, (r + 1) * 5 + c, (r + 2) * 5 + c])
+        # Diagonals (down-right)
+        for r in range(3):
+            for c in range(3):
+                win_lines.append([r * 5 + c, r * 5 + c + 6, r * 5 + c + 12])
+        # Diagonals (down-left)
+        for r in range(3):
+            for c in range(2, 5):
+                win_lines.append([r * 5 + c, r * 5 + c + 4, r * 5 + c + 8])
+
+        # Check for winning move
         for move in available_moves:
-            board_copy = board.copy()
-            board_copy[move] = self.symbol
-            move_value = self._minimax(board_copy, False)  # After my move, it's opponent's turn
-            if move_value > best_value:
-                best_value = move_value
-                best_move = move
-        
-        return best_move
+            temp_board = board.copy()
+            temp_board[move] = self.symbol
+            for line in win_lines:
+                if all(temp_board[pos] == self.symbol for pos in line):
+                    return move
 
-    def _minimax(self, board: list[str], is_maximizing: bool, alpha: float = -float('inf'), beta: float = float('inf')) -> float:
-        if self._is_winner(board, self.symbol):
-            return 1
-        if self._is_winner(board, self.opponent):
-            return -1
-        if self._is_draw(board):
-            return 0
-        
-        available_moves = [i for i, spot in enumerate(board) if spot == self.EMPTY]
-        
-        if is_maximizing:
-            max_eval = -float('inf')
-            for move in available_moves:
-                board[move] = self.symbol
-                eval = self._minimax(board, False, alpha, beta)
-                board[move] = self.EMPTY  # Undo move
-                max_eval = max(max_eval, eval)
-                alpha = max(alpha, eval)
-                if beta <= alpha:
-                    break
-            return max_eval
-        else:
-            min_eval = float('inf')
-            for move in available_moves:
-                board[move] = self.opponent
-                eval = self._minimax(board, True, alpha, beta)
-                board[move] = self.EMPTY  # Undo move
-                min_eval = min(min_eval, eval)
-                beta = min(beta, eval)
-                if beta <= alpha:
-                    break
-            return min_eval
+        # Check for blocking opponent's win
+        for move in available_moves:
+            temp_board = board.copy()
+            temp_board[move] = self.opponent
+            for line in win_lines:
+                if all(temp_board[pos] == self.opponent for pos in line):
+                    return move
 
-    def _is_winner(self, board: list[str], player: str) -> bool:
-        win_conditions = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),  # Rows
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),  # Columns
-            (0, 4, 8), (2, 4, 6)               # Diagonals
-        ]
-        for a, b, c in win_conditions:
-            if board[a] == board[b] == board[c] == player:
-                return True
-        return False
+        # Prefer center if available
+        if 12 in available_moves:
+            return 12
 
-    def _is_draw(self, board: list[str]) -> bool:
-        return self.EMPTY not in board
+        # Otherwise, random move
+        return random.choice(available_moves)

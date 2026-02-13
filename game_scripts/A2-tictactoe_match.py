@@ -62,32 +62,49 @@ GAME_ENGINE_CODE = r'''
 EMPTY = ' '
 X_MARK = 'X'
 O_MARK = 'O'
-BOARD_SIZE = 3
+BOARD_SIZE = 5
 
-# Max possible tie-breaker score (win at move 5 = 4 empty cells)
-FORFEIT_SCORE = 4
+# Max possible tie-breaker score (win at move 5 = 20 empty cells)
+FORFEIT_SCORE = 20
 
 
 class TicTacToeGame:
     """Manages the state and rules of a Tic Tac Toe game."""
 
     def __init__(self):
-        self.board = [EMPTY for _ in range(9)]
+        self.board = [EMPTY for _ in range(25)]
         self.current_turn = X_MARK
 
     def make_move(self, position):
-        if 0 <= position < 9 and self.board[position] == EMPTY:
+        if 0 <= position < 25 and self.board[position] == EMPTY:
             self.board[position] = self.current_turn
             self.current_turn = O_MARK if self.current_turn == X_MARK else X_MARK
             return True
         return False
 
     def check_winner(self):
-        win_conditions = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),  # Rows
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),  # Columns
-            (0, 4, 8), (2, 4, 6),              # Diagonals
-        ]
+        win_conditions = []
+        # Rows
+        for r in range(5):
+            for c in range(3):
+                start = r * 5 + c
+                win_conditions.append((start, start + 1, start + 2))
+        # Cols
+        for c in range(5):
+            for r in range(3):
+                start = r * 5 + c
+                win_conditions.append((start, start + 5, start + 10))
+        # Diagonals (down-right)
+        for r in range(3):
+            for c in range(3):
+                start = r * 5 + c
+                win_conditions.append((start, start + 6, start + 12))
+        # Diagonals (down-left)
+        for r in range(3):
+            for c in range(2, 5):
+                start = r * 5 + c
+                win_conditions.append((start, start + 4, start + 8))
+
         for combo in win_conditions:
             if self.board[combo[0]] == self.board[combo[1]] == self.board[combo[2]] != EMPTY:
                 return self.board[combo[0]]
@@ -98,22 +115,30 @@ class TicTacToeGame:
 
 def print_board(board):
     """Print board for human players (no BOARD: prefix)."""
-    print("  0 | 1 | 2")
-    print(f"  {board[0]} | {board[1]} | {board[2]}")
-    print(" -----------")
-    print(f"  {board[3]} | {board[4]} | {board[5]}")
-    print(" -----------")
-    print(f"  {board[6]} | {board[7]} | {board[8]}")
+    print("   0 |  1 |  2 |  3 |  4")
+    print(f"   {board[0]} |  {board[1]} |  {board[2]} |  {board[3]} |  {board[4]}")
+    print(" -----------------------")
+    print(f"   {board[5]} |  {board[6]} |  {board[7]} |  {board[8]} |  {board[9]}")
+    print(" -----------------------")
+    print(f"  {board[10]} | {board[11]} | {board[12]} | {board[13]} | {board[14]}")
+    print(" -----------------------")
+    print(f"  {board[15]} | {board[16]} | {board[17]} | {board[18]} | {board[19]}")
+    print(" -----------------------")
+    print(f"  {board[20]} | {board[21]} | {board[22]} | {board[23]} | {board[24]}")
 
 
 def print_board_log(board):
     """Print board with BOARD: prefix for log filtering."""
-    print("BOARD:   0 | 1 | 2")
-    print(f"BOARD:   {board[0]} | {board[1]} | {board[2]}")
-    print("BOARD:  -----------")
-    print(f"BOARD:   {board[3]} | {board[4]} | {board[5]}")
-    print("BOARD:  -----------")
-    print(f"BOARD:   {board[6]} | {board[7]} | {board[8]}")
+    print("BOARD:    0 |  1 |  2 |  3 |  4")
+    print(f"BOARD:    {board[0]} |  {board[1]} |  {board[2]} |  {board[3]} |  {board[4]}")
+    print("BOARD:  -----------------------")
+    print(f"BOARD:    {board[5]} |  {board[6]} |  {board[7]} |  {board[8]} |  {board[9]}")
+    print("BOARD:  -----------------------")
+    print(f"BOARD:   {board[10]} | {board[11]} | {board[12]} | {board[13]} | {board[14]}")
+    print("BOARD:  -----------------------")
+    print(f"BOARD:   {board[15]} | {board[16]} | {board[17]} | {board[18]} | {board[19]}")
+    print("BOARD:  -----------------------")
+    print(f"BOARD:   {board[20]} | {board[21]} | {board[22]} | {board[23]} | {board[24]}")
 
 
 class RandomAgent:
@@ -135,11 +160,11 @@ class HumanAgent:
         print_board(board)
         while True:
             try:
-                user_input = input(f"Enter move [0-8] (You are {self.symbol}): ").strip()
+                user_input = input(f"Enter move [0-24] (You are {self.symbol}): ").strip()
                 if not user_input:
                     continue
                 move = int(user_input)
-                if 0 <= move < 9 and board[move] == EMPTY:
+                if 0 <= move < 25 and board[move] == EMPTY:
                     return move
                 print("Invalid move.")
             except ValueError:
@@ -172,8 +197,8 @@ def play_game(game_num, match_stats):
     else:
         class_1, class_2 = TicTacToeAgent_1, TicTacToeAgent_2
 
-    # Randomize who plays X (first mover) and who plays O
-    if random.random() < 0.5:
+    # Alternate who plays X each game (odd games: Agent-1 is X, even: Agent-2)
+    if game_num % 2 == 1:
         x_class, o_class = class_1, class_2
         x_name, o_name = "Agent-1", "Agent-2"
     else:
@@ -244,6 +269,11 @@ def play_game(game_num, match_stats):
     agents = {X_MARK: agent_x, O_MARK: agent_o}
     names = {X_MARK: x_name, O_MARK: o_name}
 
+    # --- Random first move for X ---
+    random_first_pos = random.choice(range(25))
+    game.make_move(random_first_pos)
+    print(f"Random first move: X plays ({random_first_pos // 5}, {random_first_pos % 5})")
+
     # --- Game loop ---
     while True:
         current_symbol = game.current_turn
@@ -271,7 +301,7 @@ def play_game(game_num, match_stats):
 
         # Validate move
         if error_type is None and move is not None:
-            if not isinstance(move, int) or not (0 <= move < 9) or game.board[move] != EMPTY:
+            if not isinstance(move, int) or not (0 <= move < 25) or game.board[move] != EMPTY:
                 match_stats[current_name]["invalid"] += 1
                 error_type = "invalid"
                 move = None
@@ -368,6 +398,8 @@ def main():
     print(f"SCORE:Agent-1={match_stats['Agent-1']['score']},Agent-2={match_stats['Agent-2']['score']}")
     print(f"WINS:Agent-1={match_stats['Agent-1']['wins']},Agent-2={match_stats['Agent-2']['wins']}")
     print(f"DRAWS:{match_stats['Agent-1']['draws']}")
+    print(f"STATS:Agent-1={match_stats['Agent-1']}")
+    print(f"STATS:Agent-2={match_stats['Agent-2']}")
 
     print("--- MATCH STATISTICS ---")
     print(f"Agent-1 make_move_crash: {match_stats['Agent-1']['make_move_crash']}")
@@ -380,7 +412,6 @@ def main():
     print(f"Agent-2 Timeouts: {match_stats['Agent-2']['timeout']}")
     print(f"Agent-1 Invalid: {match_stats['Agent-1']['invalid']}")
     print(f"Agent-2 Invalid: {match_stats['Agent-2']['invalid']}")
-    print(f"STATS:Agent-1={match_stats['Agent-1']},Agent-2={match_stats['Agent-2']}")
 
 
 if __name__ == "__main__":
@@ -611,6 +642,7 @@ def run_match(
                     "=====", "----",
                     "Final", "Scores:", "Points:",
                     "BOARD:",
+                    "Random",
                     "CRASH", "RESULT", "SCORE", "WINS", "DRAWS", "STATS",
                 )) or line.strip() == "":
                     log_lines.append(line)

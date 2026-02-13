@@ -75,8 +75,8 @@ INVALID_PENALTY = -10
 # Max possible tie-breaker score for init-crash forfeits
 FORFEIT_SCORE = 12
 
-# Max rounds per game (100 rounds = 200 individual turns)
-MAX_ROUNDS = 100
+# Max rounds per game (50 rounds = 100 individual turns)
+MAX_ROUNDS = 50
 
 
 def is_valid_word(word):
@@ -497,6 +497,10 @@ def _print_final_stats(match_stats):
     print(f"WINS:Agent-1={match_stats['Agent-1']['wins']},Agent-2={match_stats['Agent-2']['wins']}")
     print(f"DRAWS:{match_stats['Agent-1']['draws']}")
 
+    print(f"STATS:Agent-1={match_stats['Agent-1']}")
+    print(f"STATS:Agent-2={match_stats['Agent-2']}")
+    print()
+
     print("--- MATCH STATISTICS ---")
     print(f"Agent-1 make_move_crash: {match_stats['Agent-1']['make_move_crash']}")
     print(f"Agent-2 make_move_crash: {match_stats['Agent-2']['make_move_crash']}")
@@ -508,7 +512,6 @@ def _print_final_stats(match_stats):
     print(f"Agent-2 Timeouts: {match_stats['Agent-2']['timeout']}")
     print(f"Agent-1 Invalid: {match_stats['Agent-1']['invalid']}")
     print(f"Agent-2 Invalid: {match_stats['Agent-2']['invalid']}")
-    print(f"STATS:Agent-1={match_stats['Agent-1']},Agent-2={match_stats['Agent-2']}")
 
 
 def main():

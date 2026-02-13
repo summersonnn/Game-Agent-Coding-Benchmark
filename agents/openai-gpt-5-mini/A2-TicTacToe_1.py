@@ -2,166 +2,176 @@
 Agent Code: A2-TicTacToe
 Model: openai/gpt-5-mini
 Run: 1
-Generated: 2026-02-11 20:47:17
+Generated: 2026-02-13 14:53:21
 """
 
-from functools import lru_cache
+
 
 class TicTacToeAgent:
+    """
+    Smart Tic Tac Toe agent for 5x5, 3-in-a-row rules.
+    Strategy (in priority):
+      1) Win immediately if possible.
+      2) Block opponent immediate win(s).
+      3) Create a fork (move that yields >=2 immediate wins next turn).
+      4) Block opponent forks (try direct block, then force-response threats, otherwise minimize forks).
+      5) Take center (index 12) if available.
+      6) Heuristic: maximize own future threats/open lines and minimize opponent's.
+    """
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol  # 'X' or 'O'
+        self.EMPTY = ' '
+        # Precompute winning triples (same as game logic)
+        combos = []
+        # Rows
+        for r in range(5):
+            for c in range(3):
+                start = r * 5 + c
+                combos.append((start, start + 1, start + 2))
+        # Cols
+        for c in range(5):
+            for r in range(3):
+                start = r * 5 + c
+                combos.append((start, start + 5, start + 10))
+        # Diagonals down-right
+        for r in range(3):
+            for c in range(3):
+                start = r * 5 + c
+                combos.append((start, start + 6, start + 12))
+        # Diagonals down-left
+        for r in range(3):
+            for c in range(2, 5):
+                start = r * 5 + c
+                combos.append((start, start + 4, start + 8))
+        self.combos = combos
+        # Map cell -> combos that include it for quick access
+        self.cell_to_combos = {i: [] for i in range(25)}
+        for combo in self.combos:
+            for idx in combo:
+                self.cell_to_combos[idx].append(combo)
+
+    # Helper: immediate winning moves for player on given board
+    def _immediate_winning_moves(self, board, player):
+        moves = []
+        for combo in self.combos:
+            a, b, c = combo
+            marks = (board[a], board[b], board[c])
+            if marks.count(player) == 2 and marks.count(self.EMPTY) == 1:
+                for idx in combo:
+                    if board[idx] == self.EMPTY:
+                        moves.append(idx)
+                        break
+        return moves
+
+    # Helper: fork moves for player (moves that create >=2 immediate wins next turn)
+    def _fork_moves(self, board, player):
+        forks = []
+        avail = [i for i, v in enumerate(board) if v == self.EMPTY]
+        for m in avail:
+            board2 = board[:]
+            board2[m] = player
+            wins_next = set(self._immediate_winning_moves(board2, player))
+            if len(wins_next) >= 2:
+                forks.append(m)
+        return forks
 
     def make_move(self, board):
-        try:
-            # Basic validation
-            if not isinstance(board, (list, tuple)) or len(board) != 9:
-                available = [i for i, s in enumerate(board) if s == ' '] if isinstance(board, (list, tuple)) else []
-                return random.choice(available) if available else None
+        my = self.symbol
+        opp = 'O' if my == 'X' else 'X'
+        available = [i for i, v in enumerate(board) if v == self.EMPTY]
+        if not available:
+            return 0  # fallback
 
-            board_t = tuple(board)
-            my = self.symbol
-            opp = O_MARK if my == X_MARK else X_MARK  # use constants from game module
-            # determine whose turn it is (X moves when counts equal)
-            x_count = board_t.count(X_MARK)
-            o_count = board_t.count(O_MARK)
-            current_turn = X_MARK if x_count == o_count else O_MARK
+        # 1) Immediate win
+        my_wins = self._immediate_winning_moves(board, my)
+        if my_wins:
+            return random.choice(list(set(my_wins)))
 
-            win_cons = (
-                (0, 1, 2), (3, 4, 5), (6, 7, 8),
-                (0, 3, 6), (1, 4, 7), (2, 5, 8),
-                (0, 4, 8), (2, 4, 6),
-            )
+        # 2) Block opponent immediate wins
+        opp_wins = self._immediate_winning_moves(board, opp)
+        if opp_wins:
+            # If there's a single unique block, play it
+            uniq = list(set(opp_wins))
+            if len(uniq) == 1:
+                return uniq[0]
+            # Otherwise pick the block that appears most often (blocks the most threats)
+            counts = {}
+            for pos in opp_wins:
+                counts[pos] = counts.get(pos, 0) + 1
+            max_count = max(counts.values())
+            best = [pos for pos, cnt in counts.items() if cnt == max_count and board[pos] == self.EMPTY]
+            if best:
+                return random.choice(best)
 
-            def check_winner(bt):
-                for a, b, c in win_cons:
-                    v = bt[a]
-                    if v != ' ' and v == bt[b] == bt[c]:
-                        return v
-                if ' ' not in bt:
-                    return 'DRAW'
-                return None
+        # 3) Create fork if possible
+        my_forks = self._fork_moves(board, my)
+        if my_forks:
+            return random.choice(my_forks)
 
-            available_moves = [i for i, s in enumerate(board_t) if s == ' ']
-            if not available_moves:
-                return None
+        # 4) Block opponent forks
+        opp_forks = self._fork_moves(board, opp)
+        if opp_forks:
+            uniq_forks = list(set(opp_forks))
+            # If only one fork position, occupy it if possible
+            if len(uniq_forks) == 1 and board[uniq_forks[0]] == self.EMPTY:
+                return uniq_forks[0]
+            # Try to create a immediate threat forcing opponent to respond
+            threat_moves = []
+            for m in available:
+                board2 = board[:]
+                board2[m] = my
+                if len(set(self._immediate_winning_moves(board2, my))) >= 1:
+                    threat_moves.append(m)
+            if threat_moves:
+                return random.choice(threat_moves)
+            # Otherwise choose a move that reduces opponent fork count the most
+            best_m = None
+            best_blocked = -1
+            original_forks = set(uniq_forks)
+            for m in available:
+                board2 = board[:]
+                board2[m] = my
+                remaining = set(self._fork_moves(board2, opp))
+                blocked = len(original_forks) - len(remaining)
+                if blocked > best_blocked:
+                    best_blocked = blocked
+                    best_m = m
+            if best_m is not None:
+                return best_m
 
-            # Quick immediate win (take it)
-            for m in available_moves:
-                nb = list(board_t)
-                nb[m] = my
-                if check_winner(tuple(nb)) == my:
-                    return m
+        # 5) Take center if available
+        center = 12
+        if center in available:
+            return center
 
-            # Detect opponent immediate winning squares
-            opp_wins = set()
-            for m in available_moves:
-                nb = list(board_t)
-                nb[m] = opp
-                if check_winner(tuple(nb)) == opp:
-                    opp_wins.add(m)
-            # If opponent has exactly one immediate winning move, block it
-            if len(opp_wins) == 1:
-                block = next(iter(opp_wins))
-                # prefer center/corner when blocking (if multiple equivalent choices exist)
-                if block in available_moves:
-                    return block
+        # 6) Heuristic: prefer moves that create threats and maximize open lines for us while minimizing opponent's
+        best_score = -10**9
+        best_moves = []
+        for m in available:
+            board2 = board[:]
+            board2[m] = my
+            my_two_after = len(set(self._immediate_winning_moves(board2, my)))
+            # Count open lines containing m for both players (after our move)
+            my_open = 0
+            opp_open = 0
+            for combo in self.cell_to_combos[m]:
+                if not any(board2[i] == opp for i in combo):
+                    my_open += 1
+                if not any(board2[i] == my for i in combo):
+                    opp_open += 1
+            # Score weights chosen to prioritize immediate threats and open lines
+            score = my_two_after * 200 + my_open * 10 - opp_open * 8
+            # small randomness to break ties and avoid deterministic play
+            score += random.uniform(-1, 1)
+            if score > best_score:
+                best_score = score
+                best_moves = [m]
+            elif abs(score - best_score) < 1e-6:
+                best_moves.append(m)
 
-            # Minimax with caching. Utility: (outcome, tie_metric)
-            # outcome: 1 = win for self, 0 = draw, -1 = loss for self
-            # tie_metric: for wins/losses use max(empty_cells, 3) (matches competition tie-breaker); for draws 0
-            @lru_cache(maxsize=None)
-            def minimax(bt, turn):
-                # Terminal check
-                for a, b, c in win_cons:
-                    v = bt[a]
-                    if v != ' ' and v == bt[b] == bt[c]:
-                        if v == my:
-                            return (1, max(bt.count(' '), 3))
-                        else:
-                            return (-1, max(bt.count(' '), 3))
-                if ' ' not in bt:
-                    return (0, 0)
+        if best_moves:
+            return random.choice(best_moves)
 
-                maximizing = (turn == my)
-                next_turn = O_MARK if turn == X_MARK else X_MARK
-
-                best = None
-                # iterate possible moves
-                for i, spot in enumerate(bt):
-                    if spot == ' ':
-                        nb = list(bt)
-                        nb[i] = turn
-                        child = minimax(tuple(nb), next_turn)
-                        if best is None:
-                            best = child
-                        else:
-                            a_score, a_tb = child
-                            b_score, b_tb = best
-                            if a_score != b_score:
-                                choose_a = (a_score > b_score) if maximizing else (a_score < b_score)
-                            else:
-                                # tie-break on tie_metric, orientation depends on maximizing/minimizing
-                                if a_score == 1:
-                                    choose_a = (a_tb > b_tb) if maximizing else (a_tb < b_tb)
-                                elif a_score == -1:
-                                    choose_a = (a_tb < b_tb) if maximizing else (a_tb > b_tb)
-                                else:  # draw
-                                    choose_a = (a_tb > b_tb) if maximizing else (a_tb < b_tb)
-                            if choose_a:
-                                best = child
-                return best
-
-            # Evaluate each candidate move (place my symbol and then let opponent move)
-            results = []
-            for m in available_moves:
-                nb = list(board_t)
-                nb[m] = my
-                win = check_winner(tuple(nb))
-                if win == my:
-                    tie = max(nb.count(' '), 3)
-                    results.append((m, (1, tie)))
-                else:
-                    # opponent moves next
-                    res = minimax(tuple(nb), opp)
-                    results.append((m, res))
-
-            # Choose best move according to minimax results (we are the maximizer at this decision)
-            best_move = None
-            best_val = None
-            for m, val in results:
-                if best_val is None:
-                    best_move, best_val = m, val
-                    continue
-                a_score, a_tb = val
-                b_score, b_tb = best_val
-                if a_score != b_score:
-                    choose = a_score > b_score
-                else:
-                    if a_score == 1:
-                        choose = a_tb > b_tb
-                    elif a_score == -1:
-                        choose = a_tb < b_tb
-                    else:
-                        choose = a_tb > b_tb
-                if choose:
-                    best_move, best_val = m, val
-
-            # Tie-break among equal best moves: prefer center, then corners, then edges
-            candidates = [m for m, v in results if v == best_val]
-            if len(candidates) > 1:
-                if 4 in candidates:
-                    return 4
-                for c in (0, 2, 6, 8):
-                    if c in candidates:
-                        return c
-                return candidates[0]
-
-            return best_move
-
-        except Exception:
-            # On any unexpected error, return a random valid move
-            pass
-
-        moves = [i for i, s in enumerate(board) if s == ' ']
-        return random.choice(moves) if moves else None
+        # Fallback (shouldn't reach often)
+        return random.choice(available)

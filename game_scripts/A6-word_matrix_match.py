@@ -584,6 +584,8 @@ def main():
     print(f"SCORE:Agent-1={match_stats['Agent-1']['score']},Agent-2={match_stats['Agent-2']['score']}")
     print(f"WINS:Agent-1={match_stats['Agent-1']['wins']},Agent-2={match_stats['Agent-2']['wins']}")
     print(f"DRAWS:{match_stats['Agent-1']['draws']}")
+    print(f"STATS:Agent-1={match_stats['Agent-1']}")
+    print(f"STATS:Agent-2={match_stats['Agent-2']}")
 
     print("--- MATCH STATISTICS ---")
     print(f"Agent-1 make_move_crash: {match_stats['Agent-1']['make_move_crash']}")
@@ -596,7 +598,6 @@ def main():
     print(f"Agent-2 Timeouts: {match_stats['Agent-2']['timeout']}")
     print(f"Agent-1 Invalid: {match_stats['Agent-1']['invalid']}")
     print(f"Agent-2 Invalid: {match_stats['Agent-2']['invalid']}")
-    print(f"STATS:Agent-1={match_stats['Agent-1']},Agent-2={match_stats['Agent-2']}")
 
 
 if __name__ == "__main__":

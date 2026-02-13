@@ -2,293 +2,211 @@
 Agent Code: A5-Connect4RandomStart
 Model: minimax/minimax-m2.5@preset/fp8
 Run: 1
-Generated: 2026-02-13 14:10:12
+Generated: 2026-02-13 22:26:38
 """
 
-import sys
-from Connect4Game import Connect4Game   # assuming the engine is in the same folder
+import copy
 
 import random
-import sys
+import copy
 
-# ----------------------------------------------------------------------
-#  Connect4Agent
-# ----------------------------------------------------------------------
 class Connect4Agent:
-    """
-    A Connect 4 player that uses:
-        * depth‑limited Minimax (depth = 5, adjustable)
-        * α‑β pruning
-        * a hand‑crafted heuristic that rewards centre‑column control,
-          3‑in‑a‑row, 2‑in‑a‑row and penalises opponent threats.
-    """
-
-    ROWS = 6
-    COLS = 7
-    EMPTY = ' '
-    INF = 1_000_000          # large score that dwarfs any heuristic
-
-    def __init__(self, name: str, symbol: str):
-        """
-        :param name:   agent name (used by the competition harness)
-        :param symbol: 'R' or 'Y'
-        """
+    def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
-        self.opponent = 'Y' if symbol == 'R' else 'R'
-
-    # ------------------------------------------------------------------
-    #  Public API – called by the game engine
-    # ------------------------------------------------------------------
+        self.depth = 5  # Search depth
+    
     def make_move(self, board):
-        """
-        Choose the next column (0‑6) in which to drop a disc.
-
-        The board is a copy of the 6×7 grid, so we may mutate it locally
-        during the search.
-        """
-        # columns that are not full
-        valid = [c for c in range(self.COLS) if board[0][c] == self.EMPTY]
-
-        # sanity (should never happen)
-        if not valid:
+        # Get valid columns (not full)
+        valid_cols = [c for c in range(7) if board[0][c] == ' ']
+        
+        if not valid_cols:
             return 0
-
-        # ------------------------------------------------------------------
-        #  Quick win – if any move wins immediately, take it.
-        # ------------------------------------------------------------------
-        for col in valid:
-            row = self._drop_row(board, col)
-            if row is None:
-                continue
-            tmp = [r[:] for r in board]
-            tmp[row][col] = self.symbol
-            if self._winner(tmp) == self.symbol:
+        
+        # If only one valid move, take it
+        if len(valid_cols) == 1:
+            return valid_cols[0]
+        
+        # Determine opponent symbol
+        opponent = 'Y' if self.symbol == 'R' else 'R'
+        
+        # Use iterative deepening minimax
+        best_col = valid_cols[0]
+        best_score = float('-inf')
+        
+        # Order moves: center first, then expanding outward
+        valid_cols.sort(key=lambda x: abs(x - 3))
+        
+        for col in valid_cols:
+            # Make move
+            new_board = self.drop_disc(board, col, self.symbol)
+            
+            # Check if this move wins immediately
+            if self.check_win(new_board, self.symbol):
                 return col
-
-        # ------------------------------------------------------------------
-        #  Otherwise run minimax.
-        # ------------------------------------------------------------------
-        # depth can be increased if the agent gets more time – 5 works comfortably
-        depth = 5
-        best_move, _ = self._minimax_root(board, depth, valid)
-        return best_move
-
-    # ------------------------------------------------------------------
-    #  Minimax with α‑β pruning
-    # ------------------------------------------------------------------
-    def _minimax_root(self, board, depth, valid_cols):
-        """Start the recursive search (our turn, i.e. maximizing)."""
-        # order moves: columns closest to the centre are tried first – better pruning
-        ordered = sorted(valid_cols, key=lambda c: abs(c - 3))
-
-        best_score = -float('inf')
-        best_col = ordered[0]
-        alpha = -float('inf')
-        beta = float('inf')
-
-        for col in ordered:
-            row = self._drop_row(board, col)
-            if row is None:
-                continue
-            new_board = [r[:] for r in board]
-            new_board[row][col] = self.symbol
-            # immediate win?
-            if self._winner(new_board) == self.symbol:
-                # highest possible score – no need to search further
-                return col, self.INF
-
-            score = self._minimax(new_board, depth - 1, alpha, beta, False)
-            if score > best_score:
-                best_score = score
-                best_col = col
-            alpha = max(alpha, score)
-
-        # tie‑break: shuffle among equally good moves
-        equally_good = [c for c in ordered
-                        if self._score_of_move(board, c, depth) == best_score]
-        if len(equally_good) > 1:
-            best_col = random.choice(equally_good)
-
-        return best_col, best_score
-
-    def _minimax(self, board, depth, alpha, beta, maximizing):
-        """Recursive minimax (depth‑first)."""
-        # terminal tests
-        win = self._winner(board)
-        if win == self.symbol:
-            return self.INF               # we win
-        if win == self.opponent:
-            return -self.INF              # opponent wins
-        if depth == 0 or self._is_full(board):
-            return self._heuristic(board)
-
-        valid = [c for c in range(self.COLS) if board[0][c] == self.EMPTY]
-        # move ordering – centre first
-        ordered = sorted(valid, key=lambda c: abs(c - 3))
-
-        if maximizing:          # our turn
-            max_eval = -float('inf')
-            for col in ordered:
-                row = self._drop_row(board, col)
-                if row is None:
-                    continue
-                new_board = [r[:] for r in board]
-                new_board[row][col] = self.symbol
-                if self._winner(new_board) == self.symbol:
-                    # win as soon as possible – a tiny penalty for depth
-                    return self.INF - 1
-                eval_score = self._minimax(new_board, depth - 1,
-                                            alpha, beta, False)
+            
+            # Check if opponent wins next (must block)
+            for opp_col in range(7):
+                if new_board[0][opp_col] == ' ':
+                    opp_board = self.drop_disc(new_board, opp_col, opponent)
+                    if self.check_win(opp_board, opponent):
+                        # Must block this
+                        best_col = col
+                        best_score = float('inf')
+                        break
+            else:
+                # Not an immediate block, do full evaluation
+                score = self.minimax(new_board, self.depth - 1, float('-inf'), float('inf'), False, opponent)
+                
+                if score > best_score:
+                    best_score = score
+                    best_col = col
+        
+        return best_col
+    
+    def drop_disc(self, board, col, disc):
+        """Return a new board with disc dropped in column"""
+        new_board = [row[:] for row in board]
+        
+        for r in range(5, -1, -1):
+            if new_board[r][col] == ' ':
+                new_board[r][col] = disc
+                return new_board
+        
+        return new_board  # Column full (shouldn't happen)
+    
+    def check_win(self, board, disc):
+        """Check if disc has won"""
+        # Horizontal
+        for r in range(6):
+            for c in range(4):
+                if board[r][c] == board[r][c+1] == board[r][c+2] == board[r][c+3] == disc:
+                    return True
+        
+        # Vertical
+        for r in range(3):
+            for c in range(7):
+                if board[r][c] == board[r+1][c] == board[r+2][c] == board[r+3][c] == disc:
+                    return True
+        
+        # Diagonal /
+        for r in range(3, 6):
+            for c in range(4):
+                if board[r][c] == board[r-1][c+1] == board[r-2][c+2] == board[r-3][c+3] == disc:
+                    return True
+        
+        # Diagonal \
+        for r in range(3):
+            for c in range(4):
+                if board[r][c] == board[r+1][c+1] == board[r+2][c+2] == board[r+3][c+3] == disc:
+                    return True
+        
+        return False
+    
+    def check_terminal(self, board):
+        """Check if board is terminal (win or draw)"""
+        if self.check_win(board, self.symbol):
+            return True
+        if self.check_win(board, 'Y' if self.symbol == 'R' else 'R'):
+            return True
+        return all(board[0][c] != ' ' for c in range(7))
+    
+    def evaluate_window(self, window, disc):
+        """Evaluate a window of 4 cells"""
+        score = 0
+        opp_disc = 'Y' if disc == 'R' else 'R'
+        
+        count_disc = window.count(disc)
+        count_opp = window.count(opp_disc)
+        count_empty = window.count(' ')
+        
+        # Winning line
+        if count_disc == 4:
+            score += 100
+        # Three with open end
+        elif count_disc == 3 and count_empty == 1:
+            score += 5
+        # Two with open ends
+        elif count_disc == 2 and count_empty == 2:
+            score += 2
+        
+        # Block opponent's three
+        if count_opp == 3 and count_empty == 1:
+            score -= 4
+        # Block opponent's two
+        elif count_opp == 2 and count_empty == 2:
+            score -= 1
+        
+        return score
+    
+    def evaluate_board(self, board, disc):
+        """Evaluate entire board"""
+        score = 0
+        
+        # Center column preference
+        center_col = 3
+        center_count = sum(1 for r in range(6) if board[r][center_col] == disc)
+        score += center_count * 3
+        
+        # Horizontal windows
+        for r in range(6):
+            for c in range(4):
+                window = [board[r][c+i] for i in range(4)]
+                score += self.evaluate_window(window, disc)
+        
+        # Vertical windows
+        for r in range(3):
+            for c in range(7):
+                window = [board[r+i][c] for i in range(4)]
+                score += self.evaluate_window(window, disc)
+        
+        # Diagonal / windows
+        for r in range(3, 6):
+            for c in range(4):
+                window = [board[r-i][c+i] for i in range(4)]
+                score += self.evaluate_window(window, disc)
+        
+        # Diagonal \ windows
+        for r in range(3):
+            for c in range(4):
+                window = [board[r+i][c+i] for i in range(4)]
+                score += self.evaluate_window(window, disc)
+        
+        return score
+    
+    def minimax(self, board, depth, alpha, beta, maximizing, disc):
+        """Minimax with alpha-beta pruning"""
+        valid_cols = [c for c in range(7) if board[0][c] == ' ']
+        
+        # Terminal states
+        if depth == 0 or self.check_terminal(board):
+            if self.check_win(board, self.symbol):
+                return float('inf')
+            if self.check_win(board, 'Y' if self.symbol == 'R' else 'R'):
+                return float('-inf')
+            if all(board[0][c] != ' ' for c in range(7)):
+                return 0
+            return self.evaluate_board(board, self.symbol)
+        
+        if maximizing:
+            max_eval = float('-inf')
+            for col in valid_cols:
+                new_board = self.drop_disc(board, col, disc)
+                eval_score = self.minimax(new_board, depth - 1, alpha, beta, False, 
+                                         'Y' if disc == 'R' else 'R')
                 max_eval = max(max_eval, eval_score)
                 alpha = max(alpha, eval_score)
                 if beta <= alpha:
                     break
             return max_eval
-        else:                   # opponent's turn (minimizing)
+        else:
             min_eval = float('inf')
-            for col in ordered:
-                row = self._drop_row(board, col)
-                if row is None:
-                    continue
-                new_board = [r[:] for r in board]
-                new_board[row][col] = self.opponent
-                if self._winner(new_board) == self.opponent:
-                    return -self.INF + 1
-                eval_score = self._minimax(new_board, depth - 1,
-                                            alpha, beta, True)
+            for col in valid_cols:
+                new_board = self.drop_disc(board, col, disc)
+                eval_score = self.minimax(new_board, depth - 1, alpha, beta, True,
+                                         'Y' if disc == 'R' else 'R')
                 min_eval = min(min_eval, eval_score)
                 beta = min(beta, eval_score)
                 if beta <= alpha:
                     break
             return min_eval
-
-    # ------------------------------------------------------------------
-    #  Helpers – board manipulation & evaluation
-    # ------------------------------------------------------------------
-    def _drop_row(self, board, col):
-        """Return the row index where a disc would land in column col,
-           or None if the column is already full."""
-        for r in range(self.ROWS - 1, -1, -1):
-            if board[r][col] == self.EMPTY:
-                return r
-        return None
-
-    def _winner(self, board):
-        """Return 'R', 'Y' if there is a four‑in‑a‑row, otherwise None."""
-        # Horizontal
-        for r in range(self.ROWS):
-            for c in range(self.COLS - 3):
-                w = board[r][c]
-                if w != self.EMPTY and w == board[r][c+1] == board[r][c+2] == board[r][c+3]:
-                    return w
-        # Vertical
-        for r in range(self.ROWS - 3):
-            for c in range(self.COLS):
-                w = board[r][c]
-                if w != self.EMPTY and w == board[r+1][c] == board[r+2][c] == board[r+3][c]:
-                    return w
-        # Diagonal “\”
-        for r in range(self.ROWS - 3):
-            for c in range(self.COLS - 3):
-                w = board[r][c]
-                if w != self.EMPTY and w == board[r+1][c+1] == board[r+2][c+2] == board[r+3][c+3]:
-                    return w
-        # Diagonal “/”
-        for r in range(3, self.ROWS):
-            for c in range(self.COLS - 3):
-                w = board[r][c]
-                if w != self.EMPTY and w == board[r-1][c+1] == board[r-2][c+2] == board[r-3][c+3]:
-                    return w
-        return None
-
-    def _is_full(self, board):
-        return all(board[0][c] != self.EMPTY for c in range(self.COLS))
-
-    # ------------------------------------------------------------------
-    #  Heuristic evaluation (our perspective)
-    # ------------------------------------------------------------------
-    def _heuristic(self, board):
-        """Score the board for the player using self.symbol."""
-        score = 0
-
-        # 1️⃣  Centre column is most valuable
-        centre = 3
-        centre_cnt = sum(1 for r in range(self.ROWS) if board[r][centre] == self.symbol)
-        score += centre_cnt * 3
-
-        # 2️⃣  Examine every length‑4 window
-        for r in range(self.ROWS):
-            for c in range(self.COLS - 3):
-                window = [board[r][c+i] for i in range(4)]
-                score += self._score_window(window)
-
-        for r in range(self.ROWS - 3):
-            for c in range(self.COLS):
-                window = [board[r+i][c] for i in range(4)]
-                score += self._score_window(window)
-
-        for r in range(self.ROWS - 3):
-            for c in range(self.COLS - 3):
-                window = [board[r+i][c+i] for i in range(4)]
-                score += self._score_window(window)
-
-        for r in range(3, self.ROWS):
-            for c in range(self.COLS - 3):
-                window = [board[r-i][c+i] for i in range(4)]
-                score += self._score_window(window)
-
-        return score
-
-    def _score_window(self, win):
-        """Score a single 4‑cell window (list of 4 symbols)."""
-        my = sum(1 for c in win if c == self.symbol)
-        op = sum(1 for c in win if c == self.opponent)
-        empty = sum(1 for c in win if c == self.EMPTY)
-
-        # Terminal states are handled elsewhere, but guard anyway
-        if op == 4:
-            return -100_000
-        if my == 4:
-            return 100_000
-
-        pts = 0
-
-        # Our own opportunities
-        if my == 3 and empty == 1:
-            pts += 5
-        elif my == 2 and empty == 2:
-            pts += 2
-
-        # Opponent threats – we prefer to block them
-        if op == 3 and empty == 1:
-            pts -= 4
-
-        return pts
-
-    # ------------------------------------------------------------------
-    #  Helper used only for tie‑breaking (not essential)
-    # ------------------------------------------------------------------
-    def _score_of_move(self, board, col, depth):
-        """Quick static evaluation of a single move – used for tie‑break."""
-        row = self._drop_row(board, col)
-        if row is None:
-            return -float('inf')
-        tmp = [r[:] for r in board]
-        tmp[row][col] = self.symbol
-        return self._heuristic(tmp)
-
-
-# ----------------------------------------------------------------------
-#  Example usage (you can delete this part when submitting)
-# ----------------------------------------------------------------------
-if __name__ == "__main__":
-    # Very simple test: two agents play each other
-    from Connect4Game import Connect4Game   # assuming the engine is in the same folder
-
-    agent_red = Connect4Agent("RedBot", "R")
-    agent_yellow = Connect4Agent("YellowBot", "Y")
-
-    game = Connect4Game()
-    result = game.play_game(agent_red, agent_yellow)
-    print(f"Game finished: {result}")

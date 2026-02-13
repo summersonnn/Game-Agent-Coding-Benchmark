@@ -2,7 +2,7 @@
 Agent Code: A2-TicTacToe
 Model: minimax/minimax-m2.5@preset/fp8
 Run: 2
-Generated: 2026-02-13 14:10:12
+Generated: 2026-02-13 14:53:21
 """
 
 
@@ -12,80 +12,88 @@ import random
 class TicTacToeAgent:
     def __init__(self, name, symbol):
         self.name = name
-        self.symbol = symbol  # 'X' or 'O'
+        self.symbol = symbol
         self.opponent = 'O' if symbol == 'X' else 'X'
+        self.win_lines = self._generate_win_lines()
+        self.center_squares = [6, 7, 8, 11, 12, 13, 16, 17, 18]
+    
+    def _generate_win_lines(self):
+        lines = []
+        # Rows
+        for r in range(5):
+            for c in range(3):
+                lines.append((r * 5 + c, r * 5 + c + 1, r * 5 + c + 2))
+        # Columns
+        for c in range(5):
+            for r in range(3):
+                lines.append((r * 5 + c, (r + 1) * 5 + c, (r + 2) * 5 + c))
+        # Diagonals (down-right)
+        for r in range(3):
+            for c in range(3):
+                lines.append((r * 5 + c, (r + 1) * 5 + c + 1, (r + 2) * 5 + c + 2))
+        # Diagonals (down-left)
+        for r in range(3):
+            for c in range(2, 5):
+                lines.append((r * 5 + c, (r + 1) * 5 + c - 1, (r + 2) * 5 + c - 2))
+        return lines
+    
+    def _get_line_state(self, line, board):
+        counts = {self.symbol: 0, self.opponent: 0, ' ': 0}
+        for idx in line:
+            counts[board[idx]] += 1
+        return counts
     
     def make_move(self, board):
-        # First, check if there's an immediate winning move
-        for move in self.get_available_moves(board):
-            if self.would_win(board, move, self.symbol):
-                return move
+        empty_moves = [i for i in range(25) if board[i] == ' ']
         
-        # Second, check if opponent is about to win and block
-        for move in self.get_available_moves(board):
-            if self.would_win(board, move, self.opponent):
-                return move
+        if not empty_moves:
+            return None
         
-        # Use minimax to find the best move
-        best_score = float('-inf')
-        best_move = None
-        for move in self.get_available_moves(board):
-            new_board = board[:]
-            new_board[move] = self.symbol
-            score = self.minimax(new_board, 0, False, float('-inf'), float('inf'))
+        # Priority 1: Check for winning move
+        for move in empty_moves:
+            for line in self.win_lines:
+                if move in line and all(board[idx] == self.symbol for idx in line if idx != move):
+                    # This move completes a win
+                    if all(board[idx] == self.symbol or idx == move for idx in line):
+                        return move
+        
+        # Priority 2: Check for blocking move
+        for move in empty_moves:
+            for line in self.win_lines:
+                if move in line:
+                    # Check if opponent would win with this move
+                    would_win = True
+                    for idx in line:
+                        if idx != move and board[idx] != self.opponent:
+                            would_win = False
+                            break
+                    if would_win:
+                        return move
+        
+        # Priority 3: Evaluate positions using heuristic scoring
+        best_score = -1
+        best_move = empty_moves[0]
+        
+        for move in empty_moves:
+            score = 0
+            for line in self.win_lines:
+                if move in line:
+                    line_state = self._get_line_state(line, board)
+                    
+                    # Prioritize moves that create two in a row with open end
+                    if line_state[self.symbol] == 2 and line_state[' '] == 1:
+                        score += 10
+                    # Block opponent's two in a row
+                    elif line_state[self.opponent] == 2 and line_state[' '] == 1:
+                        score += 5
+                    # Slight preference for center squares
+                    elif move in self.center_squares:
+                        score += 2
+            
             if score > best_score:
                 best_score = score
                 best_move = move
+            elif score == best_score and move in self.center_squares:
+                best_move = move
         
-        return best_move if best_move is not None else random.choice(self.get_available_moves(board))
-    
-    def get_available_moves(self, board):
-        return [i for i in range(9) if board[i] == ' ']
-    
-    def would_win(self, board, move, player):
-        new_board = board[:]
-        new_board[move] = player
-        return self.check_winner(new_board) == player
-    
-    def check_winner(self, board):
-        win_combinations = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),
-            (0, 4, 8), (2, 4, 6)
-        ]
-        for a, b, c in win_combinations:
-            if board[a] == board[b] == board[c] != ' ':
-                return board[a]
-        return None
-    
-    def minimax(self, board, depth, is_maximizing, alpha, beta):
-        winner = self.check_winner(board)
-        if winner == self.symbol:
-            return 10 - depth
-        if winner == self.opponent:
-            return depth - 10
-        if not self.get_available_moves(board):
-            return 0
-        
-        if is_maximizing:
-            max_eval = float('-inf')
-            for move in self.get_available_moves(board):
-                new_board = board[:]
-                new_board[move] = self.symbol
-                eval = self.minimax(new_board, depth + 1, False, alpha, beta)
-                max_eval = max(max_eval, eval)
-                alpha = max(alpha, eval)
-                if beta <= alpha:
-                    break
-            return max_eval
-        else:
-            min_eval = float('inf')
-            for move in self.get_available_moves(board):
-                new_board = board[:]
-                new_board[move] = self.opponent
-                eval = self.minimax(new_board, depth + 1, True, alpha, beta)
-                min_eval = min(min_eval, eval)
-                beta = min(beta, eval)
-                if beta <= alpha:
-                    break
-            return min_eval
+        return best_move

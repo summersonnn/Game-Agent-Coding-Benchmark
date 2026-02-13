@@ -2,7 +2,7 @@
 Agent Code: A6-WordMatrixGame
 Model: x-ai/grok-code-fast-1
 Run: 2
-Generated: 2026-02-12 19:13:59
+Generated: 2026-02-13 22:39:54
 """
 
 
@@ -17,9 +17,6 @@ class WordMatrixAgent:
         """
         self.name = name
         self.dictionary = load_words()  # Returns set of ~466k lowercase words
-        # Pre-process: filter and sort short words by length for efficiency
-        self.short_words = [w for w in self.dictionary if len(w) <= 12]
-        self.short_words.sort(key=len)
 
     def make_move(self, board, scores, total_passes):
         """
@@ -42,50 +39,49 @@ class WordMatrixAgent:
             - A tuple (path, word) where path is a list of (row, col) coordinates.
             - OR the string "PASS" to skip turn.
         """
-        def is_subsequence(sub, full):
-            """Check if sub is a subsequence of full."""
-            i = 0
-            for char in full:
-                if i < len(sub) and char == sub[i]:
-                    i += 1
-            return i == len(sub)
-
-        def get_all_paths(board):
-            """Generate all valid paths up to length 8."""
-            paths = []
-            def dfs(current_path, visited):
-                if len(current_path) >= 2:
-                    paths.append(current_path[:])
-                if len(current_path) >= 8:
-                    return
-                last_r, last_c = current_path[-1]
-                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                    nr, nc = last_r + dr, last_c + dc
-                    if 0 <= nr < 4 and 0 <= nc < 4 and (nr, nc) not in visited and board[nr][nc] != "":
-                        visited.add((nr, nc))
-                        current_path.append((nr, nc))
-                        dfs(current_path, visited)
-                        current_path.pop()
-                        visited.remove((nr, nc))
-            for r in range(4):
-                for c in range(4):
-                    if board[r][c] != "":
-                        dfs([(r, c)], set([(r, c)]))
-            return paths
-
-        paths = get_all_paths(board)
-        best_score = -float('inf')  # Initialize to negative infinity
-        best_move = "PASS"
-        for path in paths:
-            seq = [board[r][c] for r, c in path]
-            for word in self.short_words:
-                if len(word) < len(seq) or len(word) > 2 * len(seq):
-                    continue
-                if is_subsequence(seq, word):
-                    cleared = 2 * len(seq) - len(word)
-                    score = 10 + 10 * cleared
-                    if score > best_score:
-                        best_score = score
-                        best_move = (path, word)
-                    break  # Take the shortest valid word for this path
-        return best_move
+        # Generate all valid paths of length 2-8 where the joined letters form a word in the dictionary
+        candidates = self._find_valid_paths(board)
+        
+        if candidates:
+            # Choose the path with the longest length (to clear more cells), pick the first if ties
+            candidates.sort(key=lambda x: len(x[0]), reverse=True)
+            best_path, best_word = candidates[0]
+            return (best_path, best_word)
+        else:
+            # No valid move found, pass
+            return "PASS"
+    
+    def _find_valid_paths(self, board):
+        """
+        Find all paths of length 2-8 where:
+        - Path is valid: adjacent (up/down/left/right), no repeats, no empty cells.
+        - The joined letters form a word exactly (len(word) == len(path)), and it's in the dictionary.
+        """
+        paths = []
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        
+        def dfs(current_path, visited):
+            if 2 <= len(current_path) <= 8:
+                letters = [board[r][c] for r, c in current_path]
+                word = ''.join(letters)
+                if word in self.dictionary:
+                    paths.append((current_path[:], word))
+            if len(current_path) >= 8:
+                return
+            last_r, last_c = current_path[-1]
+            for dr, dc in directions:
+                nr, nc = last_r + dr, last_c + dc
+                if 0 <= nr < 4 and 0 <= nc < 4 and (nr, nc) not in visited and board[nr][nc] != "":
+                    visited.add((nr, nc))
+                    current_path.append((nr, nc))
+                    dfs(current_path, visited)
+                    current_path.pop()
+                    visited.remove((nr, nc))
+        
+        for r in range(4):
+            for c in range(4):
+                if board[r][c] != "":
+                    visited = set([(r, c)])
+                    dfs([(r, c)], visited)
+        
+        return paths

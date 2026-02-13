@@ -2,98 +2,177 @@
 Agent Code: A2-TicTacToe
 Model: moonshotai/kimi-k2.5
 Run: 1
-Generated: 2026-02-11 20:47:17
+Generated: 2026-02-13 14:53:21
 """
 
 
+
+import random
 
 class TicTacToeAgent:
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
         self.opponent = 'O' if symbol == 'X' else 'X'
-        # Winning combinations
-        self.win_conditions = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),
-            (0, 4, 8), (2, 4, 6)
-        ]
+        self.lines = self._generate_lines()
+        # Precompute which lines contain each cell for faster lookup
+        self.cell_to_lines = [[] for _ in range(25)]
+        for i, line in enumerate(self.lines):
+            for cell in line:
+                self.cell_to_lines[cell].append(i)
         
+    def _generate_lines(self):
+        """Generate all possible winning lines (3-in-a-row) on 5x5 board."""
+        lines = []
+        # Horizontal lines: 5 rows × 3 positions per row
+        for r in range(5):
+            base = r * 5
+            for c in range(3):
+                lines.append([base + c, base + c + 1, base + c + 2])
+        # Vertical lines: 5 cols × 3 positions per col
+        for c in range(5):
+            for r in range(3):
+                lines.append([r * 5 + c, (r + 1) * 5 + c, (r + 2) * 5 + c])
+        # Diagonal down-right: 3×3 grid of starting positions
+        for r in range(3):
+            for c in range(3):
+                start = r * 5 + c
+                lines.append([start, start + 6, start + 12])
+        # Diagonal down-left: 3×3 grid of starting positions
+        for r in range(3):
+            for c in range(2, 5):
+                start = r * 5 + c
+                lines.append([start, start + 4, start + 8])
+        return lines
+    
+    def _line_status(self, board, line):
+        """Analyze a line: returns (my_count, opp_count, empty_count, empty_pos)."""
+        my_count = opp_count = empty_count = 0
+        empty_pos = None
+        for pos in line:
+            cell = board[pos]
+            if cell == self.symbol:
+                my_count += 1
+            elif cell == self.opponent:
+                opp_count += 1
+            else:
+                empty_count += 1
+                empty_pos = pos
+        return my_count, opp_count, empty_count, empty_pos
+    
     def make_move(self, board):
-        available = [i for i, cell in enumerate(board) if cell == ' ']
-        
+        available = [i for i, x in enumerate(board) if x == ' ']
         if not available:
             return None
         
-        # Immediate win check
+        # Priority 1: Win immediately if possible
+        for move in available:
+            for line_idx in self.cell_to_lines[move]:
+                line = self.lines[line_idx]
+                my_c, opp_c, empty_c, empty_p = self._line_status(board, line)
+                if my_c == 2 and empty_c == 1 and empty_p == move:
+                    return move
+        
+        # Priority 2: Block opponent's immediate win
+        blocks = []
+        for move in available:
+            for line_idx in self.cell_to_lines[move]:
+                line = self.lines[line_idx]
+                my_c, opp_c, empty_c, empty_p = self._line_status(board, line)
+                if opp_c == 2 and empty_c == 1 and empty_p == move:
+                    blocks.append(move)
+                    break
+        if blocks:
+            return blocks[0]
+        
+        # Priority 3: Create a fork (two separate threats)
         for move in available:
             board[move] = self.symbol
-            if self._check_winner(board) == self.symbol:
-                return move
+            threat_ends = set()
+            for line_idx in self.cell_to_lines[move]:
+                line = self.lines[line_idx]
+                my_c, opp_c, empty_c, empty_p = self._line_status(board, line)
+                if my_c == 2 and empty_c == 1:
+                    threat_ends.add(empty_p)
             board[move] = ' '
+            if len(threat_ends) >= 2:
+                return move
         
-        # Immediate block check
+        # Priority 4: Block opponent's fork
+        opp_forks = []
         for move in available:
             board[move] = self.opponent
-            if self._check_winner(board) == self.opponent:
-                return move
+            threat_ends = set()
+            for line_idx in self.cell_to_lines[move]:
+                line = self.lines[line_idx]
+                my_c, opp_c, empty_c, empty_p = self._line_status(board, line)
+                if opp_c == 2 and empty_c == 1:
+                    threat_ends.add(empty_p)
             board[move] = ' '
+            if len(threat_ends) >= 2:
+                opp_forks.append(move)
         
-        # Minimax with alpha-beta pruning for optimal play
+        if opp_forks:
+            # Try to block fork while creating our own threat
+            for move in available:
+                if move in opp_forks:
+                    board[move] = self.symbol
+                    creates_threat = False
+                    for line_idx in self.cell_to_lines[move]:
+                        line = self.lines[line_idx]
+                        my_c, opp_c, empty_c, empty_p = self._line_status(board, line)
+                        if my_c == 2 and empty_c == 1:
+                            creates_threat = True
+                            break
+                    board[move] = ' '
+                    if creates_threat:
+                        return move
+            return opp_forks[0]
+        
+        # Priority 5: Heuristic evaluation for remaining moves
         best_score = -float('inf')
         best_move = available[0]
-        alpha = -float('inf')
-        beta = float('inf')
         
         for move in available:
+            score = 0
+            
+            # Simulate our move
             board[move] = self.symbol
-            score = self._minimax(board, 0, False, alpha, beta)
+            
+            # Bonus for creating threats
+            for line_idx in self.cell_to_lines[move]:
+                line = self.lines[line_idx]
+                my_c, opp_c, empty_c, empty_p = self._line_status(board, line)
+                if my_c == 2 and empty_c == 1:
+                    score += 10  # One threat
+            
             board[move] = ' '
+            
+            # Bonus for blocking opponent threats
+            board[move] = self.opponent
+            for line_idx in self.cell_to_lines[move]:
+                line = self.lines[line_idx]
+                my_c, opp_c, empty_c, empty_p = self._line_status(board, line)
+                if opp_c == 2 and empty_c == 1:
+                    score += 5  # Block opponent threat
+                    break
+            board[move] = ' '
+            
+            # Positional bonus: prefer center and cells in many active lines
+            r, c = divmod(move, 5)
+            # Manhattan distance from center (2,2)
+            dist = abs(r - 2) + abs(c - 2)
+            score += (4 - dist) * 2
+            
+            # Bonus for cells that participate in unblocked lines
+            for line_idx in self.cell_to_lines[move]:
+                line = self.lines[line_idx]
+                my_c, opp_c, empty_c, empty_p = self._line_status(board, line)
+                if opp_c == 0:  # Line not blocked by opponent
+                    score += 1
+            
             if score > best_score:
                 best_score = score
                 best_move = move
-            alpha = max(alpha, score)
-                
-        return best_move
-    
-    def _check_winner(self, board):
-        for a, b, c in self.win_conditions:
-            if board[a] == board[b] == board[c] and board[a] != ' ':
-                return board[a]
-        if ' ' not in board:
-            return 'DRAW'
-        return None
         
-    def _minimax(self, board, depth, is_maximizing, alpha, beta):
-        result = self._check_winner(board)
-        if result == self.symbol:
-            return 10 - depth
-        elif result == self.opponent:
-            return depth - 10
-        elif result == 'DRAW':
-            return 0
-            
-        if is_maximizing:
-            max_eval = -float('inf')
-            for i in range(9):
-                if board[i] == ' ':
-                    board[i] = self.symbol
-                    eval = self._minimax(board, depth + 1, False, alpha, beta)
-                    board[i] = ' '
-                    max_eval = max(max_eval, eval)
-                    alpha = max(alpha, eval)
-                    if beta <= alpha:
-                        break
-            return max_eval
-        else:
-            min_eval = float('inf')
-            for i in range(9):
-                if board[i] == ' ':
-                    board[i] = self.opponent
-                    eval = self._minimax(board, depth + 1, True, alpha, beta)
-                    board[i] = ' '
-                    min_eval = min(min_eval, eval)
-                    beta = min(beta, eval)
-                    if beta <= alpha:
-                        break
-            return min_eval
+        return best_move

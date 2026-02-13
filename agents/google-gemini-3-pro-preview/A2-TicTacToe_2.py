@@ -2,131 +2,251 @@
 Agent Code: A2-TicTacToe
 Model: google/gemini-3-pro-preview
 Run: 2
-Generated: 2026-02-11 20:47:17
+Generated: 2026-02-13 14:53:21
 """
 
+import time
 
+import random
+import time
 
 class TicTacToeAgent:
     """
-    An unbeatable Tic Tac Toe agent using the Minimax algorithm with Alpha-Beta pruning.
-    It prioritizes winning, then winning quickly, then drawing, and finally prolonging a loss.
+    A Tic Tac Toe agent that uses Iterative Deepening Minimax with Alpha-Beta pruning.
+    It includes optimizations for the specific 5x5 grid with 3-in-a-row rules,
+    such as precomputed winning lines, fast win checking, and heuristic move ordering.
     """
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
-        self.opponent_symbol = 'O' if symbol == 'X' else 'X'
-        self.cache = {}
+        self.opponent = 'O' if symbol == 'X' else 'X'
+        
+        # --- Precompute Winning Lines ---
+        # The game engine defines win conditions as 3-in-a-row on a 5x5 grid.
+        self.win_lines = []
+        
+        # Rows: 5 rows * 3 segments
+        for r in range(5):
+            for c in range(3):
+                start = r * 5 + c
+                self.win_lines.append((start, start + 1, start + 2))
+        
+        # Cols: 5 cols * 3 segments
+        for c in range(5):
+            for r in range(3):
+                start = r * 5 + c
+                self.win_lines.append((start, start + 5, start + 10))
+                
+        # Diagonals (down-right)
+        for r in range(3):
+            for c in range(3):
+                start = r * 5 + c
+                self.win_lines.append((start, start + 6, start + 12))
+                
+        # Diagonals (down-left)
+        for r in range(3):
+            for c in range(2, 5):
+                start = r * 5 + c
+                self.win_lines.append((start, start + 4, start + 8))
+                
+        # --- Lookup Tables for Optimization ---
+        # Map each cell to the lines that pass through it.
+        # This allows O(1) retrieval of relevant lines for win checking.
+        self.cell_lines = {i: [] for i in range(25)}
+        for line in self.win_lines:
+            for cell in line:
+                self.cell_lines[cell].append(line)
+
+        # Positional weights: Prefer cells involved in more winning lines (e.g., center)
+        self.pos_weights = [0] * 25
+        for line in self.win_lines:
+            for cell in line:
+                self.pos_weights[cell] += 1
 
     def make_move(self, board):
         """
-        Calculates the best move given the current board state.
+        Calculates the best move within the 1-second time limit.
         """
-        # Identify all valid empty cells
-        valid_moves = [i for i, cell in enumerate(board) if cell == ' ']
+        start_time = time.time()
+        time_limit = 0.92  # Leave a safety buffer
         
-        # If no moves available, return a sentinel (though game loop shouldn't call this)
-        if not valid_moves:
-            return -1
+        # Identify available moves
+        empties = [i for i, x in enumerate(board) if x == ' ']
+        if not empties:
+            return None 
+            
+        # Create a working copy of the board
+        search_board = board[:]
 
-        # Optimization: If it's the very first move of the game (X starts), take Center (4).
-        # This is a theoretically optimal opening and saves search time.
-        if len(valid_moves) == 9:
-            return 4
+        # 1. Immediate Win Check (Priority 1)
+        # If we can win now, do it.
+        for m in empties:
+            search_board[m] = self.symbol
+            if self.check_win_fast(search_board, m, self.symbol):
+                return m
+            search_board[m] = ' '
+            
+        # 2. Immediate Block Check (Priority 2)
+        # If opponent can win next, we must block.
+        blocks = []
+        for m in empties:
+            search_board[m] = self.opponent
+            if self.check_win_fast(search_board, m, self.opponent):
+                blocks.append(m)
+            search_board[m] = ' '
+            
+        if blocks:
+            # If multiple blocks exist, we are in a bad spot (forked).
+            # Pick the block that offers the best positional value to maximize survival chance.
+            blocks.sort(key=lambda x: self.pos_weights[x], reverse=True)
+            return blocks[0]
+
+        # 3. Iterative Deepening Minimax Search
+        # If no immediate win/loss, search deeper.
+        best_move = empties[0]
         
-        # Optimization: If only one move is available, take it immediately.
-        if len(valid_moves) == 1:
-            return valid_moves[0]
-
-        # Randomize move order to ensure variety when multiple moves have the same optimal score.
-        # random is available from the global scope as per instructions.
-        random.shuffle(valid_moves)
-
-        best_score = -float('inf')
-        best_move = valid_moves[0]
-        alpha = -float('inf')
-        beta = float('inf')
-
-        for move in valid_moves:
-            # Simulate the move
-            new_board = list(board)
-            new_board[move] = self.symbol
-            
-            # Call Minimax. Next turn is opponent's (Minimizing player)
-            score = self.minimax(new_board, False, alpha, beta)
-            
-            if score > best_score:
-                best_score = score
-                best_move = move
-            
-            # Alpha-Beta Pruning: update alpha
-            alpha = max(alpha, score)
-            if beta <= alpha:
-                break
+        # Sort empties by positional heuristic to improve Alpha-Beta pruning efficiency
+        empties.sort(key=lambda x: self.pos_weights[x], reverse=True)
         
+        try:
+            # Start at depth 2 (Depth 1 is essentially covered by logic above)
+            # Max depth 25, but time will likely cut off around depth 4-6.
+            for depth in range(2, 25): 
+                if time.time() - start_time > time_limit:
+                    break
+                
+                # Run Minimax
+                score, move = self.minimax(search_board, depth, -9999999, 9999999, True, start_time, time_limit)
+                
+                if move is not None:
+                    best_move = move
+                
+                # If we found a forced win path, stop searching to save time/resources
+                # Score > 80000 indicates a winning path found
+                if score > 80000:
+                    break
+                    
+        except TimeoutError:
+            # If search times out, return the best move found in the last completed depth
+            pass
+            
         return best_move
 
-    def minimax(self, board, is_maximizing, alpha, beta):
-        # Use a tuple of the board state and turn flag as the cache key
-        state_key = (tuple(board), is_maximizing)
-        if state_key in self.cache:
-            return self.cache[state_key]
+    def check_win_fast(self, board, last_move, player):
+        """
+        Checks if the move just made at `last_move` created a win for `player`.
+        Only checks lines involving `last_move` for efficiency.
+        """
+        for a, b, c in self.cell_lines[last_move]:
+            if board[a] == player and board[b] == player and board[c] == player:
+                return True
+        return False
 
-        # Check for terminal states
-        winner = self.check_winner(board)
-        empty_count = board.count(' ')
+    def evaluate(self, board):
+        """
+        Heuristic evaluation of a non-terminal board state.
+        Higher score = better for self.
+        """
+        score = 0
+        
+        # Iterate through all possible winning lines to assess threats and potentials
+        for a, b, c in self.win_lines:
+            va, vb, vc = board[a], board[b], board[c]
+            
+            us = 0
+            them = 0
+            
+            if va == self.symbol: us += 1
+            elif va == self.opponent: them += 1
+            
+            if vb == self.symbol: us += 1
+            elif vb == self.opponent: them += 1
+            
+            if vc == self.symbol: us += 1
+            elif vc == self.opponent: them += 1
+            
+            # Score the line
+            if them == 0:
+                if us == 2: score += 100  # Strong threat (2 in a row)
+                elif us == 1: score += 10 # Potential
+            elif us == 0:
+                if them == 2: score -= 100 # Opponent threat
+                elif them == 1: score -= 10 # Opponent potential
+                
+        return score
 
-        # Scoring Logic:
-        # Win: Base 100 + empty_count (Rewards winning in fewer moves)
-        # Loss: Base -100 - empty_count (Rewards prolonging the game if loss is inevitable)
-        # Draw: 0
-        if winner == self.symbol:
-            return 100 + empty_count
-        elif winner == self.opponent_symbol:
-            return -100 - empty_count
-        elif empty_count == 0:
-            return 0
+    def minimax(self, board, depth, alpha, beta, is_max, start_time, time_limit):
+        """
+        Minimax algorithm with Alpha-Beta pruning and timeout detection.
+        """
+        # Check timeout
+        if time.time() - start_time > time_limit:
+            raise TimeoutError
 
-        if is_maximizing:
+        empties = [i for i, x in enumerate(board) if x == ' ']
+        
+        # Terminal state: Draw
+        if not empties:
+            return 0, None 
+
+        # Leaf node: Heuristic evaluation
+        if depth == 0:
+            return self.evaluate(board), None
+
+        best_move = None
+
+        # Move Ordering: Try high-value position moves first to prune tree
+        # Using sorted list is fast enough for N<=25
+        empties.sort(key=lambda x: self.pos_weights[x], reverse=True)
+
+        if is_max:
             max_eval = -float('inf')
-            for i in range(9):
-                if board[i] == ' ':
-                    board[i] = self.symbol
-                    eval_score = self.minimax(board, False, alpha, beta)
-                    board[i] = ' ' # Backtrack
-                    
-                    max_eval = max(max_eval, eval_score)
-                    alpha = max(alpha, eval_score)
-                    if beta <= alpha:
-                        break
-            self.cache[state_key] = max_eval
-            return max_eval
+            
+            for move in empties:
+                board[move] = self.symbol
+                
+                # Optimization: Check for win immediately after move
+                if self.check_win_fast(board, move, self.symbol):
+                    board[move] = ' '
+                    # Prefer winning sooner (higher depth remaining)
+                    return 100000 + depth, move 
+                
+                eval_val, _ = self.minimax(board, depth - 1, alpha, beta, False, start_time, time_limit)
+                board[move] = ' '
+                
+                if eval_val > max_eval:
+                    max_eval = eval_val
+                    best_move = move
+                
+                alpha = max(alpha, eval_val)
+                if beta <= alpha:
+                    break
+            
+            if best_move is None: best_move = empties[0]
+            return max_eval, best_move
+            
         else:
             min_eval = float('inf')
-            for i in range(9):
-                if board[i] == ' ':
-                    board[i] = self.opponent_symbol
-                    eval_score = self.minimax(board, True, alpha, beta)
-                    board[i] = ' ' # Backtrack
+            
+            for move in empties:
+                board[move] = self.opponent
+                
+                if self.check_win_fast(board, move, self.opponent):
+                    board[move] = ' '
+                    # Prefer losing later (lower depth remaining)
+                    # Note: score is negative for loss
+                    return -100000 - depth, move 
+                
+                eval_val, _ = self.minimax(board, depth - 1, alpha, beta, True, start_time, time_limit)
+                board[move] = ' '
+                
+                if eval_val < min_eval:
+                    min_eval = eval_val
+                    best_move = move
+                
+                beta = min(beta, eval_val)
+                if beta <= alpha:
+                    break
                     
-                    min_eval = min(min_eval, eval_score)
-                    beta = min(beta, eval_score)
-                    if beta <= alpha:
-                        break
-            self.cache[state_key] = min_eval
-            return min_eval
-
-    def check_winner(self, board):
-        """
-        Helper to check if there is a winner on the current board.
-        Returns 'X', 'O', or None.
-        """
-        win_conditions = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),  # Rows
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),  # Columns
-            (0, 4, 8), (2, 4, 6)              # Diagonals
-        ]
-        for a, b, c in win_conditions:
-            if board[a] == board[b] == board[c] and board[a] != ' ':
-                return board[a]
-        return None
+            if best_move is None: best_move = empties[0]
+            return min_eval, best_move

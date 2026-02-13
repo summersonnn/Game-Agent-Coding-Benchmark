@@ -2,113 +2,156 @@
 Agent Code: A2-TicTacToe
 Model: openai/gpt-oss-120b@preset/fp8
 Run: 2
-Generated: 2026-02-11 20:47:17
+Generated: 2026-02-13 14:53:21
 """
+
+import math
 
 import math
 
 class TicTacToeAgent:
     """
-    Perfect-play Tic‑Tac‑Toe agent using minimax with alpha‑beta pruning.
-    It evaluates wins/losses with a depth bias so it prefers faster victories
-    and delays defeats, matching the secondary scoring metric of the competition.
+    A minimax‑based agent for 5×5 Tic‑Tac‑Toe (3‑in‑a‑row).
+    It looks for immediate wins / blocks, then searches a few plies
+    using alpha‑beta pruning and a simple line‑based evaluation.
     """
 
     def __init__(self, name: str, symbol: str):
         self.name = name
         self.symbol = symbol.upper()          # 'X' or 'O'
-        self.opponent = "O" if self.symbol == "X" else "X"
+        self.opponent = 'O' if self.symbol == 'X' else 'X'
 
-    # ------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------
+        # Pre‑compute all winning triples (rows, columns, diagonals)
+        self.wins = []
+        # rows
+        for r in range(5):
+            for c in range(3):
+                start = r * 5 + c
+                self.wins.append((start, start + 1, start + 2))
+        # columns
+        for c in range(5):
+            for r in range(3):
+                start = r * 5 + c
+                self.wins.append((start, start + 5, start + 10))
+        # diagonal down‑right
+        for r in range(3):
+            for c in range(3):
+                start = r * 5 + c
+                self.wins.append((start, start + 6, start + 12))
+        # diagonal down‑left
+        for r in range(3):
+            for c in range(2, 5):
+                start = r * 5 + c
+                self.wins.append((start, start + 4, start + 8))
+
+        # depth of the minimax search (adjustable if time permits)
+        self.max_depth = 3
+
+    # ----------------------------------------------------------------------
+    # Public interface
     def make_move(self, board):
-        """
-        Return the index (0‑8) of the best move for the current board.
-        `board` is a list of 9 strings: ' ', 'X' or 'O'.
-        """
-        EMPTY = " "
+        """Return the index (0‑24) of the chosen move."""
+        empty = [i for i, v in enumerate(board) if v == ' ']
 
-        # Gather empty cells
-        empty_cells = [i for i, v in enumerate(board) if v == EMPTY]
-        if not empty_cells:
-            return None  # No move possible (should not happen)
+        # 1️⃣  Immediate winning move
+        for m in empty:
+            trial = board.copy()
+            trial[m] = self.symbol
+            if self._winner(trial) == self.symbol:
+                return m
 
-        # If only one move left, just take it
-        if len(empty_cells) == 1:
-            return empty_cells[0]
+        # 2️⃣  Block opponent's immediate win
+        for m in empty:
+            trial = board.copy()
+            trial[m] = self.opponent
+            if self._winner(trial) == self.opponent:
+                return m
 
+        # 3️⃣  Minimax search
         best_score = -math.inf
-        best_move = empty_cells[0]
-
-        # Try each possible move and pick the one with the highest minimax score
-        for move in empty_cells:
-            board[move] = self.symbol
-            score = self._minimax(board, maximizing=False, depth=1,
-                                 alpha=-math.inf, beta=math.inf)
-            board[move] = EMPTY
-
+        best_move = random.choice(empty)   # fallback
+        for m in empty:
+            trial = board.copy()
+            trial[m] = self.symbol
+            score = self._minimax(trial, self.max_depth - 1, False,
+                                 -math.inf, math.inf)
             if score > best_score:
                 best_score = score
-                best_move = move
+                best_move = m
 
         return best_move
 
-    # ------------------------------------------------------------
-    # Minimax implementation
-    # ------------------------------------------------------------
-    def _minimax(self, board, maximizing: bool, depth: int, alpha: float, beta: float):
-        """
-        Returns a numeric evaluation of the board from the perspective of `self.symbol`.
-        Positive values favor the agent, negative values favor the opponent.
-        Depth is used to prefer quicker wins / slower losses.
-        """
-        winner = self._check_winner(board)
-        if winner is not None:
-            if winner == self.symbol:
-                return 10 - depth      # faster win = higher score
-            if winner == self.opponent:
-                return depth - 10      # slower loss = higher (less negative) score
-            return 0                    # draw
+    # ----------------------------------------------------------------------
+    # Game helpers
+    def _winner(self, board):
+        """Return 'X', 'O', 'DRAW' or None."""
+        for a, b, c in self.wins:
+            if board[a] == board[b] == board[c] != ' ':
+                return board[a]
+        if ' ' not in board:
+            return 'DRAW'
+        return None
 
-        EMPTY = " "
-        moves = [i for i, v in enumerate(board) if v == EMPTY]
+    # ----------------------------------------------------------------------
+    # Evaluation
+    def _evaluate(self, board):
+        """Simple heuristic: count open lines weighted by owned marks."""
+        score = 0
+        for a, b, c in self.wins:
+            line = (board[a], board[b], board[c])
+
+            # lines that can still be completed by us
+            if self.opponent not in line:
+                cnt = line.count(self.symbol)
+                if cnt == 2:
+                    score += 50          # two in a row, one empty
+                elif cnt == 1:
+                    score += 10
+
+            # lines that can be completed by opponent
+            if self.symbol not in line:
+                cnt = line.count(self.opponent)
+                if cnt == 2:
+                    score -= 50
+                elif cnt == 1:
+                    score -= 10
+        return score
+
+    # ----------------------------------------------------------------------
+    # Minimax with alpha‑beta pruning
+    def _minimax(self, board, depth, maximizing, alpha, beta):
+        winner = self._winner(board)
+        if winner == self.symbol:
+            # Prefer faster wins
+            return 1000 + depth
+        if winner == self.opponent:
+            return -1000 - depth
+        if winner == 'DRAW':
+            return 0
+        if depth == 0:
+            return self._evaluate(board)
+
+        empty = [i for i, v in enumerate(board) if v == ' ']
 
         if maximizing:
             max_eval = -math.inf
-            for move in moves:
-                board[move] = self.symbol
-                eval = self._minimax(board, False, depth + 1, alpha, beta)
-                board[move] = EMPTY
-                max_eval = max(max_eval, eval)
-                alpha = max(alpha, eval)
+            for m in empty:
+                board[m] = self.symbol
+                eval_ = self._minimax(board, depth - 1, False, alpha, beta)
+                board[m] = ' '
+                max_eval = max(max_eval, eval_)
+                alpha = max(alpha, eval_)
                 if beta <= alpha:
-                    break  # beta cut‑off
+                    break
             return max_eval
         else:
             min_eval = math.inf
-            for move in moves:
-                board[move] = self.opponent
-                eval = self._minimax(board, True, depth + 1, alpha, beta)
-                board[move] = EMPTY
-                min_eval = min(min_eval, eval)
-                beta = min(beta, eval)
+            for m in empty:
+                board[m] = self.opponent
+                eval_ = self._minimax(board, depth - 1, True, alpha, beta)
+                board[m] = ' '
+                min_eval = min(min_eval, eval_)
+                beta = min(beta, eval_)
                 if beta <= alpha:
-                    break  # alpha cut‑off
+                    break
             return min_eval
-
-    # ------------------------------------------------------------
-    # Helper: check winner / draw
-    # ------------------------------------------------------------
-    def _check_winner(self, board):
-        win_conditions = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),  # rows
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),  # columns
-            (0, 4, 8), (2, 4, 6)              # diagonals
-        ]
-        for a, b, c in win_conditions:
-            if board[a] == board[b] == board[c] != " ":
-                return board[a]
-        if " " not in board:
-            return "DRAW"
-        return None

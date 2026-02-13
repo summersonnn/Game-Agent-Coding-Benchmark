@@ -2,116 +2,133 @@
 Agent Code: A2-TicTacToe
 Model: qwen/qwen3-max-thinking
 Run: 1
-Generated: 2026-02-13 14:10:12
+Generated: 2026-02-13 14:53:21
 """
 
 
+
+import random
 
 class TicTacToeAgent:
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
-        self.opponent = 'O' if symbol == 'X' else 'X'
-        self.win_lines = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),
-            (0, 4, 8), (2, 4, 6)
-        ]
+        self.opp_symbol = 'O' if symbol == 'X' else 'X'
+        self.all_lines = []
+        # Generate all winning lines (triplets)
+        for r in range(5):
+            for c in range(3):
+                s = r * 5 + c
+                self.all_lines.append((s, s + 1, s + 2))
+        for c in range(5):
+            for r in range(3):
+                s = r * 5 + c
+                self.all_lines.append((s, s + 5, s + 10))
+        for r in range(3):
+            for c in range(3):
+                s = r * 5 + c
+                self.all_lines.append((s, s + 6, s + 12))
+        for r in range(3):
+            for c in range(2, 5):
+                s = r * 5 + c
+                self.all_lines.append((s, s + 4, s + 8))
+        # Precompute which lines each cell belongs to
+        self.lines_for_cell = [[] for _ in range(25)]
+        for line in self.all_lines:
+            for idx in line:
+                self.lines_for_cell[idx].append(line)
 
     def make_move(self, board):
-        available = [i for i, cell in enumerate(board) if cell == ' ']
-        if len(available) == 1:
-            return available[0]
+        empty_cells = [i for i, val in enumerate(board) if val == ' ']
 
-        def check_winner_state(state):
-            for a, b, c in self.win_lines:
-                if state[a] != ' ' and state[a] == state[b] == state[c]:
-                    return state[a]
-            return 'DRAW' if ' ' not in state else None
+        # 1. Immediate winning move (return first found)
+        for cell in empty_cells:
+            for line in self.lines_for_cell[cell]:
+                opp_in_line = False
+                our_count = 0
+                for idx in line:
+                    if idx == cell:
+                        continue
+                    if board[idx] == self.opp_symbol:
+                        opp_in_line = True
+                        break
+                    elif board[idx] == self.symbol:
+                        our_count += 1
+                if opp_in_line:
+                    continue
+                if our_count == 2:
+                    return cell
 
-        win_moves = []
-        for move in available:
-            new_state = board.copy()
-            new_state[move] = self.symbol
-            if check_winner_state(new_state) == self.symbol:
-                win_moves.append(move)
-        if win_moves:
-            pref_order = [4, 0, 2, 6, 8, 1, 3, 5, 7]
-            for p in pref_order:
-                if p in win_moves:
-                    return p
-
+        # 2. Collect blocking moves (prevent opponent's immediate win)
         block_moves = []
-        for move in available:
-            new_state = board.copy()
-            new_state[move] = self.opponent
-            if check_winner_state(new_state) == self.opponent:
-                block_moves.append(move)
-        if len(block_moves) == 1:
-            return block_moves[0]
+        for cell in empty_cells:
+            for line in self.lines_for_cell[cell]:
+                our_in_line = False
+                opp_count = 0
+                for idx in line:
+                    if idx == cell:
+                        continue
+                    if board[idx] == self.symbol:
+                        our_in_line = True
+                        break
+                    elif board[idx] == self.opp_symbol:
+                        opp_count += 1
+                if our_in_line:
+                    continue
+                if opp_count == 2:
+                    block_moves.append(cell)
+                    break  # Identified as block move; skip other lines for this cell
 
-        cache = {}
+        # Evaluate and select from block moves if necessary
+        if block_moves:
+            best_move = None
+            best_score = -float('inf')
+            for cell in block_moves:
+                board_copy = board.copy()
+                board_copy[cell] = self.symbol
+                score = self._evaluate_board(board_copy)
+                if score > best_score:
+                    best_score = score
+                    best_move = cell
+            return best_move
 
-        def minimax(state_tuple):
-            if state_tuple in cache:
-                return cache[state_tuple]
-            
-            winner = check_winner_state(state_tuple)
-            if winner is not None:
-                empty_rem = state_tuple.count(' ')
-                if winner == self.symbol:
-                    score = 100 + max(empty_rem, 3)
-                elif winner == self.opponent:
-                    score = -100 - max(empty_rem, 3)
-                else:
-                    score = 0
-                cache[state_tuple] = score
-                return score
-
-            cnt_x = state_tuple.count('X')
-            cnt_o = state_tuple.count('O')
-            current_player = 'X' if cnt_x == cnt_o else 'O'
-            is_self_turn = (current_player == self.symbol)
-
-            if is_self_turn:
-                best_val = -10**9
-                for i in range(9):
-                    if state_tuple[i] == ' ':
-                        lst = list(state_tuple)
-                        lst[i] = self.symbol
-                        new_tuple = tuple(lst)
-                        val = minimax(new_tuple)
-                        if val > best_val:
-                            best_val = val
-                cache[state_tuple] = best_val
-                return best_val
-            else:
-                best_val = 10**9
-                for i in range(9):
-                    if state_tuple[i] == ' ':
-                        lst = list(state_tuple)
-                        lst[i] = self.opponent
-                        new_tuple = tuple(lst)
-                        val = minimax(new_tuple)
-                        if val < best_val:
-                            best_val = val
-                cache[state_tuple] = best_val
-                return best_val
-
-        best_score = -10**9
-        best_moves = []
-        for move in available:
-            new_state = board.copy()
-            new_state[move] = self.symbol
-            score = minimax(tuple(new_state))
+        # 3. No forced win/block; evaluate all available moves
+        best_score = -float('inf')
+        equal_best_moves = []
+        for cell in empty_cells:
+            board_copy = board.copy()
+            board_copy[cell] = self.symbol
+            score = self._evaluate_board(board_copy)
             if score > best_score:
                 best_score = score
-                best_moves = [move]
+                equal_best_moves = [cell]
             elif score == best_score:
-                best_moves.append(move)
+                equal_best_moves.append(cell)
+        # Random tie-breaking among equally best moves
+        if equal_best_moves:
+            return random.choice(equal_best_moves)
+        return random.choice(empty_cells)  # Fallback (should not occur)
 
-        pref_order = [4, 0, 2, 6, 8, 1, 3, 5, 7]
-        for p in pref_order:
-            if p in best_moves:
-                return p
-        return best_moves[0] if best_moves else available[0]
+    def _evaluate_board(self, board):
+        score = 0
+        for line in self.all_lines:
+            me = 0
+            opp = 0
+            for idx in line:
+                if board[idx] == self.symbol:
+                    me += 1
+                elif board[idx] == self.opp_symbol:
+                    opp += 1
+            if me > 0 and opp > 0:
+                continue  # Dead line
+            if opp == 0:  # Line has only our marks (or empty)
+                if me == 1:
+                    score += 10
+                elif me == 2:
+                    score += 1000
+            if me == 0:  # Line has only opponent marks (or empty)
+                if opp == 1:
+                    score -= 10
+                elif opp == 2:
+                    score -= 1000
+        return score

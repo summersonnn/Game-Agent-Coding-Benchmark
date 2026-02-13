@@ -2,98 +2,140 @@
 Agent Code: A2-TicTacToe
 Model: z-ai/glm-4.7@preset/fp8-speedy
 Run: 1
-Generated: 2026-02-11 20:47:17
+Generated: 2026-02-13 14:53:21
 """
 
-import math
 
-import math
+
+import random
 
 class TicTacToeAgent:
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
         self.opponent_symbol = 'O' if symbol == 'X' else 'X'
-        self.cache = {}
+        
+        # Precompute all winning lines (3-in-a-row) for the 5x5 grid
+        self.win_lines = []
+        # Rows
+        for r in range(5):
+            for c in range(3):
+                start = r * 5 + c
+                self.win_lines.append((start, start + 1, start + 2))
+        # Columns
+        for c in range(5):
+            for r in range(3):
+                start = r * 5 + c
+                self.win_lines.append((start, start + 5, start + 10))
+        # Diagonals (Down-Right)
+        for r in range(3):
+            for c in range(3):
+                start = r * 5 + c
+                self.win_lines.append((start, start + 6, start + 12))
+        # Diagonals (Down-Left)
+        for r in range(3):
+            for c in range(2, 5):
+                start = r * 5 + c
+                self.win_lines.append((start, start + 4, start + 8))
 
     def make_move(self, board):
-        # Heuristic: Take center if available (strongest position)
-        if board[4] == ' ':
-            return 4
+        available_moves = [i for i, spot in enumerate(board) if spot == ' ']
+        if not available_moves:
+            return -1
         
-        best_score = -math.inf
-        best_move = -1
+        if len(available_moves) == 1:
+            return available_moves[0]
+            
+        best_score = -10000000
+        best_moves = []
         
-        # Move ordering for efficiency: Center, Corners, Edges
-        order = [4, 0, 2, 6, 8, 1, 3, 5, 7]
-        available_moves = [i for i in order if board[i] == ' ']
-
-        for move in available_moves:
+        # Heuristic ordering: Center, Inner Ring, Others
+        # This helps Alpha-Beta pruning cut off branches faster
+        def move_priority(m):
+            if m == 12: return 0
+            # Check if cell is in the inner 3x3 ring
+            if 6 <= m <= 18 and m % 5 in [1, 2, 3] and m // 5 in [1, 2, 3]: return 1
+            return 2
+            
+        ordered_moves = sorted(available_moves, key=move_priority)
+        
+        for move in ordered_moves:
             board[move] = self.symbol
-            score = self.minimax(board, False)
+            # Depth 3 is chosen as a balance between performance and lookahead
+            score = self.minimax(board, 3, -10000000, 10000000, False)
             board[move] = ' '
             
             if score > best_score:
                 best_score = score
-                best_move = move
-        
-        # Fallback: Should not be reached in a valid game state, but safety first
-        if best_move == -1:
-            empty_indices = [i for i, x in enumerate(board) if x == ' ']
-            if empty_indices:
-                # random is assumed to be available in the global scope
-                return random.choice(empty_indices)
-            
-        return best_move
+                best_moves = [move]
+            elif score == best_score:
+                best_moves.append(move)
+                
+        return random.choice(best_moves)
 
-    def minimax(self, board, is_maximizing):
-        # Create a unique key for the board state and turn
-        state_key = (tuple(board), is_maximizing)
-        if state_key in self.cache:
-            return self.cache[state_key]
-
+    def minimax(self, board, depth, alpha, beta, is_maximizing):
+        # Check for terminal states
         winner = self.check_winner(board)
-        empty_cells = board.count(' ')
-
-        # Terminal state checks with tie-breaker scoring
         if winner == self.symbol:
-            # Win: Score is max(empty_cells_remaining, 3)
-            return max(empty_cells, 3)
-        elif winner == self.opponent_symbol:
-            # Loss: Score is -max(empty_cells_remaining, 3)
-            return -max(empty_cells, 3)
-        elif empty_cells == 0:
-            # Draw
-            return 0
+            return 10000 + depth # Win sooner is better
+        if winner == self.opponent_symbol:
+            return -10000 - depth # Lose later is better
+            
+        if depth == 0:
+            return self.evaluate(board)
+            
+        moves = [i for i, spot in enumerate(board) if spot == ' ']
+        if not moves:
+            return 0 # Draw
 
         if is_maximizing:
-            best_score = -math.inf
-            for i in range(9):
-                if board[i] == ' ':
-                    board[i] = self.symbol
-                    score = self.minimax(board, False)
-                    board[i] = ' '
-                    best_score = max(score, best_score)
-            self.cache[state_key] = best_score
-            return best_score
+            max_eval = -10000000
+            for move in moves:
+                board[move] = self.symbol
+                eval_score = self.minimax(board, depth - 1, alpha, beta, False)
+                board[move] = ' '
+                max_eval = max(max_eval, eval_score)
+                alpha = max(alpha, eval_score)
+                if beta <= alpha:
+                    break
+            return max_eval
         else:
-            best_score = math.inf
-            for i in range(9):
-                if board[i] == ' ':
-                    board[i] = self.opponent_symbol
-                    score = self.minimax(board, True)
-                    board[i] = ' '
-                    best_score = min(score, best_score)
-            self.cache[state_key] = best_score
-            return best_score
+            min_eval = 10000000
+            for move in moves:
+                board[move] = self.opponent_symbol
+                eval_score = self.minimax(board, depth - 1, alpha, beta, True)
+                board[move] = ' '
+                min_eval = min(min_eval, eval_score)
+                beta = min(beta, eval_score)
+                if beta <= alpha:
+                    break
+            return min_eval
 
     def check_winner(self, board):
-        lines = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),  # Rows
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),  # Columns
-            (0, 4, 8), (2, 4, 6)               # Diagonals
-        ]
-        for a, b, c in lines:
-            if board[a] != ' ' and board[a] == board[b] == board[c]:
-                return board[a]
+        for line in self.win_lines:
+            if board[line[0]] == board[line[1]] == board[line[2]] != ' ':
+                return board[line[0]]
         return None
+
+    def evaluate(self, board):
+        score = 0
+        for line in self.win_lines:
+            vals = [board[i] for i in line]
+            my_count = vals.count(self.symbol)
+            opp_count = vals.count(self.opponent_symbol)
+            empty_count = vals.count(' ')
+            
+            if my_count == 3:
+                score += 100
+            elif my_count == 2 and empty_count == 1:
+                score += 10
+            elif my_count == 1 and empty_count == 2:
+                score += 1
+                
+            if opp_count == 3:
+                score -= 100
+            elif opp_count == 2 and empty_count == 1:
+                score -= 10
+            elif opp_count == 1 and empty_count == 2:
+                score -= 1
+        return score

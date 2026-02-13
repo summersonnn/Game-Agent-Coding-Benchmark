@@ -62,7 +62,7 @@ All scripts must respect the following configuration parameters, which should be
 | :--- | :--- | :--- |
 | `NUM_OF_GAMES_IN_A_MATCH` | `100` | Number of games to play in a single match execution. |
 | `MOVE_TIME_LIMIT` | `1.0` | Maximum time (seconds) allowed for an agent to return a move. |
-| `MAX_TIME_PER_GAME` | `60` | Maximum time (seconds) allowed for a single game execution (not whole match). Whole match time limit does not exist. |
+
 
 Note that "match" means two agents playing against eachother such as mistral:1 vs opus:1
 A "game" is a single unit of game between them. A match usually has many games in it.
@@ -105,6 +105,9 @@ The match_stats dictionary for each agent must track the following five keys to 
 | Invalid Move         | Generate a random valid move; game continues.         | invalid           |
 
 There is no retry mechanism in anywhere of the game!
+
+### 3.2 Prohibited: Broad Exception Handlers in `make_move()`
+Agent code **must not** wrap the body of `make_move()` in a broad exception handler such as `except Exception`, `except BaseException`, or a bare `except:`. The game engine enforces move time limits via `signal.alarm`, which raises an internal timeout exception. A broad outer catch silently swallows this exception and prevents the engine from enforcing time limits, causing matches to hang. Agents that violate this rule will be flagged by the matchmaker's `--health` check and must be corrected before they can compete.
 
 ---
 

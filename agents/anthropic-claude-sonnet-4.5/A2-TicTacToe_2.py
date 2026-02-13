@@ -2,101 +2,127 @@
 Agent Code: A2-TicTacToe
 Model: anthropic/claude-sonnet-4.5
 Run: 2
-Generated: 2026-02-11 20:47:17
+Generated: 2026-02-13 14:53:21
 """
 
 
 
 class TicTacToeAgent:
-    """
-    Minimax-based TicTacToe agent with alpha-beta pruning for optimal play.
-    """
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
         self.opponent = 'O' if symbol == 'X' else 'X'
+        
+        # Pre-compute all win conditions (3-in-a-row)
+        self.win_conditions = []
+        
+        # Rows (horizontal)
+        for r in range(5):
+            for c in range(3):
+                start = r * 5 + c
+                self.win_conditions.append((start, start + 1, start + 2))
+        
+        # Columns (vertical)
+        for c in range(5):
+            for r in range(3):
+                start = r * 5 + c
+                self.win_conditions.append((start, start + 5, start + 10))
+        
+        # Diagonals (down-right)
+        for r in range(3):
+            for c in range(3):
+                start = r * 5 + c
+                self.win_conditions.append((start, start + 6, start + 12))
+        
+        # Diagonals (down-left)
+        for r in range(3):
+            for c in range(2, 5):
+                start = r * 5 + c
+                self.win_conditions.append((start, start + 4, start + 8))
     
     def make_move(self, board):
-        """
-        Returns the optimal move using minimax algorithm with alpha-beta pruning.
-        """
-        best_score = float('-inf')
-        best_move = None
-        
-        # Prioritize center, corners, then edges for better alpha-beta pruning
-        move_order = [4, 0, 2, 6, 8, 1, 3, 5, 7]
-        
-        for i in move_order:
-            if board[i] == ' ':
-                board_copy = board[:]
-                board_copy[i] = self.symbol
-                score = self.minimax(board_copy, 0, False, float('-inf'), float('inf'))
-                if score > best_score:
-                    best_score = score
-                    best_move = i
-                if best_score >= 10:  # Found a winning move, no need to search further
-                    break
-        
-        # Fallback to first available move
-        if best_move is None:
-            for i in range(9):
-                if board[i] == ' ':
-                    return i
-        
-        return best_move
-    
-    def minimax(self, board, depth, is_maximizing, alpha, beta):
-        """
-        Minimax algorithm with alpha-beta pruning.
-        Returns score: positive for favorable positions, negative for unfavorable.
-        """
-        winner = self.check_winner(board)
-        
-        if winner == self.symbol:
-            return 10 - depth  # Prefer faster wins
-        elif winner == self.opponent:
-            return depth - 10  # Prefer slower losses
-        elif winner == 'DRAW':
+        available_moves = [i for i, spot in enumerate(board) if spot == ' ']
+        if not available_moves:
             return 0
         
-        if is_maximizing:
-            best_score = float('-inf')
-            for i in range(9):
-                if board[i] == ' ':
-                    board_copy = board[:]
-                    board_copy[i] = self.symbol
-                    score = self.minimax(board_copy, depth + 1, False, alpha, beta)
-                    best_score = max(score, best_score)
-                    alpha = max(alpha, score)
-                    if beta <= alpha:
-                        break  # Beta cutoff
-            return best_score
-        else:
-            best_score = float('inf')
-            for i in range(9):
-                if board[i] == ' ':
-                    board_copy = board[:]
-                    board_copy[i] = self.opponent
-                    score = self.minimax(board_copy, depth + 1, True, alpha, beta)
-                    best_score = min(score, best_score)
-                    beta = min(beta, score)
-                    if beta <= alpha:
-                        break  # Alpha cutoff
-            return best_score
+        # Score all available moves and pick the best
+        best_score = -float('inf')
+        best_moves = []
+        
+        for move in available_moves:
+            score = self.score_move(board, move)
+            if score > best_score:
+                best_score = score
+                best_moves = [move]
+            elif score == best_score:
+                best_moves.append(move)
+        
+        return random.choice(best_moves)
     
-    def check_winner(self, board):
-        """
-        Check if there's a winner or draw.
-        Returns 'X', 'O', 'DRAW', or None.
-        """
-        win_conditions = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),  # Rows
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),  # Columns
-            (0, 4, 8), (2, 4, 6),              # Diagonals
-        ]
-        for combo in win_conditions:
-            if board[combo[0]] == board[combo[1]] == board[combo[2]] != ' ':
-                return board[combo[0]]
-        if ' ' not in board:
-            return 'DRAW'
-        return None
+    def score_move(self, board, move):
+        """Evaluate the strategic value of a move"""
+        score = 0
+        
+        # Priority 1: Win immediately
+        if self.is_winning_move(board, move, self.symbol):
+            return 1000000
+        
+        # Priority 2: Block opponent's winning move
+        if self.is_winning_move(board, move, self.opponent):
+            return 100000
+        
+        # Simulate making the move
+        test_board = board[:]
+        test_board[move] = self.symbol
+        
+        # Priority 3: Create multiple threats (fork)
+        our_threats = self.count_threats(test_board, self.symbol)
+        if our_threats >= 2:
+            score += 10000
+        else:
+            score += our_threats * 1000
+        
+        # Priority 4: Block opponent's fork
+        opp_test_board = board[:]
+        opp_test_board[move] = self.opponent
+        opp_threats_if_they_play = self.count_threats(opp_test_board, self.opponent)
+        if opp_threats_if_they_play >= 2:
+            score += 5000
+        
+        # Priority 5: Block opponent threats
+        original_opp_threats = self.count_threats(board, self.opponent)
+        new_opp_threats = self.count_threats(test_board, self.opponent)
+        threats_blocked = original_opp_threats - new_opp_threats
+        score += threats_blocked * 500
+        
+        # Priority 6: Prefer center positions (more strategic options)
+        if move == 12:  # Center of board
+            score += 50
+        elif move in [6, 7, 8, 11, 13, 16, 17, 18]:  # Inner 3x3
+            score += 25
+        
+        # Priority 7: Prefer positions involved in more win conditions
+        win_conditions_count = sum(1 for combo in self.win_conditions if move in combo)
+        score += win_conditions_count * 3
+        
+        return score
+    
+    def is_winning_move(self, board, move, player):
+        """Check if placing player's mark at move position results in a win"""
+        test_board = board[:]
+        test_board[move] = player
+        
+        for combo in self.win_conditions:
+            if (test_board[combo[0]] == test_board[combo[1]] == 
+                test_board[combo[2]] == player):
+                return True
+        return False
+    
+    def count_threats(self, board, player):
+        """Count how many 2-in-a-row threats exist for player"""
+        threats = 0
+        for combo in self.win_conditions:
+            cells = [board[combo[0]], board[combo[1]], board[combo[2]]]
+            if cells.count(player) == 2 and cells.count(' ') == 1:
+                threats += 1
+        return threats

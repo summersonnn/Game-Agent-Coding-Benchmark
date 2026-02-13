@@ -1,0 +1,3832 @@
+Match Contenders:
+qwen-qwen3-max-thinking:1
+google-gemini-3-pro-preview:1
+
+Result:
+qwen-qwen3-max-thinking:1 : Pts: 93 - Score: -239.0
+google-gemini-3-pro-preview:1 : Pts: 207 - Score: 239.0
+
+============================================================
+Game 1
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O #
+BOARD: 3  # # # # # O O #
+BOARD: 4  O O O O O O O #
+BOARD: 5  O O O O O O O #
+BOARD: 6  O X S S O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O # O
+BOARD: 2  O O O O O O # O
+BOARD: 3  O O O O O O # O
+BOARD: 4  O O O O O O # O
+BOARD: 5  # O # # # # # O
+BOARD: 6  # O O O O O O O
+BOARD: 7  # O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 2
+Agent-2: -2
+============================================================
+============================================================
+Game 2
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  # # # # # O O O
+BOARD: 2  O O # # # # O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O # # # O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O X O O O O O
+BOARD: 2  O O X O O O O S
+BOARD: 3  O O X O O O O S
+BOARD: 4  O O X O # O O S
+BOARD: 5  O O S O # O O O
+BOARD: 6  O O O O # O O O
+BOARD: 7  O O O O # O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -4
+Agent-2: 4
+============================================================
+============================================================
+Game 3
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O # # # # # O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O S O O O O O
+BOARD: 5  O O S O # # # O
+BOARD: 6  O O S O O O O O
+BOARD: 7  O O S O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  # O O # O O O O
+BOARD: 4  # O O # O O O O
+BOARD: 5  # O O # O O O O
+BOARD: 6  # O O O O O O O
+BOARD: 7  # O O O # # # #
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 4
+Agent-2: -4
+============================================================
+============================================================
+Game 4
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  # O O O O # # #
+BOARD: 2  # O # O O O O O
+BOARD: 3  # O # O O O O O
+BOARD: 4  # O # O O O O O
+BOARD: 5  O O # O O O O O
+BOARD: 6  O O # O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O # O
+BOARD: 2  O O S S S O # O
+BOARD: 3  O O O O O O # O
+BOARD: 4  O O O O O O # O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  # # # # # O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -3
+Agent-2: 3
+============================================================
+============================================================
+Game 5
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O # O O O O O O
+BOARD: 1  S # O O O O O O
+BOARD: 2  X # O O O O O O
+BOARD: 3  X # O O O O O O
+BOARD: 4  O # O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O # # # # O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O # O O O O O O
+BOARD: 4  O # O O # # # O
+BOARD: 5  O # O O O O O O
+BOARD: 6  O # # # # # O O
+BOARD: 7  O # O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 1
+Agent-2: -1
+============================================================
+============================================================
+Game 6
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # O O O O O O O
+BOARD: 1  # O O O O O O O
+BOARD: 2  # O O O O # O O
+BOARD: 3  # # # # O # O O
+BOARD: 4  O O O O O # O O
+BOARD: 5  O O O O O # O O
+BOARD: 6  O O O O O # O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O # O O
+BOARD: 3  O O O O O # O O
+BOARD: 4  O O O O O # O O
+BOARD: 5  O S X X X # O O
+BOARD: 6  O O O O O # O O
+BOARD: 7  O O O O O # # #
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -1
+Agent-2: 1
+============================================================
+============================================================
+Game 7
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # # O O O O
+BOARD: 1  O O # # O O O O
+BOARD: 2  O O # # O O O O
+BOARD: 3  O # # O O O O O
+BOARD: 4  O # # O O O O O
+BOARD: 5  O # O O O O O O
+BOARD: 6  O # O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O # O O O O O O
+BOARD: 1  O # # O O O O O
+BOARD: 2  O # # O O O O O
+BOARD: 3  O # # O O O O O
+BOARD: 4  O O # X O O O O
+BOARD: 5  O O # S O O O O
+BOARD: 6  O O O S O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -2
+Agent-2: 2
+============================================================
+============================================================
+Game 8
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O # # #
+BOARD: 2  O O O O O # O O
+BOARD: 3  O O # O O # O O
+BOARD: 4  O O # O O # O O
+BOARD: 5  O O # O O # O O
+BOARD: 6  O O # O O # O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  # # # # # O O O
+BOARD: 2  # O O O O O O O
+BOARD: 3  # O O O O O O O
+BOARD: 4  # O O O O O S O
+BOARD: 5  # O O O O O X O
+BOARD: 6  O O O O O O X O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -1
+Agent-2: 1
+============================================================
+============================================================
+Game 9
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  # # # O O O O O
+BOARD: 2  O # # # # O O O
+BOARD: 3  O # O O O O O O
+BOARD: 4  O # O O O O O O
+BOARD: 5  O # O O O O O O
+BOARD: 6  O # O O O O O O
+BOARD: 7  O # O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O # O O O O
+BOARD: 2  # # # # O O O O
+BOARD: 3  O O O # O O O O
+BOARD: 4  O O O # O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O S S S S S
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -5
+Agent-2: 5
+============================================================
+============================================================
+Game 10
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  # O O O O O O O
+BOARD: 4  # O O O O O O O
+BOARD: 5  # O O O O O O O
+BOARD: 6  O O # # # # O O
+BOARD: 7  # # # # # O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O S
+BOARD: 2  O X X X S S O S
+BOARD: 3  O O O O O O O S
+BOARD: 4  O O O # O O O O
+BOARD: 5  O O O # O O O O
+BOARD: 6  O O O # O O O O
+BOARD: 7  O O O # O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -5
+Agent-2: 5
+============================================================
+============================================================
+Game 11
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # # # # O O O O
+BOARD: 1  O O # O O O O O
+BOARD: 2  O O # O O O # O
+BOARD: 3  O O # O O O # O
+BOARD: 4  O O O O O O # O
+BOARD: 5  O O O O O O # O
+BOARD: 6  O O O O O O # O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O S O
+BOARD: 2  O # O O O O S O
+BOARD: 3  O # O O # O S O
+BOARD: 4  O # O O # O S O
+BOARD: 5  O # O O # O O O
+BOARD: 6  O # O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -4
+Agent-2: 4
+============================================================
+============================================================
+Game 12
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O S O O # O
+BOARD: 1  O O O S O O # O
+BOARD: 2  O O O S O O # O
+BOARD: 3  O O O O O # # O
+BOARD: 4  O O O O O # O O
+BOARD: 5  O O O O O # O O
+BOARD: 6  O O O O O # O O
+BOARD: 7  O O O O O # O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O #
+BOARD: 1  O O # # # O O #
+BOARD: 2  O O O O O O O #
+BOARD: 3  O O O O O O O #
+BOARD: 4  O O O O O O O #
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O # # # #
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 3
+Agent-2: -3
+============================================================
+============================================================
+Game 13
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # O O O O O
+BOARD: 1  O O # O O O X O
+BOARD: 2  O O # O O O X O
+BOARD: 3  O O # O O O X O
+BOARD: 4  O O # O O O S O
+BOARD: 5  O O O O O O S O
+BOARD: 6  O O O O O O S O
+BOARD: 7  O O O O O O S O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O # # # O
+BOARD: 1  O O O # # # # O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O # # # # #
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 4
+Agent-2: -4
+============================================================
+============================================================
+Game 14
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O # O
+BOARD: 1  O O O O O O # O
+BOARD: 2  O O O O O O # O
+BOARD: 3  O O # # # O # O
+BOARD: 4  O O O O O O # O
+BOARD: 5  O O O O O O O O
+BOARD: 6  S X X S O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O # # #
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O # O
+BOARD: 3  O O O O O O # O
+BOARD: 4  O # # # # O # O
+BOARD: 5  O O O O O O # O
+BOARD: 6  O O O O O O # O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 2
+Agent-2: -2
+============================================================
+============================================================
+Game 15
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O # O O O O
+BOARD: 4  O O O # O O O S
+BOARD: 5  O O O # O O O S
+BOARD: 6  # # # # O O O S
+BOARD: 7  O O O # O O O S
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # # # O O O
+BOARD: 1  O # # # # O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  # # # # # O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 4
+Agent-2: -4
+============================================================
+============================================================
+Game 16
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O S O O # O O O
+BOARD: 2  O X O O # O O O
+BOARD: 3  O X O O # O O O
+BOARD: 4  O O O O # O O O
+BOARD: 5  O O O O # O O O
+BOARD: 6  O O O # # # # O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O # # #
+BOARD: 1  # O O O O # O O
+BOARD: 2  # O O O O # O O
+BOARD: 3  # O O O O # O O
+BOARD: 4  # O O O O # O O
+BOARD: 5  O O O O O # O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 1
+Agent-2: -1
+============================================================
+============================================================
+Game 17
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O # # # O O O O
+BOARD: 2  O O O O # O O O
+BOARD: 3  O O O O # O O O
+BOARD: 4  O O O O # O O O
+BOARD: 5  O O O O # O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  # # # # # O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O # O O O S
+BOARD: 1  O O O # O O O S
+BOARD: 2  O O O # O O O S
+BOARD: 3  O # O # O O O S
+BOARD: 4  O # O # O O O O
+BOARD: 5  O # O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -4
+Agent-2: 4
+============================================================
+============================================================
+Game 18
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O # # # O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O # # # # O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  # # # # # O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # O O O O O O O
+BOARD: 1  # # O O O O O O
+BOARD: 2  # # O O O O O O
+BOARD: 3  # # O O O O O O
+BOARD: 4  # O O O O O O S
+BOARD: 5  O O O O O O O S
+BOARD: 6  O O O O O O O S
+BOARD: 7  O O O O O O O S
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -4
+Agent-2: 4
+============================================================
+============================================================
+Game 19
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O X
+BOARD: 2  O O # # # # O X
+BOARD: 3  O O O O # O O X
+BOARD: 4  O O O O # O O S
+BOARD: 5  O O O O # O O S
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O # # # # #
+BOARD: 4  O O # # # # O O
+BOARD: 5  O O # O O O O O
+BOARD: 6  O O # O O O O O
+BOARD: 7  O O # O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 2
+Agent-2: -2
+============================================================
+============================================================
+Game 20
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O # # # # # O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O S
+BOARD: 5  O O O O O O O S
+BOARD: 6  O # # # # O O S
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  # O O O O O O O
+BOARD: 2  # O O O O # O O
+BOARD: 3  # O O O O # O O
+BOARD: 4  # O O O O # O O
+BOARD: 5  # O O O O # O O
+BOARD: 6  O O O O O # # #
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 3
+Agent-2: -3
+============================================================
+============================================================
+Game 21
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  # # # # O O O O
+BOARD: 3  O # # # O O O O
+BOARD: 4  O O O # # # # #
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O S S S O S
+BOARD: 2  O O O O O O O S
+BOARD: 3  O O O O O O O S
+BOARD: 4  O O # # # # O S
+BOARD: 5  O O O O O O O S
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -8
+Agent-2: 8
+============================================================
+============================================================
+Game 22
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  # O O O O O O O
+BOARD: 2  # O O O O O O O
+BOARD: 3  # # # # # # O O
+BOARD: 4  # O O O O O O O
+BOARD: 5  O O O O O # # #
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  S S S S O # O O
+BOARD: 2  O O O O O # O O
+BOARD: 3  O O O # O # O O
+BOARD: 4  O O O # O O O O
+BOARD: 5  O O O # O O O O
+BOARD: 6  O O O # O O O O
+BOARD: 7  O O O # O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -4
+Agent-2: 4
+============================================================
+============================================================
+Game 23
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O # O O O O
+BOARD: 2  O O O # # # # #
+BOARD: 3  O O O # O # # #
+BOARD: 4  O O O # O O O O
+BOARD: 5  O O O # O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O X X S S O
+BOARD: 2  S O O O O O O O
+BOARD: 3  S O O O O O O O
+BOARD: 4  S O O O O O O O
+BOARD: 5  S O O O O O O O
+BOARD: 6  S O O O O O O O
+BOARD: 7  O S S S O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -10
+Agent-2: 10
+============================================================
+============================================================
+Game 24
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # # # # # O
+BOARD: 1  # # # O O O O O
+BOARD: 2  O O O O # # # #
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O # O O O O O O
+BOARD: 1  O # O O O O O O
+BOARD: 2  O # O O O # O O
+BOARD: 3  O # O O O # O O
+BOARD: 4  O # O O O # O O
+BOARD: 5  O X O O O # O O
+BOARD: 6  O S O O O O O O
+BOARD: 7  O S O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -2
+Agent-2: 2
+============================================================
+============================================================
+Game 25
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O # # # # # O O
+BOARD: 3  O # # # # O O #
+BOARD: 4  O O O O O O O #
+BOARD: 5  O O O O O O O #
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O S S O O
+BOARD: 1  O O O O S S O O
+BOARD: 2  O O O O S S O O
+BOARD: 3  O O O O O S O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  # # # # # O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -7
+Agent-2: 7
+============================================================
+============================================================
+Game 26
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O # O O O O
+BOARD: 3  O O # # O O O O
+BOARD: 4  O O # # O # # #
+BOARD: 5  O O # # O O O O
+BOARD: 6  O O # # O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O #
+BOARD: 3  O O S O O O O #
+BOARD: 4  O O S O O O O #
+BOARD: 5  O O S O O O O #
+BOARD: 6  O O O O O O O O
+BOARD: 7  # # # # # O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -3
+Agent-2: 3
+============================================================
+============================================================
+Game 27
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O # O
+BOARD: 3  O O O O O O # #
+BOARD: 4  O X X S O O # #
+BOARD: 5  O O O O O O # #
+BOARD: 6  O O O O O O O #
+BOARD: 7  O O O O O O O #
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # O O O O O O O
+BOARD: 1  # O O O O O O O
+BOARD: 2  # O O O O O O O
+BOARD: 3  # O O # # # # #
+BOARD: 4  O O O O # O O O
+BOARD: 5  O O O O # O O O
+BOARD: 6  O O O O # O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 1
+Agent-2: -1
+============================================================
+============================================================
+Game 28
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O # O
+BOARD: 1  O O O O O O # O
+BOARD: 2  O O O O O O # O
+BOARD: 3  O O O O O O # O
+BOARD: 4  O O O O # # # O
+BOARD: 5  O O O O # # O O
+BOARD: 6  O O O O # # O O
+BOARD: 7  O O O O # O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O # # # #
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O S S S S S
+BOARD: 4  O S S S O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -8
+Agent-2: 8
+============================================================
+============================================================
+Game 29
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O # # # # O O #
+BOARD: 3  O O O # O O O #
+BOARD: 4  O O O # O O O #
+BOARD: 5  O O O # O O O O
+BOARD: 6  O O O # O O O O
+BOARD: 7  O O O # O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O # O O
+BOARD: 2  O O O O O # O O
+BOARD: 3  O O O S O # O O
+BOARD: 4  S O O S O # O O
+BOARD: 5  S O O S O # O O
+BOARD: 6  S O O S O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -7
+Agent-2: 7
+============================================================
+============================================================
+Game 30
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  # # # # O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O # # # # # O O
+BOARD: 5  O O # # # O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O # O O
+BOARD: 1  O O O O O # O O
+BOARD: 2  O X O O O # O O
+BOARD: 3  O X O O O # O O
+BOARD: 4  O X O O S O O O
+BOARD: 5  O S O O S O O O
+BOARD: 6  O S O O S O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -5
+Agent-2: 5
+============================================================
+============================================================
+Game 31
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O # # # # # O
+BOARD: 3  O O O O O O O O
+BOARD: 4  # # # # O # O O
+BOARD: 5  O O O O O # O O
+BOARD: 6  O O O O O # O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O S O O
+BOARD: 1  O O O O O S O O
+BOARD: 2  O O O O O S O O
+BOARD: 3  O O O O O S O O
+BOARD: 4  O O O O O O O #
+BOARD: 5  O O O O O O O #
+BOARD: 6  O O # # # # # #
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -4
+Agent-2: 4
+============================================================
+============================================================
+Game 32
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O # # #
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O # # # #
+BOARD: 4  O O O O O O O O
+BOARD: 5  # # # # # O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O # # # # O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O # # # # # O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O S O
+BOARD: 6  O O O O O O S O
+BOARD: 7  O O O O O O S O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -3
+Agent-2: 3
+============================================================
+============================================================
+Game 33
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O # O O O O
+BOARD: 4  O O O # O O O O
+BOARD: 5  O O O # # # # #
+BOARD: 6  O O O O O O O O
+BOARD: 7  O # # # # # O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O X X S S S
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O # O O
+BOARD: 4  S S S O O # O O
+BOARD: 5  O O O O O # O O
+BOARD: 6  O O O O O # O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -6
+Agent-2: 6
+============================================================
+============================================================
+Game 34
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O S S X X O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O #
+BOARD: 3  O # O O O O O #
+BOARD: 4  O # O O O O O #
+BOARD: 5  O # O O O O O #
+BOARD: 6  O O O O O O O #
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  # O O O O O O O
+BOARD: 3  # O O # O O O O
+BOARD: 4  # O O # O O O O
+BOARD: 5  # O O # O O O #
+BOARD: 6  O O O # O O O #
+BOARD: 7  O O O # O O O #
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 2
+Agent-2: -2
+============================================================
+============================================================
+Game 35
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O # # # O
+BOARD: 1  O O O O O O # O
+BOARD: 2  O O O O O O # O
+BOARD: 3  # # # # O O # O
+BOARD: 4  O O O O O O # O
+BOARD: 5  O O O O O O # O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # # # O O O O S
+BOARD: 1  O # O O O O O S
+BOARD: 2  O # O O O O O S
+BOARD: 3  O # O O O O O S
+BOARD: 4  O # O O O O O O
+BOARD: 5  O # O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -4
+Agent-2: 4
+============================================================
+============================================================
+Game 36
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  S S S O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O # # # # O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O # # # # #
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O # # # O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O # # # # # O
+BOARD: 6  O O O O # # # #
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 3
+Agent-2: -3
+============================================================
+============================================================
+Game 37
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O # O O O O O
+BOARD: 2  O O # O O O O O
+BOARD: 3  O O # O O O O O
+BOARD: 4  O O # O O O O O
+BOARD: 5  O O O # # # # #
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O # # # O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O # O O O O O O
+BOARD: 3  O # # O O O O O
+BOARD: 4  O # # O O O O O
+BOARD: 5  O # # O O O O O
+BOARD: 6  O # O O O O O O
+BOARD: 7  O O S S S S O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -4
+Agent-2: 4
+============================================================
+============================================================
+Game 38
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # # # # O O O O
+BOARD: 1  O O O O O O # O
+BOARD: 2  O O O O O O # O
+BOARD: 3  O # O O O O # O
+BOARD: 4  O # O O O O # O
+BOARD: 5  O # O O O O # O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O X S S O O
+BOARD: 3  O O O # O O O O
+BOARD: 4  O S O # O O O O
+BOARD: 5  O S O # O O O O
+BOARD: 6  O S O # O O O O
+BOARD: 7  O S O # O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -6
+Agent-2: 6
+============================================================
+============================================================
+Game 39
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O # O O O O O
+BOARD: 2  O O # O O O O O
+BOARD: 3  O O # O O O O O
+BOARD: 4  O O # O # # # #
+BOARD: 5  O # # O O O O O
+BOARD: 6  O # O O O O O O
+BOARD: 7  O # O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # O O O O O O O
+BOARD: 1  # O O O S S S S
+BOARD: 2  # O O O O O O O
+BOARD: 3  # O O S S S O O
+BOARD: 4  # O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -7
+Agent-2: 7
+============================================================
+============================================================
+Game 40
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O S S S S S O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O X X S
+BOARD: 3  O # O O O O O O
+BOARD: 4  O # O O O O O O
+BOARD: 5  O # O O O O O O
+BOARD: 6  O # O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O #
+BOARD: 2  O O O O O O O #
+BOARD: 3  O O O O O O O #
+BOARD: 4  O O O O O O O #
+BOARD: 5  O O # # # # O #
+BOARD: 6  O # # # O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 6
+Agent-2: -6
+============================================================
+============================================================
+Game 41
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # # # O O O O O
+BOARD: 1  O # # # # # O O
+BOARD: 2  O O # O O O O O
+BOARD: 3  O O # O O O O O
+BOARD: 4  O O # O O O O O
+BOARD: 5  O O # O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O S S S O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O # # # # O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O S X X X X O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -4
+Agent-2: 4
+============================================================
+============================================================
+Game 42
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # O O O O O
+BOARD: 1  O # # O O O O O
+BOARD: 2  O # # O O O O O
+BOARD: 3  O # # # # # # O
+BOARD: 4  O O # O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O S O O O O O O
+BOARD: 1  O S O O O O O O
+BOARD: 2  O X O O O O O O
+BOARD: 3  O X O O O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  # # # # # # # #
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -2
+Agent-2: 2
+============================================================
+============================================================
+Game 43
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O # O
+BOARD: 3  O O O O O O # O
+BOARD: 4  O O O O O O # O
+BOARD: 5  # # # # # O O O
+BOARD: 6  # # # # O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O S O O O O O O
+BOARD: 1  O S O O O O O O
+BOARD: 2  O S O O O O O O
+BOARD: 3  O S O # O O O O
+BOARD: 4  O S O # O O O O
+BOARD: 5  # O O # O O O O
+BOARD: 6  # O O # O O O O
+BOARD: 7  # O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -5
+Agent-2: 5
+============================================================
+============================================================
+Game 44
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O # # # # #
+BOARD: 1  O O O O O O O O
+BOARD: 2  O # O O O O O O
+BOARD: 3  O # O O O O O O
+BOARD: 4  O # O O O O O O
+BOARD: 5  O # O O O O O #
+BOARD: 6  O O O O O O O #
+BOARD: 7  O O O O O O O #
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O # # # # # # O
+BOARD: 2  O O O O O O # O
+BOARD: 3  O O S O O O # O
+BOARD: 4  O O S O O O # O
+BOARD: 5  O O S O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -3
+Agent-2: 3
+============================================================
+============================================================
+Game 45
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # O S S S O
+BOARD: 1  O O # O O O O O
+BOARD: 2  O O # O O O O O
+BOARD: 3  O O # O O O # O
+BOARD: 4  O O # O O O # O
+BOARD: 5  O O O O O O # O
+BOARD: 6  O O O O O O # O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O #
+BOARD: 1  O O O O O O O #
+BOARD: 2  O # # # # # O #
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O # # # # O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 3
+Agent-2: -3
+============================================================
+============================================================
+Game 46
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O # O O O
+BOARD: 1  O O O O # O O O
+BOARD: 2  O O O O # O O O
+BOARD: 3  O O O O # O S O
+BOARD: 4  O O O O # O S O
+BOARD: 5  O O O O O O S O
+BOARD: 6  O X X S O O S O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O # # # O
+BOARD: 3  O O # # # # # O
+BOARD: 4  O O O O O O O #
+BOARD: 5  O O O O O O O #
+BOARD: 6  O O O O O O O #
+BOARD: 7  O O O O O O O #
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 5
+Agent-2: -5
+============================================================
+============================================================
+Game 47
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O # O O O # O O
+BOARD: 1  O # O O O # O O
+BOARD: 2  O # O O # # O O
+BOARD: 3  O # O O # O O O
+BOARD: 4  O # O O # O O O
+BOARD: 5  O O O O # O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  S X X X X O O O
+BOARD: 2  O O # # # # O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O # O O O O O O
+BOARD: 6  O # O O O O O O
+BOARD: 7  O # O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -1
+Agent-2: 1
+============================================================
+============================================================
+Game 48
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O #
+BOARD: 3  O O O O O O O #
+BOARD: 4  O O O O # # # #
+BOARD: 5  O O O O O O O #
+BOARD: 6  # # # # # O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O S O O O O O
+BOARD: 3  O O S O # # # O
+BOARD: 4  O O S O O O O O
+BOARD: 5  O O S O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O S S S S S O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -9
+Agent-2: 9
+============================================================
+============================================================
+Game 49
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O # O O O O
+BOARD: 2  O O O # O O O O
+BOARD: 3  # O O # O O O O
+BOARD: 4  # O O # O O O O
+BOARD: 5  # O O # O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O # # # #
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # O O O O O S O
+BOARD: 1  # O O O O O S O
+BOARD: 2  # O O O O O S O
+BOARD: 3  # O O S O O S O
+BOARD: 4  # O O S O O O O
+BOARD: 5  O O O S O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -7
+Agent-2: 7
+============================================================
+============================================================
+Game 50
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  S S S S S O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O # # # #
+BOARD: 3  O # O O O O O O
+BOARD: 4  O # O O O O O O
+BOARD: 5  O # O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O # O O
+BOARD: 2  O # # # # # O O
+BOARD: 3  O O O O O # O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  # # # # # O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 5
+Agent-2: -5
+============================================================
+============================================================
+Game 51
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O # O
+BOARD: 1  O O O O O # # O
+BOARD: 2  O O O O # # # O
+BOARD: 3  O O O O # # # O
+BOARD: 4  O O O O # O # O
+BOARD: 5  O O O O # O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O # # # # # O
+BOARD: 3  O O O O # # # #
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  S S S O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -3
+Agent-2: 3
+============================================================
+============================================================
+Game 52
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O # # # # # O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O S
+BOARD: 5  O O O O O O O S
+BOARD: 6  O O O O O O O S
+BOARD: 7  O O O O S S S S
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O # O O O
+BOARD: 2  O O O O # O O O
+BOARD: 3  # O O O # # # #
+BOARD: 4  # O O O # O O O
+BOARD: 5  # O O O O O O O
+BOARD: 6  # O O O O O O O
+BOARD: 7  # O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 7
+Agent-2: -7
+============================================================
+============================================================
+Game 53
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # # # # O O O O
+BOARD: 1  # O O O O O O O
+BOARD: 2  # O O O O O O O
+BOARD: 3  # O O O O O O O
+BOARD: 4  O # # # # # O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  # # # # # O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O S S S S S
+BOARD: 5  O O O S O O O O
+BOARD: 6  O O O S O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -7
+Agent-2: 7
+============================================================
+============================================================
+Game 54
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O # # # O # O O
+BOARD: 1  O O O O O # O O
+BOARD: 2  O O O O # # O O
+BOARD: 3  O O O O # # O O
+BOARD: 4  O O O O # # O O
+BOARD: 5  O O O O # O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  S O O O O O O O
+BOARD: 2  S S O O O O O O
+BOARD: 3  S S O O O O O O
+BOARD: 4  S S O O O O O O
+BOARD: 5  S O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O S S S X O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -11
+Agent-2: 11
+============================================================
+============================================================
+Game 55
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O # O O O O O O
+BOARD: 2  O # O O O O O O
+BOARD: 3  O # O # # # # #
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O # # # # O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O # O O
+BOARD: 2  O S S S O # O O
+BOARD: 3  O O O O O # O O
+BOARD: 4  O O O O O # O O
+BOARD: 5  O O O O O # O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O # # # # O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -3
+Agent-2: 3
+============================================================
+============================================================
+Game 56
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O # O
+BOARD: 4  O # O # O O # O
+BOARD: 5  O # O # O O # O
+BOARD: 6  O # O # O O # O
+BOARD: 7  O O O # O O # O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O # O O O O
+BOARD: 1  O O # # O O O O
+BOARD: 2  O O # # O O O O
+BOARD: 3  O O # # O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  S X X X X O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -1
+Agent-2: 1
+============================================================
+============================================================
+Game 57
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # O O O O O
+BOARD: 1  O O # O O O O O
+BOARD: 2  O O # O O O O O
+BOARD: 3  O O # # # # O O
+BOARD: 4  O O # O O O O O
+BOARD: 5  O O O O # # # #
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  S S X X X O O O
+BOARD: 3  S O O # O O O O
+BOARD: 4  S O O # O O O O
+BOARD: 5  S O O # O O O O
+BOARD: 6  S O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -6
+Agent-2: 6
+============================================================
+============================================================
+Game 58
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O # # # # # O
+BOARD: 2  O O O O # # # O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O S X X X O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O # # # # # O O
+BOARD: 4  O # O O O O O O
+BOARD: 5  O # O O O O O O
+BOARD: 6  O # O O O O O O
+BOARD: 7  O # # # # O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 1
+Agent-2: -1
+============================================================
+============================================================
+Game 59
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  S S S X X O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  # # # O # O O O
+BOARD: 4  O O O O # O O O
+BOARD: 5  O O O O # O O O
+BOARD: 6  O O O O # O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O # # # # # #
+BOARD: 2  O # # O O O O O
+BOARD: 3  O # # O O O O O
+BOARD: 4  O # O O O O O O
+BOARD: 5  O # O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 3
+Agent-2: -3
+============================================================
+============================================================
+Game 60
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O # # # #
+BOARD: 2  O O # O O O O O
+BOARD: 3  O O # O O O O O
+BOARD: 4  # O # O O O O O
+BOARD: 5  # O # O O O O O
+BOARD: 6  # O # O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  X O O # # # # #
+BOARD: 3  X O O O O O # O
+BOARD: 4  S O O O O O # O
+BOARD: 5  S O O O O O # O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -2
+Agent-2: 2
+============================================================
+============================================================
+Game 61
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  # # # O O O O O
+BOARD: 3  # # # # # O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  # # # # O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O S O O O O O O
+BOARD: 3  O S O O O O O O
+BOARD: 4  O S O O O O O O
+BOARD: 5  O O S S S S O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O # # # # # O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -7
+Agent-2: 7
+============================================================
+============================================================
+Game 62
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O # # # O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O # # # # # #
+BOARD: 4  O O O O O O O #
+BOARD: 5  O O O O O O O #
+BOARD: 6  O O O O O O O #
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # O O O O O O O
+BOARD: 1  # O O O O O S O
+BOARD: 2  # O O O O O S O
+BOARD: 3  O O O O O O S O
+BOARD: 4  O O O O O O S O
+BOARD: 5  O O S S S S S O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -9
+Agent-2: 9
+============================================================
+============================================================
+Game 63
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # # # # O O O O
+BOARD: 1  O O O # O O O O
+BOARD: 2  O O O # O O O O
+BOARD: 3  O # O # O O O O
+BOARD: 4  O # O # O O O O
+BOARD: 5  O # O O O O O O
+BOARD: 6  O # O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  # O O O O O O O
+BOARD: 3  # O O O O O O O
+BOARD: 4  # O O # # # # #
+BOARD: 5  # O S O O O O O
+BOARD: 6  O O S O O O O O
+BOARD: 7  O O S O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -3
+Agent-2: 3
+============================================================
+============================================================
+Game 64
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O # O O O O O O
+BOARD: 1  O # O O O O O O
+BOARD: 2  O # O S S S O O
+BOARD: 3  O # # O O O O O
+BOARD: 4  O O # O O O O O
+BOARD: 5  O O # O O O O O
+BOARD: 6  O O # O O O O O
+BOARD: 7  O O # O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O # # # #
+BOARD: 1  O O O # # # O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  # O O O O O O O
+BOARD: 4  # O O O O O O O
+BOARD: 5  # O O O O O O O
+BOARD: 6  # O O O O O O O
+BOARD: 7  # O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 3
+Agent-2: -3
+============================================================
+============================================================
+Game 65
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  # O O O O O O O
+BOARD: 3  # O O O O O O O
+BOARD: 4  # O O O O O O O
+BOARD: 5  O O # # # # # O
+BOARD: 6  O O # # # # O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O X X S S O O
+BOARD: 1  O O O O S O O O
+BOARD: 2  O O O O S O O O
+BOARD: 3  O O O O S O O O
+BOARD: 4  O O O O S O O O
+BOARD: 5  O O # O S O O O
+BOARD: 6  O O # O O O O O
+BOARD: 7  O O # O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -7
+Agent-2: 7
+============================================================
+============================================================
+Game 66
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O # # O
+BOARD: 2  O O O O O # # O
+BOARD: 3  O O O O O # # O
+BOARD: 4  O O O O O O # O
+BOARD: 5  # # # # # O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O S O O O O O O
+BOARD: 1  O S O O O O O O
+BOARD: 2  O X O O O O O O
+BOARD: 3  O X O O O O O O
+BOARD: 4  O X O O O O O O
+BOARD: 5  O O O O O O S O
+BOARD: 6  # # # # O O S O
+BOARD: 7  O O O O O O S O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -5
+Agent-2: 5
+============================================================
+============================================================
+Game 67
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # # # # O O
+BOARD: 1  O O # # # O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O # # # # # O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # # # # O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O S O O
+BOARD: 4  O O O O O S O O
+BOARD: 5  O O O O O S O O
+BOARD: 6  O O O S S S S S
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -8
+Agent-2: 8
+============================================================
+============================================================
+Game 68
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  # O O O O O O O
+BOARD: 2  # O O O O O O O
+BOARD: 3  # # O O O O O O
+BOARD: 4  # # O O O O O O
+BOARD: 5  O # # O O O O O
+BOARD: 6  O # # O O O O O
+BOARD: 7  O # # O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O S X S S S
+BOARD: 3  O O # O O O O O
+BOARD: 4  O O # O O O O O
+BOARD: 5  O O # O O O O O
+BOARD: 6  O O # O O O O O
+BOARD: 7  O # # # O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -4
+Agent-2: 4
+============================================================
+============================================================
+Game 69
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O # # # # O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O # O O O
+BOARD: 4  O O O O # O O O
+BOARD: 5  O O O O # O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  # # # # # O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O # # # # #
+BOARD: 5  O O O O O O # O
+BOARD: 6  O O O O O O # O
+BOARD: 7  S S S S O O # O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -4
+Agent-2: 4
+============================================================
+============================================================
+Game 70
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O # # # # O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O # O O O
+BOARD: 4  # # # O # O O O
+BOARD: 5  O O O O # O O O
+BOARD: 6  O O O O # O O O
+BOARD: 7  O O O O # O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O S X S O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O # # # # O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O # # # # #
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -2
+Agent-2: 2
+============================================================
+============================================================
+Game 71
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # # # # # O
+BOARD: 1  O O # # O O O O
+BOARD: 2  O O # # O O O O
+BOARD: 3  O O # # O O O O
+BOARD: 4  O O # O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O S O O O
+BOARD: 1  O O O O S O O O
+BOARD: 2  # O S O S O O O
+BOARD: 3  # O S O S O O O
+BOARD: 4  # O S O S O O O
+BOARD: 5  # O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -8
+Agent-2: 8
+============================================================
+============================================================
+Game 72
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  S S S S O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  # # # # # O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O # # # O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O #
+BOARD: 2  O O O O O O O #
+BOARD: 3  O O O O O O O #
+BOARD: 4  O O O O O O O #
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O # # #
+BOARD: 7  O # # # # # O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 4
+Agent-2: -4
+============================================================
+============================================================
+Game 73
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O # # # # O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O # # #
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  # # # # # O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O # O O O O O O
+BOARD: 1  O # O O O O O O
+BOARD: 2  O # O O O O O O
+BOARD: 3  O # O S S S S S
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O # O O
+BOARD: 6  O O O O O # O O
+BOARD: 7  O O O O O # O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -5
+Agent-2: 5
+============================================================
+============================================================
+Game 74
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # O O O O O O O
+BOARD: 1  # # O O O O O O
+BOARD: 2  # # O O O O O O
+BOARD: 3  # # O O O O O O
+BOARD: 4  # O O O # # # #
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O # O O O O
+BOARD: 2  O O O # O O O O
+BOARD: 3  O O O # O O O O
+BOARD: 4  O O O # O O O O
+BOARD: 5  O S S S S S O O
+BOARD: 6  O S S S O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -8
+Agent-2: 8
+============================================================
+============================================================
+Game 75
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O # O O O O O O
+BOARD: 1  O # O O O O O O
+BOARD: 2  O # O O O O O O
+BOARD: 3  O O O # # # # #
+BOARD: 4  O O O O O # O O
+BOARD: 5  O O O O O # O O
+BOARD: 6  O O O O O # O O
+BOARD: 7  O O O O O # O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  # # # O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  S S S S S O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O # # # # O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -5
+Agent-2: 5
+============================================================
+============================================================
+Game 76
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O X O O
+BOARD: 1  O O # O O X O O
+BOARD: 2  O O # O O X O O
+BOARD: 3  O O # O O S O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  # # # # # O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # O O O O O
+BOARD: 1  O O # O O O O O
+BOARD: 2  O O # O O O O O
+BOARD: 3  O O # O # # # O
+BOARD: 4  O O O # # # # #
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 1
+Agent-2: -1
+============================================================
+============================================================
+Game 77
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  # O O O O O O O
+BOARD: 2  # # # # # # O O
+BOARD: 3  # O O O O O O O
+BOARD: 4  # O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O X X S
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # # # # # O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  # O O O O O O O
+BOARD: 5  # O O O O O O O
+BOARD: 6  # O # # # # O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 1
+Agent-2: -1
+============================================================
+============================================================
+Game 78
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  # O O O O O O O
+BOARD: 3  # O O O O O O O
+BOARD: 4  # O O O O O O O
+BOARD: 5  # # # # # O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O # # # # O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O # O O O # O O
+BOARD: 2  O # O O O # O O
+BOARD: 3  O # O O O # O O
+BOARD: 4  O # O O O # O O
+BOARD: 5  O O O O O # O S
+BOARD: 6  O O O O O O O S
+BOARD: 7  O O O O O O O S
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -3
+Agent-2: 3
+============================================================
+============================================================
+Game 79
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O # # # # O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O # # # # #
+BOARD: 5  O O O # # # O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  S S S S O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O # O S
+BOARD: 4  O O O O O # O S
+BOARD: 5  O O O O O # O S
+BOARD: 6  O O O O O # O O
+BOARD: 7  O O O O O # O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -7
+Agent-2: 7
+============================================================
+============================================================
+Game 80
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  # # # # # O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O # O O
+BOARD: 5  O O O O O # O O
+BOARD: 6  O O # # # # O O
+BOARD: 7  O O O O O # O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  # # # O O O S O
+BOARD: 2  O O O O O O X O
+BOARD: 3  O O O O O O X O
+BOARD: 4  O O O O O O X O
+BOARD: 5  O O O O O O X O
+BOARD: 6  S S S S O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -5
+Agent-2: 5
+============================================================
+============================================================
+Game 81
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O # O
+BOARD: 1  O O O O O O # O
+BOARD: 2  O O O O O O # O
+BOARD: 3  O O O O O O # O
+BOARD: 4  O O O O O O # O
+BOARD: 5  O O # # # # # O
+BOARD: 6  O O # O O O O O
+BOARD: 7  O O # O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O # # # #
+BOARD: 5  O # # # # # O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  X S S O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -2
+Agent-2: 2
+============================================================
+============================================================
+Game 82
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O S O
+BOARD: 1  # O O O O O S O
+BOARD: 2  # O # # # O S O
+BOARD: 3  # O O O O O S O
+BOARD: 4  # O O O O O O O
+BOARD: 5  # O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O # # # # # # #
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  # # # # # O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 4
+Agent-2: -4
+============================================================
+============================================================
+Game 83
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O # # #
+BOARD: 3  O O O O O # O O
+BOARD: 4  # # # # O # O O
+BOARD: 5  O O O O O # O O
+BOARD: 6  O O O O O # O O
+BOARD: 7  O O O O O # O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  # # # # # O O O
+BOARD: 4  O O # O O O O O
+BOARD: 5  O O # O O S O O
+BOARD: 6  O O # O O S O O
+BOARD: 7  O O # O O S O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -3
+Agent-2: 3
+============================================================
+============================================================
+Game 84
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O # # # # O O O
+BOARD: 1  O O O O # O O O
+BOARD: 2  O O O O # O O O
+BOARD: 3  O O O O # O O O
+BOARD: 4  O O O O # O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O # # # # O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O S O O
+BOARD: 1  O O O O O S O O
+BOARD: 2  O O O O O X O O
+BOARD: 3  O O O O O X O O
+BOARD: 4  O O # # # # # O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O S S S O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -5
+Agent-2: 5
+============================================================
+============================================================
+Game 85
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O # # # # O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  # O # # # # # O
+BOARD: 5  # O O O O O O O
+BOARD: 6  # O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O # # # # O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O # O O O
+BOARD: 4  O O O O # X S S
+BOARD: 5  O O O O # O O O
+BOARD: 6  O O O O # O O O
+BOARD: 7  O O O O # O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -2
+Agent-2: 2
+============================================================
+============================================================
+Game 86
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O S S S O O O
+BOARD: 2  O O O O O O # O
+BOARD: 3  O O O # O O # O
+BOARD: 4  O O O # O O # O
+BOARD: 5  O O O # O O # O
+BOARD: 6  O O O # O O O O
+BOARD: 7  O O O # O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O # O
+BOARD: 2  # O O O O O # O
+BOARD: 3  # O O O O O # O
+BOARD: 4  # O O O O O # O
+BOARD: 5  # O O O O O # O
+BOARD: 6  # O O O O O # O
+BOARD: 7  O O O O O O # O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 3
+Agent-2: -3
+============================================================
+============================================================
+Game 87
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O X X S O # O O
+BOARD: 1  O O O O O # O O
+BOARD: 2  O O O O O # O O
+BOARD: 3  O O O O # # O O
+BOARD: 4  O O O O # O O O
+BOARD: 5  O O O O # O O O
+BOARD: 6  O O O O # O O O
+BOARD: 7  O O O O # O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O # # # # O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O # O O O
+BOARD: 3  O O O O # O O O
+BOARD: 4  O O O O # O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O # # # # #
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 1
+Agent-2: -1
+============================================================
+============================================================
+Game 88
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  # # # # O O O O
+BOARD: 5  # O O O O O O O
+BOARD: 6  # O # # # # # O
+BOARD: 7  # O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O S O O O O O O
+BOARD: 1  O S O O O # O O
+BOARD: 2  O S O O O # O O
+BOARD: 3  O S O O O # # O
+BOARD: 4  O S O O O O # O
+BOARD: 5  O O O O O O # O
+BOARD: 6  O O O O O O # O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -5
+Agent-2: 5
+============================================================
+============================================================
+Game 89
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O # # # O
+BOARD: 2  O O O O O # O O
+BOARD: 3  O O O O O # O O
+BOARD: 4  O O O O O # O O
+BOARD: 5  O O O O O # O O
+BOARD: 6  O O O O O # O O
+BOARD: 7  S S S S O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O #
+BOARD: 3  O O O # # # # #
+BOARD: 4  O O O O O O O #
+BOARD: 5  O O O O O O O #
+BOARD: 6  O O O O O O O #
+BOARD: 7  # # # O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 4
+Agent-2: -4
+============================================================
+============================================================
+Game 90
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O # # #
+BOARD: 3  # # # # O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  # # # # # O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O # O O O O
+BOARD: 1  O O # # O O O O
+BOARD: 2  O O # # O O O O
+BOARD: 3  S O # # O O O O
+BOARD: 4  S O # O O O O O
+BOARD: 5  S O # O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -3
+Agent-2: 3
+============================================================
+============================================================
+Game 91
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O #
+BOARD: 1  O O O O O O O #
+BOARD: 2  O O O O O O O #
+BOARD: 3  O O O O O O # #
+BOARD: 4  O O O O O O # O
+BOARD: 5  O # # # O O # O
+BOARD: 6  O O O O O O # O
+BOARD: 7  O O O O O O # O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O O # O O
+BOARD: 2  O O O O O # O O
+BOARD: 3  S S S O O # O O
+BOARD: 4  O O O O O # O O
+BOARD: 5  O # # # # # O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -3
+Agent-2: 3
+============================================================
+============================================================
+Game 92
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O # #
+BOARD: 1  O O O # # # # #
+BOARD: 2  O O O O O O # #
+BOARD: 3  O O O O O O # #
+BOARD: 4  O O O O O O # O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O # # # # O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  # X O O O O O O
+BOARD: 4  # X O O O O O O
+BOARD: 5  # X O O O O O O
+BOARD: 6  O X O O O O O O
+BOARD: 7  O S O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -1
+Agent-2: 1
+============================================================
+============================================================
+Game 93
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  # # # # O O O O
+BOARD: 2  O # # # # # # O
+BOARD: 3  O O O O O O # O
+BOARD: 4  O O O O O O # O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O S S S S O O
+BOARD: 1  O O S S S S O O
+BOARD: 2  O O O O O X O O
+BOARD: 3  O O O O O X O O
+BOARD: 4  O O O O O X O O
+BOARD: 5  O O O O O X O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -8
+Agent-2: 8
+============================================================
+============================================================
+Game 94
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # O O O O O
+BOARD: 1  O O # O O O O O
+BOARD: 2  O O # O O O O O
+BOARD: 3  O O # # # # # O
+BOARD: 4  O O # O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O O O # # #
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O S O O
+BOARD: 1  O O O O O S O O
+BOARD: 2  O O O O O S O #
+BOARD: 3  O O O O O S O #
+BOARD: 4  O O O O O S O #
+BOARD: 5  O O O O O O O #
+BOARD: 6  # # # O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -5
+Agent-2: 5
+============================================================
+============================================================
+Game 95
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O S X S S
+BOARD: 1  O O O # O O O O
+BOARD: 2  O O O # O O O O
+BOARD: 3  O O O # O O # O
+BOARD: 4  O O O O O O # O
+BOARD: 5  O O O O O O # O
+BOARD: 6  O O O O O O # O
+BOARD: 7  O O O O O O # O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O # O O O O O
+BOARD: 1  O O # O O # O O
+BOARD: 2  O O # O O # O O
+BOARD: 3  O O # O O # O O
+BOARD: 4  O O # O O # O O
+BOARD: 5  O O # O O O O O
+BOARD: 6  O O # O O O O O
+BOARD: 7  O O # O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 3
+Agent-2: -3
+============================================================
+============================================================
+Game 96
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O # O
+BOARD: 1  O O O O O O # O
+BOARD: 2  O O O O O O # #
+BOARD: 3  O O O O O O # #
+BOARD: 4  O O O O O O O #
+BOARD: 5  O O O O O O O #
+BOARD: 6  O O # # # O O #
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O # O O O
+BOARD: 1  O O O O # O S O
+BOARD: 2  O O O O # O S O
+BOARD: 3  S O O O # O S O
+BOARD: 4  S O O O # O O O
+BOARD: 5  S O O O O O O O
+BOARD: 6  S O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -7
+Agent-2: 7
+============================================================
+============================================================
+Game 97
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O #
+BOARD: 1  O O O # O O O #
+BOARD: 2  O O O # O O O #
+BOARD: 3  O O O # O O O #
+BOARD: 4  O O O # O O O #
+BOARD: 5  O O O O O O # O
+BOARD: 6  O O O O O O # O
+BOARD: 7  O O O O O O # O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  # O O O O O O O
+BOARD: 2  # O O O O O O S
+BOARD: 3  # O O O O O S S
+BOARD: 4  # O O O O O S S
+BOARD: 5  O O O O O O S O
+BOARD: 6  O O O O O O S O
+BOARD: 7  O O O O O O S O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -8
+Agent-2: 8
+============================================================
+============================================================
+Game 98
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O # O O # O
+BOARD: 1  O O O # O O # O
+BOARD: 2  O O O # O O # O
+BOARD: 3  O O O # O O # O
+BOARD: 4  O O O # O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O # # # O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O O O O O O
+BOARD: 1  O O O O S O O O
+BOARD: 2  # O O O S O O O
+BOARD: 3  # O O O S O O O
+BOARD: 4  # O O O S O O O
+BOARD: 5  # O O O O # # #
+BOARD: 6  # O O O O O O O
+BOARD: 7  O O O O O O O O
+----------------------------------------
+Final Result: google-gemini-3-pro-preview wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 0
+Agent-2: 3
+----------------------------------------
+Scores:
+Agent-1: -4
+Agent-2: 4
+============================================================
+============================================================
+Game 99
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # # # # O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O # O O
+BOARD: 3  O O O O O # O O
+BOARD: 4  O O O O O # O O
+BOARD: 5  O O O S O # O O
+BOARD: 6  O O O S O # O O
+BOARD: 7  O O O S O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  # # # # O O O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O # # # O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O O O O O O O
+BOARD: 7  O O O # # # # #
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 3
+Agent-2: -3
+============================================================
+============================================================
+Game 100
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+------------------------------------------------------------
+Final Position:
+BOARD: qwen-qwen3-max-thinking Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O S S S O O
+BOARD: 1  O O O O O O O O
+BOARD: 2  # O O O O O O O
+BOARD: 3  # O O O # # # #
+BOARD: 4  # O O O O O O O
+BOARD: 5  # O O O O O O O
+BOARD: 6  # O O O O O O O
+BOARD: 7  O O O O O O O O
+
+BOARD: google-gemini-3-pro-preview Ships:
+BOARD:    0 1 2 3 4 5 6 7
+BOARD: 0  O O O # # # # #
+BOARD: 1  O O O O O O O O
+BOARD: 2  O O O O O O O O
+BOARD: 3  O O O O O O O O
+BOARD: 4  O O O O O O O O
+BOARD: 5  O O O O O O O O
+BOARD: 6  O O # # # # O O
+BOARD: 7  # # # O O O O O
+----------------------------------------
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
+----------------------------------------
+Points:
+Agent-1: 3
+Agent-2: 0
+----------------------------------------
+Scores:
+Agent-1: 3
+Agent-2: -3
+============================================================
+============================================================
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+RESULT:Agent-1=93.0,Agent-2=207.0
+SCORE:Agent-1=-239.0,Agent-2=239.0
+WINS:Agent-1=31,Agent-2=69
+DRAWS:0
+STATS:Agent-1={'wins': 31, 'losses': 69, 'draws': 0, 'points': 93, 'score': -239.0, 'make_move_crash': 0, 'other_crash': 0, 'crash': 0, 'timeout': 0, 'invalid': 0}
+STATS:Agent-2={'wins': 69, 'losses': 31, 'draws': 0, 'points': 207, 'score': 239.0, 'make_move_crash': 0, 'other_crash': 0, 'crash': 0, 'timeout': 0, 'invalid': 0}
+
+--- MATCH STATISTICS ---
+Agent-1 make_move_crash: 0
+Agent-2 make_move_crash: 0
+Agent-1 other_crash: 0
+Agent-2 other_crash: 0
+Agent-1 crash (total): 0
+Agent-2 crash (total): 0
+Agent-1 Timeouts: 0
+Agent-2 Timeouts: 0
+Agent-1 Invalid: 0
+Agent-2 Invalid: 0
+
+------------------------------------------------------------
+

@@ -1,18 +1,16 @@
 """
 Agent Code: A2-TicTacToe
-Model: qwen/qwen3-coder-next
+Model: qwen/qwen3-coder-next@preset/fp8
 Run: 1
-Generated: 2026-02-11 20:47:17
+Generated: 2026-02-13 14:53:21
 """
 
-
+from copy import deepcopy
 
 import random
+from copy import deepcopy
 
-# Constants (matching the game implementation)
 EMPTY = ' '
-X_MARK = 'X'
-O_MARK = 'O'
 
 class TicTacToeAgent:
     def __init__(self, name, symbol):
@@ -21,131 +19,132 @@ class TicTacToeAgent:
 
     def make_move(self, board):
         try:
-            # Get available moves
+            # Get all available moves
             available_moves = [i for i, spot in enumerate(board) if spot == EMPTY]
             if not available_moves:
                 return None
+                
+            # If it's the first move of the game (only one empty spot occupied by random X),
+            # we want to play smart from our first actual move onward
+            # But we need to handle the case where X's first move was random
             
-            # Use minimax with alpha-beta pruning for optimal play
-            best_move = self._get_best_move(board, self.symbol)
+            # Use minimax with alpha-beta pruning for better strategy
+            best_move = self.minimax(board, self.symbol, -float('inf'), float('inf'), True)[1]
             
-            # If minimax fails or returns invalid move, fallback to best strategy
+            # If minimax returns None or invalid, fallback to center or corner preferences
             if best_move is None or board[best_move] != EMPTY:
-                # Fallback: try to win, then block, then center, then corners, then random
-                return self._heuristic_move(board, available_moves)
-            
+                # Try center (12), then corners (0, 4, 20, 24), then edges
+                preferred_moves = [12, 0, 4, 20, 24, 1, 3, 5, 9, 10, 14, 15, 19, 21, 23, 2, 8, 16, 18]
+                for move in preferred_moves:
+                    if move in available_moves:
+                        return move
+                
+                # Final fallback: random available move
+                return random.choice(available_moves)
+                
             return best_move
         except Exception:
-            # On any error, use heuristic as fallback
+            # On any error, fallback to random valid move
             available_moves = [i for i, spot in enumerate(board) if spot == EMPTY]
-            return self._heuristic_move(board, available_moves)
-    
-    def _get_best_move(self, board, player):
-        """Minimax with alpha-beta pruning"""
-        opponent = O_MARK if player == X_MARK else X_MARK
-        
-        def minimax(board, depth, alpha, beta, is_maximizing):
-            # Check terminal states
-            winner = self._check_winner(board)
-            if winner == player:
-                return 1000 - depth
-            elif winner == opponent:
-                return depth - 1000
-            elif winner == 'DRAW':
-                return 0
+            return random.choice(available_moves) if available_moves else None
+
+    def minimax(self, board, player, alpha, beta, is_maximizing):
+        # Check for terminal states
+        winner = self.check_winner(board)
+        if winner == self.symbol:
+            return (1000000, None)  # Win for our symbol
+        elif winner == ('O' if self.symbol == 'X' else 'X'):
+            return (-1000000, None)  # Loss for our symbol
+        elif winner == 'DRAW':
+            return (0, None)  # Draw
+
+        available_moves = [i for i, spot in enumerate(board) if spot == EMPTY]
+        if not available_moves:
+            return (0, None)
+
+        # Determine opponent symbol
+        opponent = 'O' if player == 'X' else 'X'
+
+        if is_maximizing:
+            max_eval = -float('inf')
+            best_move = None
             
-            if is_maximizing:
-                max_eval = float('-inf')
-                for i in range(9):
-                    if board[i] == EMPTY:
-                        board[i] = player
-                        eval_score = minimax(board, depth + 1, alpha, beta, False)
-                        board[i] = EMPTY
-                        max_eval = max(max_eval, eval_score)
-                        alpha = max(alpha, eval_score)
-                        if beta <= alpha:
-                            break
-                return max_eval
-            else:
-                min_eval = float('inf')
-                for i in range(9):
-                    if board[i] == EMPTY:
-                        board[i] = opponent
-                        eval_score = minimax(board, depth + 1, alpha, beta, True)
-                        board[i] = EMPTY
-                        min_eval = min(min_eval, eval_score)
-                        beta = min(beta, eval_score)
-                        if beta <= alpha:
-                            break
-                return min_eval
-        
-        # Find best move for current player
-        best_score = float('-inf')
-        best_move = None
-        
-        for i in range(9):
-            if board[i] == EMPTY:
-                board[i] = player
-                score = minimax(board, 0, float('-inf'), float('inf'), False)
-                board[i] = EMPTY
+            # Order moves by heuristic to improve pruning (center first)
+            ordered_moves = sorted(available_moves, key=lambda m: self.move_heuristic(board, m))
+            
+            for move in ordered_moves:
+                new_board = board.copy()
+                new_board[move] = player
+                eval_score = self.minimax(new_board, opponent, alpha, beta, False)[0]
                 
-                if score > best_score:
-                    best_score = score
-                    best_move = i
-        
-        return best_move
-    
-    def _check_winner(self, board):
-        """Check for winner or draw"""
-        win_conditions = [
-            (0, 1, 2), (3, 4, 5), (6, 7, 8),  # Rows
-            (0, 3, 6), (1, 4, 7), (2, 5, 8),  # Columns
-            (0, 4, 8), (2, 4, 6)              # Diagonals
-        ]
-        
+                if eval_score > max_eval:
+                    max_eval = eval_score
+                    best_move = move
+                    
+                alpha = max(alpha, eval_score)
+                if beta <= alpha:
+                    break
+                    
+            return (max_eval, best_move)
+        else:
+            min_eval = float('inf')
+            best_move = None
+            
+            # Order moves by heuristic to improve pruning (center first)
+            ordered_moves = sorted(available_moves, key=lambda m: self.move_heuristic(board, m))
+            
+            for move in ordered_moves:
+                new_board = board.copy()
+                new_board[move] = player
+                eval_score = self.minimax(new_board, self.symbol, alpha, beta, True)[0]
+                
+                if eval_score < min_eval:
+                    min_eval = eval_score
+                    best_move = move
+                    
+                beta = min(beta, eval_score)
+                if beta <= alpha:
+                    break
+                    
+            return (min_eval, best_move)
+
+    def check_winner(self, board):
+        win_conditions = []
+        # Rows
+        for r in range(5):
+            for c in range(3):
+                start = r * 5 + c
+                win_conditions.append((start, start + 1, start + 2))
+        # Cols
+        for c in range(5):
+            for r in range(3):
+                start = r * 5 + c
+                win_conditions.append((start, start + 5, start + 10))
+        # Diagonals (down-right)
+        for r in range(3):
+            for c in range(3):
+                start = r * 5 + c
+                win_conditions.append((start, start + 6, start + 12))
+        # Diagonals (down-left)
+        for r in range(3):
+            for c in range(2, 5):
+                start = r * 5 + c
+                win_conditions.append((start, start + 4, start + 8))
+
         for combo in win_conditions:
             if board[combo[0]] == board[combo[1]] == board[combo[2]] != EMPTY:
                 return board[combo[0]]
-        
         if EMPTY not in board:
             return 'DRAW'
         return None
-    
-    def _heuristic_move(self, board, available_moves):
-        """Fallback strategy when minimax fails"""
-        opponent = O_MARK if self.symbol == X_MARK else X_MARK
-        
-        # 1. Check if we can win immediately
-        for move in available_moves:
-            board[move] = self.symbol
-            if self._check_winner(board) == self.symbol:
-                board[move] = EMPTY
-                return move
-            board[move] = EMPTY
-        
-        # 2. Block opponent from winning immediately
-        for move in available_moves:
-            board[move] = opponent
-            if self._check_winner(board) == opponent:
-                board[move] = EMPTY
-                return move
-            board[move] = EMPTY
-        
-        # 3. Take center if available
-        if board[4] == EMPTY:
-            return 4
-        
-        # 4. Take corners if available
-        corners = [0, 2, 6, 8]
-        available_corners = [c for c in corners if board[c] == EMPTY]
-        if available_corners:
-            return random.choice(available_corners)
-        
-        # 5. Take edges if available
-        edges = [1, 3, 5, 7]
-        available_edges = [e for e in edges if board[e] == EMPTY]
-        if available_edges:
-            return random.choice(available_edges)
-        
-        # 6. Random available move
-        return random.choice(available_moves)
+
+    def move_heuristic(self, board, move):
+        # Prioritize center, corners, then edges
+        if move == 12:
+            return 0  # Highest priority
+        elif move in [0, 4, 20, 24]:
+            return 1  # Second priority
+        elif move in [1, 3, 5, 9, 10, 14, 15, 19, 21, 23]:
+            return 2  # Third priority
+        else:
+            return 3  # Remaining positions

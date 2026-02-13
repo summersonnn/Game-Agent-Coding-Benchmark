@@ -2,112 +2,142 @@
 Agent Code: A2-TicTacToe
 Model: minimax/minimax-m2.5@preset/fp8
 Run: 1
-Generated: 2026-02-13 14:10:12
+Generated: 2026-02-13 14:53:21
 """
 
 
 
 import random
 
-# --- Board Representations ---
-EMPTY = ' '
-X_MARK = 'X'
-O_MARK = 'O'
-BOARD_SIZE = 3
-
 
 class TicTacToeAgent:
     """
-    Smart Tic Tac Toe agent using minimax algorithm for optimal play.
+    A simple but effective agent for 5x5 Tic‑Tac‑Toe (3‑in‑a‑row).
+    It looks for immediate wins, blocks opponent wins, and otherwise
+    selects the move with the highest heuristic score.
     """
-    
-    WIN_COMBINATIONS = [
-        (0, 1, 2), (3, 4, 5), (6, 7, 8),  # Rows
-        (0, 3, 6), (1, 4, 7), (2, 5, 8),  # Columns
-        (0, 4, 8), (2, 4, 6)               # Diagonals
-    ]
-    
-    def __init__(self, name, symbol):
+
+    # --------------------------------------------------------------
+    # Pre‑computed winning lines (48 triples of indices)
+    WIN_LINES = []
+
+    # Cells in the centre of the board – a slight tie‑breaker
+    CENTER_INDICES = {6, 7, 8, 11, 12, 13, 17, 18, 19}
+
+    # --------------------------------------------------------------
+    def __init__(self, name: str, symbol: str):
         self.name = name
-        self.symbol = symbol
-        self.opponent = O_MARK if symbol == X_MARK else X_MARK
-    
-    def make_move(self, board):
-        """Return the index (0-8) of the cell to mark."""
-        available_moves = [i for i, spot in enumerate(board) if spot == EMPTY]
-        
-        if not available_moves:
-            return None
-        
-        # Check for immediate win
-        for move in available_moves:
-            test_board = board[:]
-            test_board[move] = self.symbol
-            if self._check_winner(test_board) == self.symbol:
+        self.symbol = symbol  # 'X' or 'O'
+
+        # Initialise the list of winning lines once
+        if not TicTacToeAgent.WIN_LINES:
+            lines = []
+            # rows
+            for r in range(5):
+                for c in range(3):
+                    start = r * 5 + c
+                    lines.append((start, start + 1, start + 2))
+            # columns
+            for c in range(5):
+                for r in range(3):
+                    start = r * 5 + c
+                    lines.append((start, start + 5, start + 10))
+            # diagonal down‑right
+            for r in range(3):
+                for c in range(3):
+                    start = r * 5 + c
+                    lines.append((start, start + 6, start + 12))
+            # diagonal down‑left
+            for r in range(3):
+                for c in range(2, 5):
+                    start = r * 5 + c
+                    lines.append((start, start + 4, start + 8))
+            TicTacToeAgent.WIN_LINES = lines
+
+    # --------------------------------------------------------------
+    @staticmethod
+    def _is_winning(board, symbol) -> bool:
+        """Return True if `symbol` already has a three‑in‑a‑row."""
+        for a, b, c in TicTacToeAgent.WIN_LINES:
+            if board[a] == board[b] == board[c] == symbol:
+                return True
+        return False
+
+    @classmethod
+    def _score_board(cls, board, symbol) -> int:
+        """
+        Static evaluation of the board from the perspective of `symbol`.
+        Positive scores favour `symbol`, negative scores favour the opponent.
+        """
+        opponent = 'O' if symbol == 'X' else 'X'
+        score = 0
+        for a, b, c in cls.WIN_LINES:
+            cells = (board[a], board[b], board[c])
+            my_cnt = sum(1 for x in cells if x == symbol)
+            opp_cnt = sum(1 for x in cells if x == opponent)
+            empty = 3 - my_cnt - opp_cnt
+
+            if my_cnt == 3:
+                score += 10000
+            elif opp_cnt == 3:
+                score -= 10000
+            elif my_cnt == 2 and empty == 1:
+                score += 10
+            elif my_cnt == 1 and empty == 2:
+                score += 1
+            elif opp_cnt == 2 and empty == 1:
+                score -= 10
+            elif opp_cnt == 1 and empty == 2:
+                score -= 1
+        return score
+
+    # --------------------------------------------------------------
+    def make_move(self, board) -> int:
+        """
+        Choose an index (0‑24) of an empty cell to mark.
+        board – list of 25 strings: 'X', 'O', or ' ' (space).
+        """
+        me = self.symbol
+        opponent = 'O' if me == 'X' else 'X'
+
+        # All currently empty squares
+        empties = [i for i, cell in enumerate(board) if cell == ' ']
+        if not empties:                     # board full – should not happen
+            return 0
+
+        # 1) Can I win right now?
+        for move in empties:
+            board[move] = me
+            if self._is_winning(board, me):
+                board[move] = ' '
                 return move
-        
-        # Check for immediate block
-        for move in available_moves:
-            test_board = board[:]
-            test_board[move] = self.opponent
-            if self._check_winner(test_board) == self.opponent:
+            board[move] = ' '
+
+        # 2) Must I block opponent's immediate win?
+        for move in empties:
+            board[move] = opponent
+            if self._is_winning(board, opponent):
+                board[move] = ' '
                 return move
-        
-        # Use minimax for optimal play
-        best_score = float('-inf')
-        best_move = available_moves[0]
-        
-        for move in available_moves:
-            new_board = board[:]
-            new_board[move] = self.symbol
-            score = self._minimax(new_board, 0, False, float('-inf'), float('inf'))
+            board[move] = ' '
+
+        # 3) Use heuristic evaluation for the remaining moves
+        best_score = -10**9
+        best_moves = []
+
+        for move in empties:
+            board[move] = me
+            score = self._score_board(board, me)
+            # tiny bias towards central cells when scores are equal
+            if move in self.CENTER_INDICES:
+                score += 0.1
+            board[move] = ' '
+
             if score > best_score:
                 best_score = score
-                best_move = move
-        
-        return best_move
-    
-    def _minimax(self, board, depth, is_maximizing, alpha, beta):
-        """Minimax algorithm with alpha-beta pruning."""
-        winner = self._check_winner(board)
-        
-        if winner == self.symbol:
-            return 10 - depth
-        elif winner == self.opponent:
-            return depth - 10
-        elif EMPTY not in board:
-            return 0
-        
-        available_moves = [i for i, spot in enumerate(board) if spot == EMPTY]
-        
-        if is_maximizing:
-            max_eval = float('-inf')
-            for move in available_moves:
-                new_board = board[:]
-                new_board[move] = self.symbol
-                eval_score = self._minimax(new_board, depth + 1, False, alpha, beta)
-                max_eval = max(max_eval, eval_score)
-                alpha = max(alpha, eval_score)
-                if beta <= alpha:
-                    break
-            return max_eval
-        else:
-            min_eval = float('inf')
-            for move in available_moves:
-                new_board = board[:]
-                new_board[move] = self.opponent
-                eval_score = self._minimax(new_board, depth + 1, True, alpha, beta)
-                min_eval = min(min_eval, eval_score)
-                beta = min(beta, eval_score)
-                if beta <= alpha:
-                    break
-            return min_eval
-    
-    def _check_winner(self, board):
-        """Check if there's a winner on the board."""
-        for combo in self.WIN_COMBINATIONS:
-            if board[combo[0]] == board[combo[1]] == board[combo[2]] != EMPTY:
-                return board[combo[0]]
-        if EMPTY not in board:
-            return 'DRAW'
-        return None
+                best_moves = [move]
+            elif score == best_score:
+                best_moves.append(move)
+
+        # Randomly pick among the best to keep the agent non‑deterministic
+        return random.choice(best_moves)

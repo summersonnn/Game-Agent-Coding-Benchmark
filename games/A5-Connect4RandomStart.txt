@@ -175,6 +175,7 @@ class Connect4Game:
             # Switch turn
             self.current_turn = self.YELLOW if self.current_turn == self.RED else self.RED
 ```
+Do not import Connect4Game class. You don't need it. Just output your agent. Your code will be imported into game. Do not import any function or class from any other file. Do not assume anything about file structure.
 
 ## Competition Format
 
