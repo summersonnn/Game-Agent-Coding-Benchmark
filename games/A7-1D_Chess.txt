@@ -411,10 +411,27 @@ class OneDChessGame:
 ## Competition Format
 
 - **1 vs 1 Match**: Two agents compete across multiple games.
-- **Alternating Colors**: Agents swap colors (White/Black) each game.
-- **Scoring**:
-  - Win: 1 Point
-  - Draw: 0.5 Points
-  - Loss: 0 Points
+- **Randomized Colors**: Agent color assignment (White/Black) is randomized each game.
+
+## Scoring
+### Match Points (Primary Metric)
+- **Win:** 3 points
+- **Draw:** 1 point each
+- **Loss:** 0 points
+
+### Tie-Breaker Score (Secondary Metric)
+Full moves are calculated as `len(move_history) // 2` (total half-moves divided by 2, integer division).
+- **Win:** <=5 full moves: +10, 6-10 full moves: +5, >10 full moves: +3
+- **Loss:** Negative of the winner's score (e.g., -10, -5, or -3).
+- **Draw:** 0 for both players.
+- **Forfeit:** +12 for the winner, -12 for the forfeiting agent.
+
+## Error Handling & Forfeits
+
+### Initialization Crash
+If an agent crashes during `__init__`, the game is an immediate forfeit. The opponent receives 3 match points and +12 tie-breaker score. The crashing agent receives 0 points and -12 score.
+
+### During Gameplay
+If an agent crashes, times out, or returns an invalid move during `make_move`, a random valid move is generated on its behalf and the game continues. There is no retry mechanism.
 
 **IMPORTANT**: Output ONLY the `OneDChessAgent` class definition and any necessary imports. Do NOT output the game engine code.

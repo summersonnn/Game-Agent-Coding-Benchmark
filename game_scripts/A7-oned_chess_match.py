@@ -1,9 +1,8 @@
 """
-1D Chess Match Runner: Orchestrates head-to-head matches between two AI models.
+1D Chess Match Runner: Orchestrates head-to-head matches for A7-1D_Chess.
 
-Prompts two models to implement OneDChessAgent, extracts their code, renames
-them to OneDChessAgent_1 and OneDChessAgent_2, runs games, and reports
-win/loss statistics.
+1D Chess on a 1x8 linear board with King, Knight, and Rook pieces per side.
+Agents compete across multiple games with randomized color assignment.
 """
 
 import argparse
@@ -24,119 +23,93 @@ sys.path.append(str(Path(__file__).parent.parent / "utils"))
 
 from model_api import ModelAPI
 from logging_config import setup_logging
+from scoreboard import update_scoreboard
 
 logger = setup_logging(__name__)
 
-# Load environment variables
 load_dotenv()
 
 # Configuration
 try:
-    NUM_ROUNDS_PER_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
+    NUM_GAMES_PER_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
 except (ValueError, TypeError):
-    NUM_ROUNDS_PER_MATCH = 100
+    NUM_GAMES_PER_MATCH = 100
 
 try:
     MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
-# Maximum moves per game to prevent infinite games
 MAX_MOVES_PER_GAME = 200
 
-# Results directories
+# Paths
 RESULTS_DIR = Path(__file__).parent.parent / "results" / "oned_chess"
-GAME_LOGS_DIR = RESULTS_DIR / "game_logs"
-MODEL_RESPONSES_DIR = RESULTS_DIR / "model_responses"
-
-# Stored agents directory
+SCOREBOARD_PATH = Path(__file__).parent.parent / "scoreboard" / "A7-scoreboard.txt"
 AGENTS_DIR = Path(__file__).parent.parent / "agents"
 GAME_NAME = "A7-1D_Chess"
 
-# The game code template with placeholders for agent implementations
-GAME_CODE_TEMPLATE = '''
-import sys
-import random
-import signal
 
-# Move timeout in seconds
-MOVE_TIMEOUT = {move_timeout}
-
-class MoveTimeoutException(Exception):
-    pass
-
-def timeout_handler(signum, frame):
-    raise MoveTimeoutException("Move timeout")
-
-# --- 1D Chess Game Engine ---
-
+# ============================================================
+# Shared game engine code (used by both match and human modes)
+# ============================================================
+GAME_ENGINE_CODE = r'''
 class OneDChessGame:
     """
     1D Chess game engine.
     Board: 8 squares (index 0-7, displayed as 1-8 to players)
     Pieces: K/N/R (White), k/n/r (Black), '' (empty)
     """
-    
+
     WHITE = 'W'
     BLACK = 'B'
-    
+
     def __init__(self):
-        # Board index 0-7 maps to squares 1-8
-        # Starting position: White K(0), N(1), R(2), Black r(5), n(6), k(7)
         self.board = ['K', 'N', 'R', '', '', 'r', 'n', 'k']
         self.current_turn = self.WHITE
         self.move_history = []
-        self.position_history = []  # For threefold repetition
+        self.position_history = []
         self._record_position()
-    
+
     def _record_position(self):
-        """Record current position for repetition detection."""
         pos = (tuple(self.board), self.current_turn)
         self.position_history.append(pos)
-    
+
     def _is_white_piece(self, piece):
         return piece in ('K', 'N', 'R')
-    
+
     def _is_black_piece(self, piece):
         return piece in ('k', 'n', 'r')
-    
+
     def _is_own_piece(self, piece, color):
         if color == self.WHITE:
             return self._is_white_piece(piece)
         return self._is_black_piece(piece)
-    
+
     def _is_enemy_piece(self, piece, color):
         if piece == '':
             return False
         return not self._is_own_piece(piece, color)
-    
+
     def _get_piece_type(self, piece):
-        """Return piece type in uppercase."""
         return piece.upper() if piece else ''
-    
+
     def _find_king(self, color):
-        """Find the position of the King for the given color."""
         target = 'K' if color == self.WHITE else 'k'
         for i, piece in enumerate(self.board):
             if piece == target:
                 return i
-        return -1  # King not found (should not happen in valid game)
-    
+        return -1
+
     def _get_valid_moves_for_piece(self, pos, ignore_check=False):
-        """
-        Get all valid destination squares for the piece at pos.
-        Returns list of (to_pos, is_capture) tuples.
-        """
         piece = self.board[pos]
         if not piece:
             return []
-        
+
         color = self.WHITE if self._is_white_piece(piece) else self.BLACK
         piece_type = self._get_piece_type(piece)
         moves = []
-        
+
         if piece_type == 'K':
-            # King: move 1 square left or right
             for delta in [-1, 1]:
                 to_pos = pos + delta
                 if 0 <= to_pos < 8:
@@ -144,9 +117,8 @@ class OneDChessGame:
                     if not self._is_own_piece(target, color):
                         is_capture = self._is_enemy_piece(target, color)
                         moves.append((to_pos, is_capture))
-        
+
         elif piece_type == 'N':
-            # Knight: move exactly 2 squares, can jump
             for delta in [-2, 2]:
                 to_pos = pos + delta
                 if 0 <= to_pos < 8:
@@ -154,9 +126,8 @@ class OneDChessGame:
                     if not self._is_own_piece(target, color):
                         is_capture = self._is_enemy_piece(target, color)
                         moves.append((to_pos, is_capture))
-        
+
         elif piece_type == 'R':
-            # Rook: move any distance, blocked by pieces
             for direction in [-1, 1]:
                 to_pos = pos + direction
                 while 0 <= to_pos < 8:
@@ -165,565 +136,72 @@ class OneDChessGame:
                         moves.append((to_pos, False))
                     elif self._is_enemy_piece(target, color):
                         moves.append((to_pos, True))
-                        break  # Can capture but not go further
+                        break
                     else:
-                        break  # Blocked by own piece
+                        break
                     to_pos += direction
-        
+
         if ignore_check:
             return moves
-        
-        # Filter moves that would leave own King in check
+
         valid_moves = []
         for to_pos, is_capture in moves:
             if self._is_move_safe(pos, to_pos, color):
                 valid_moves.append((to_pos, is_capture))
-        
+
         return valid_moves
-    
+
     def _is_move_safe(self, from_pos, to_pos, color):
-        """Check if making this move would leave the King in check."""
-        # Simulate the move
         original_from = self.board[from_pos]
         original_to = self.board[to_pos]
-        
+
         self.board[to_pos] = self.board[from_pos]
         self.board[from_pos] = ''
-        
-        # Check if King is in check after move
+
         in_check = self._is_in_check(color)
-        
-        # Undo the move
+
         self.board[from_pos] = original_from
         self.board[to_pos] = original_to
-        
+
         return not in_check
-    
+
     def _is_in_check(self, color):
-        """Check if the given color's King is under attack."""
         king_pos = self._find_king(color)
         if king_pos == -1:
-            return True  # King captured (shouldn't happen in normal play)
-        
+            return True
+
         enemy_color = self.BLACK if color == self.WHITE else self.WHITE
-        
-        # Check all enemy pieces for attacks on the King
+
         for pos in range(8):
             piece = self.board[pos]
             if piece and self._is_own_piece(piece, enemy_color):
-                # Get moves ignoring check (to avoid infinite recursion)
                 enemy_moves = self._get_valid_moves_for_piece(pos, ignore_check=True)
                 for to_pos, _ in enemy_moves:
                     if to_pos == king_pos:
                         return True
         return False
-    
+
     def _has_legal_moves(self, color):
-        """Check if the given color has any legal moves."""
         for pos in range(8):
             piece = self.board[pos]
             if piece and self._is_own_piece(piece, color):
                 if self._get_valid_moves_for_piece(pos):
                     return True
         return False
-    
+
     def _is_insufficient_material(self):
-        """Check if only Kings remain (draw by insufficient material)."""
         for piece in self.board:
             if piece and piece.upper() != 'K':
                 return False
         return True
-    
+
     def _is_threefold_repetition(self):
-        """Check for threefold repetition."""
         if len(self.position_history) < 3:
             return False
         current_pos = self.position_history[-1]
         count = sum(1 for pos in self.position_history if pos == current_pos)
         return count >= 3
-    
-    def parse_move(self, move_str):
-        """
-        Parse move notation into (piece_type, from_pos, to_pos, is_capture).
-        Returns None if invalid format.
-        
-        Format: [Piece][From][x?][To]
-        Examples: "N24", "R3x6", "K12"
-        """
-        if not isinstance(move_str, str):
-            return None
-        move_str = move_str.strip()
-        if len(move_str) < 3:
-            return None
-        
-        piece = move_str[0].upper()
-        if piece not in ('K', 'N', 'R'):
-            return None
-        
-        # Check for capture notation
-        if 'x' in move_str.lower():
-            parts = move_str[1:].lower().split('x')
-            if len(parts) != 2:
-                return None
-            try:
-                from_sq = int(parts[0])
-                to_sq = int(parts[1])
-                is_capture = True
-            except ValueError:
-                return None
-        else:
-            # Regular move: piece + from + to (e.g., "N24")
-            if len(move_str) != 3:
-                return None
-            try:
-                from_sq = int(move_str[1])
-                to_sq = int(move_str[2])
-                is_capture = False
-            except ValueError:
-                return None
-        
-        # Convert 1-8 notation to 0-7 index
-        from_pos = from_sq - 1
-        to_pos = to_sq - 1
-        
-        if not (0 <= from_pos < 8 and 0 <= to_pos < 8):
-            return None
-        
-        return (piece, from_pos, to_pos, is_capture)
-    
-    def is_valid_move(self, move_str, color):
-        """Validate a move for the given color."""
-        parsed = self.parse_move(move_str)
-        if not parsed:
-            return False, "Invalid move notation"
-        
-        piece_type, from_pos, to_pos, is_capture = parsed
-        
-        # Check piece at from_pos
-        piece = self.board[from_pos]
-        if not piece:
-            return False, f"No piece at square {{from_pos + 1}}"
-        
-        if not self._is_own_piece(piece, color):
-            return False, "Cannot move opponent's piece"
-        
-        if self._get_piece_type(piece) != piece_type:
-            return False, f"Piece at square {{from_pos + 1}} is not a {{piece_type}}"
-        
-        # Check if move is in valid moves
-        valid_moves = self._get_valid_moves_for_piece(from_pos)
-        for valid_to, valid_capture in valid_moves:
-            if valid_to == to_pos:
-                # Verify capture notation matches
-                if is_capture != valid_capture:
-                    if is_capture:
-                        return False, "No piece to capture at destination"
-                    else:
-                        return False, "Must use capture notation (x) when capturing"
-                return True, ""
-        
-        # Move not found in valid moves
-        if self._is_in_check(color):
-            return False, "Must escape check"
-        return False, "Invalid move for this piece"
-    
-    def make_move(self, move_str, color):
-        """
-        Execute a move. Returns (success, message).
-        """
-        valid, error = self.is_valid_move(move_str, color)
-        if not valid:
-            return False, error
-        
-        parsed = self.parse_move(move_str)
-        _, from_pos, to_pos, _ = parsed
-        
-        # Execute move
-        self.board[to_pos] = self.board[from_pos]
-        self.board[from_pos] = ''
-        
-        # Record move and position
-        self.move_history.append(move_str)
-        self._record_position()
-        
-        # Switch turn
-        self.current_turn = self.BLACK if self.current_turn == self.WHITE else self.WHITE
-        
-        return True, ""
-    
-    def get_game_state(self):
-        """
-        Check the current game state.
-        Returns: 'ongoing', 'white_wins', 'black_wins', 'draw_stalemate',
-                 'draw_repetition', 'draw_material'
-        """
-        # Check for insufficient material
-        if self._is_insufficient_material():
-            return 'draw_material'
-        
-        # Check for threefold repetition
-        if self._is_threefold_repetition():
-            return 'draw_repetition'
-        
-        current = self.current_turn
-        in_check = self._is_in_check(current)
-        has_moves = self._has_legal_moves(current)
-        
-        if not has_moves:
-            if in_check:
-                # Checkmate
-                return 'white_wins' if current == self.BLACK else 'black_wins'
-            else:
-                # Stalemate
-                return 'draw_stalemate'
-        
-        return 'ongoing'
-    
-    def get_board_display(self):
-        """Return a string representation of the board."""
-        squares = "| " + " | ".join(str(i+1) for i in range(8)) + " |"
-        pieces = "| " + " | ".join(p if p else '.' for p in self.board) + " |"
-        return f"{{squares}}\\n{{pieces}}"
 
-# ---------------------------------------------------------
-
-{{extra_imports}}
-
-{{agent1_code}}
-
-{{agent2_code}}
-
-# --- Stats ---
-stats = {{{{
-    "normal": 0,
-    "draw": 0,
-    "c1": 0,
-    "c2": 0,
-    "r1_timeout": 0,
-    "r1_crash": 0,
-    "r1_invalid": 0,
-    "r2_timeout": 0,
-    "r2_crash": 0,
-    "r2_invalid": 0,
-}}}}
-
-MAX_MOVES = {max_moves}
-
-def print_board(board):
-    squares = "| " + " | ".join(str(i+1) for i in range(8)) + " |"
-    pieces = "| " + " | ".join(p if p else '.' for p in board) + " |"
-    print(squares)
-    print(pieces)
-
-def play_game(game_num):
-    """Plays a single game and returns the winner's name or DRAW."""
-    game = OneDChessGame()
-    
-    # Randomize starting agent
-    if random.random() < 0.5:
-        white_agent_class = OneDChessAgent_1
-        black_agent_class = OneDChessAgent_2
-        white_name = "Agent-1"
-        black_name = "Agent-2"
-    else:
-        white_agent_class = OneDChessAgent_2
-        black_agent_class = OneDChessAgent_1
-        white_name = "Agent-2"
-        black_name = "Agent-1"
-
-    print(f"--- GAME {{game_num}} ---")
-    print(f"Colors: {{white_name}} is White, {{black_name}} is Black")
-    
-    try:
-        agent_white = white_agent_class(white_name, game.WHITE)
-    except Exception as e:
-        stats["c1" if white_name == "Agent-1" else "c2"] += 1
-        print(f"{{white_name}} crashed during init: {{e}}")
-        return black_name
-    
-    try:
-        agent_black = black_agent_class(black_name, game.BLACK)
-    except Exception as e:
-        stats["c1" if black_name == "Agent-1" else "c2"] += 1
-        print(f"{{black_name}} crashed during init: {{e}}")
-        return white_name
-
-    agents = {{game.WHITE: agent_white, game.BLACK: agent_black}}
-    names = {{game.WHITE: white_name, game.BLACK: black_name}}
-    
-    move_count = 0
-
-    while move_count < MAX_MOVES:
-        current_color = game.current_turn
-        current_agent = agents[current_color]
-        current_name = names[current_color]
-        opponent_name = names[game.BLACK if current_color == game.WHITE else game.WHITE]
-        
-        move = None
-        try:
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(int(MOVE_TIMEOUT))
-            try:
-                move = current_agent.make_move(game.board[:], game.move_history[:])
-            finally:
-                signal.alarm(0)
-        except MoveTimeoutException:
-            if current_name == "Agent-1":
-                stats["r1_timeout"] += 1
-            else:
-                stats["r2_timeout"] += 1
-            print(f"{{current_name}} TIMEOUT - forfeit")
-            return opponent_name
-        except Exception as e:
-            if current_name == "Agent-1":
-                stats["r1_crash"] += 1
-            else:
-                stats["r2_crash"] += 1
-            print(f"{{current_name}} CRASH: {{e}} - forfeit")
-            return opponent_name
-
-        # Validate and execute move
-        success, error = game.make_move(move, current_color)
-        if not success:
-            if current_name == "Agent-1":
-                stats["r1_invalid"] += 1
-            else:
-                stats["r2_invalid"] += 1
-            print(f"{{current_name}} INVALID MOVE '{{move}}': {{error}} - forfeit")
-            return opponent_name
-        
-        print(f"{{current_name}}: {{move}}")
-        move_count += 1
-        
-        # Check game state
-        state = game.get_game_state()
-        if state != 'ongoing':
-            print("Final Board:")
-            print_board(game.board)
-            
-            if state == 'white_wins':
-                print(f"Result: {{white_name}} wins by checkmate!")
-                stats["normal"] += 1
-                return white_name
-            elif state == 'black_wins':
-                print(f"Result: {{black_name}} wins by checkmate!")
-                stats["normal"] += 1
-                return black_name
-            else:
-                # Draw
-                draw_reason = {{
-                    'draw_stalemate': 'stalemate',
-                    'draw_repetition': 'threefold repetition',
-                    'draw_material': 'insufficient material'
-                }}.get(state, 'unknown')
-                print(f"Result: DRAW by {{draw_reason}}")
-                stats["draw"] += 1
-                return "DRAW"
-    
-    # Max moves reached - draw
-    print("Final Board:")
-    print_board(game.board)
-    print(f"Result: DRAW by move limit ({{MAX_MOVES}} moves)")
-    stats["draw"] += 1
-    return "DRAW"
-
-def main():
-    scores = {{"Agent-1": 0, "Agent-2": 0}}
-    num_games = {num_games}
-
-    for i in range(num_games):
-        result = play_game(i + 1)
-        if result == "DRAW":
-            scores["Agent-1"] += 0.5
-            scores["Agent-2"] += 0.5
-        elif result in scores:
-            scores[result] += 1
-        
-        sys.stdout.flush()
-
-    print(f"RESULT:Agent-1={{scores['Agent-1']}},Agent-2={{scores['Agent-2']}}")
-    print(f"STATS:Normal={{stats['normal']}},Draw={{stats['draw']}},C1={{stats['c1']}},C2={{stats['c2']}},R1T={{stats['r1_timeout']}},R1C={{stats['r1_crash']}},R1I={{stats['r1_invalid']}},R2T={{stats['r2_timeout']}},R2C={{stats['r2_crash']}},R2I={{stats['r2_invalid']}}")
-
-if __name__ == "__main__":
-    main()
-'''
-
-# --- Human play mode ---
-HUMAN_GAME_CODE = '''
-import random
-
-class OneDChessGame:
-    """
-    1D Chess game engine.
-    Board: 8 squares (index 0-7, displayed as 1-8 to players)
-    Pieces: K/N/R (White), k/n/r (Black), '' (empty)
-    """
-    
-    WHITE = 'W'
-    BLACK = 'B'
-    
-    def __init__(self):
-        # Board index 0-7 maps to squares 1-8
-        # Starting position: White K(0), N(1), R(2), Black r(5), n(6), k(7)
-        self.board = ['K', 'N', 'R', '', '', 'r', 'n', 'k']
-        self.current_turn = self.WHITE
-        self.move_history = []
-        self.position_history = []  # For threefold repetition
-        self._record_position()
-    
-    def _record_position(self):
-        """Record current position for repetition detection."""
-        pos = (tuple(self.board), self.current_turn)
-        self.position_history.append(pos)
-    
-    def _is_white_piece(self, piece):
-        return piece in ('K', 'N', 'R')
-    
-    def _is_black_piece(self, piece):
-        return piece in ('k', 'n', 'r')
-    
-    def _is_own_piece(self, piece, color):
-        if color == self.WHITE:
-            return self._is_white_piece(piece)
-        return self._is_black_piece(piece)
-    
-    def _is_enemy_piece(self, piece, color):
-        if piece == '':
-            return False
-        return not self._is_own_piece(piece, color)
-    
-    def _get_piece_type(self, piece):
-        """Return piece type in uppercase."""
-        return piece.upper() if piece else ''
-    
-    def _find_king(self, color):
-        """Find the position of the King for the given color."""
-        target = 'K' if color == self.WHITE else 'k'
-        for i, piece in enumerate(self.board):
-            if piece == target:
-                return i
-        return -1  # King not found (should not happen in valid game)
-    
-    def _get_valid_moves_for_piece(self, pos, ignore_check=False):
-        """
-        Get all valid destination squares for the piece at pos.
-        Returns list of (to_pos, is_capture) tuples.
-        """
-        piece = self.board[pos]
-        if not piece:
-            return []
-        
-        color = self.WHITE if self._is_white_piece(piece) else self.BLACK
-        piece_type = self._get_piece_type(piece)
-        moves = []
-        
-        if piece_type == 'K':
-            # King: move 1 square left or right
-            for delta in [-1, 1]:
-                to_pos = pos + delta
-                if 0 <= to_pos < 8:
-                    target = self.board[to_pos]
-                    if not self._is_own_piece(target, color):
-                        is_capture = self._is_enemy_piece(target, color)
-                        moves.append((to_pos, is_capture))
-        
-        elif piece_type == 'N':
-            # Knight: move exactly 2 squares, can jump
-            for delta in [-2, 2]:
-                to_pos = pos + delta
-                if 0 <= to_pos < 8:
-                    target = self.board[to_pos]
-                    if not self._is_own_piece(target, color):
-                        is_capture = self._is_enemy_piece(target, color)
-                        moves.append((to_pos, is_capture))
-        
-        elif piece_type == 'R':
-            # Rook: move any distance, blocked by pieces
-            for direction in [-1, 1]:
-                to_pos = pos + direction
-                while 0 <= to_pos < 8:
-                    target = self.board[to_pos]
-                    if target == '':
-                        moves.append((to_pos, False))
-                    elif self._is_enemy_piece(target, color):
-                        moves.append((to_pos, True))
-                        break  # Can capture but not go further
-                    else:
-                        break  # Blocked by own piece
-                    to_pos += direction
-        
-        if ignore_check:
-            return moves
-        
-        # Filter moves that would leave own King in check
-        valid_moves = []
-        for to_pos, is_capture in moves:
-            if self._is_move_safe(pos, to_pos, color):
-                valid_moves.append((to_pos, is_capture))
-        
-        return valid_moves
-    
-    def _is_move_safe(self, from_pos, to_pos, color):
-        """Check if making this move would leave the King in check."""
-        # Simulate the move
-        original_from = self.board[from_pos]
-        original_to = self.board[to_pos]
-        
-        self.board[to_pos] = self.board[from_pos]
-        self.board[from_pos] = ''
-        
-        # Check if King is in check after move
-        in_check = self._is_in_check(color)
-        
-        # Undo the move
-        self.board[from_pos] = original_from
-        self.board[to_pos] = original_to
-        
-        return not in_check
-    
-    def _is_in_check(self, color):
-        """Check if the given color's King is under attack."""
-        king_pos = self._find_king(color)
-        if king_pos == -1:
-            return True  # King captured (shouldn't happen in normal play)
-        
-        enemy_color = self.BLACK if color == self.WHITE else self.WHITE
-        
-        # Check all enemy pieces for attacks on the King
-        for pos in range(8):
-            piece = self.board[pos]
-            if piece and self._is_own_piece(piece, enemy_color):
-                # Get moves ignoring check (to avoid infinite recursion)
-                enemy_moves = self._get_valid_moves_for_piece(pos, ignore_check=True)
-                for to_pos, _ in enemy_moves:
-                    if to_pos == king_pos:
-                        return True
-        return False
-    
-    def _has_legal_moves(self, color):
-        """Check if the given color has any legal moves."""
-        for pos in range(8):
-            piece = self.board[pos]
-            if piece and self._is_own_piece(piece, color):
-                if self._get_valid_moves_for_piece(pos):
-                    return True
-        return False
-    
-    def _is_insufficient_material(self):
-        """Check if only Kings remain (draw by insufficient material)."""
-        for piece in self.board:
-            if piece and piece.upper() != 'K':
-                return False
-        return True
-    
-    def _is_threefold_repetition(self):
-        """Check for threefold repetition."""
-        if len(self.position_history) < 3:
-            return False
-        current_pos = self.position_history[-1]
-        count = sum(1 for pos in self.position_history if pos == current_pos)
-        return count >= 3
-    
     def get_all_valid_moves(self, color):
         """Get all valid moves for a color. Returns list of move strings."""
         moves = []
@@ -740,26 +218,18 @@ class OneDChessGame:
                         move_str = f"{piece_type}{from_sq}{to_sq}"
                     moves.append(move_str)
         return moves
-    
+
     def parse_move(self, move_str):
-        """
-        Parse move notation into (piece_type, from_pos, to_pos, is_capture).
-        Returns None if invalid format.
-        
-        Format: [Piece][From][x?][To]
-        Examples: "N24", "R3x6", "K12"
-        """
         if not isinstance(move_str, str):
             return None
         move_str = move_str.strip()
         if len(move_str) < 3:
             return None
-        
+
         piece = move_str[0].upper()
         if piece not in ('K', 'N', 'R'):
             return None
-        
-        # Check for capture notation
+
         if 'x' in move_str.lower():
             parts = move_str[1:].lower().split('x')
             if len(parts) != 2:
@@ -771,7 +241,6 @@ class OneDChessGame:
             except ValueError:
                 return None
         else:
-            # Regular move: piece + from + to (e.g., "N24")
             if len(move_str) != 3:
                 return None
             try:
@@ -780,106 +249,645 @@ class OneDChessGame:
                 is_capture = False
             except ValueError:
                 return None
-        
-        # Convert 1-8 notation to 0-7 index
+
         from_pos = from_sq - 1
         to_pos = to_sq - 1
-        
+
         if not (0 <= from_pos < 8 and 0 <= to_pos < 8):
             return None
-        
+
         return (piece, from_pos, to_pos, is_capture)
-    
+
     def is_valid_move(self, move_str, color):
-        """Validate a move for the given color."""
         parsed = self.parse_move(move_str)
         if not parsed:
             return False, "Invalid move notation"
-        
+
         piece_type, from_pos, to_pos, is_capture = parsed
-        
-        # Check piece at from_pos
+
         piece = self.board[from_pos]
         if not piece:
             return False, f"No piece at square {from_pos + 1}"
-        
+
         if not self._is_own_piece(piece, color):
             return False, "Cannot move opponent's piece"
-        
+
         if self._get_piece_type(piece) != piece_type:
             return False, f"Piece at square {from_pos + 1} is not a {piece_type}"
-        
-        # Check if move is in valid moves
+
         valid_moves = self._get_valid_moves_for_piece(from_pos)
         for valid_to, valid_capture in valid_moves:
             if valid_to == to_pos:
-                # Verify capture notation matches
                 if is_capture != valid_capture:
                     if is_capture:
                         return False, "No piece to capture at destination"
                     else:
                         return False, "Must use capture notation (x) when capturing"
                 return True, ""
-        
-        # Move not found in valid moves
+
         if self._is_in_check(color):
             return False, "Must escape check"
         return False, "Invalid move for this piece"
-    
+
     def make_move(self, move_str, color):
-        """
-        Execute a move. Returns (success, message).
-        """
         valid, error = self.is_valid_move(move_str, color)
         if not valid:
             return False, error
-        
+
         parsed = self.parse_move(move_str)
         _, from_pos, to_pos, _ = parsed
-        
-        # Execute move
+
         self.board[to_pos] = self.board[from_pos]
         self.board[from_pos] = ''
-        
-        # Record move and position
+
         self.move_history.append(move_str)
         self._record_position()
-        
-        # Switch turn
+
         self.current_turn = self.BLACK if self.current_turn == self.WHITE else self.WHITE
-        
+
         return True, ""
-    
+
     def get_game_state(self):
-        """
-        Check the current game state.
-        Returns: 'ongoing', 'white_wins', 'black_wins', 'draw_stalemate',
-                 'draw_repetition', 'draw_material'
-        """
-        # Check for insufficient material
         if self._is_insufficient_material():
             return 'draw_material'
-        
-        # Check for threefold repetition
+
         if self._is_threefold_repetition():
             return 'draw_repetition'
-        
+
         current = self.current_turn
         in_check = self._is_in_check(current)
         has_moves = self._has_legal_moves(current)
-        
+
         if not has_moves:
             if in_check:
-                # Checkmate
                 return 'white_wins' if current == self.BLACK else 'black_wins'
             else:
-                # Stalemate
                 return 'draw_stalemate'
-        
+
         return 'ongoing'
-    
+
     def get_board_display(self):
-        """Return a string representation of the board."""
+        squares = "| " + " | ".join(str(i+1) for i in range(8)) + " |"
+        pieces = "| " + " | ".join(p if p else '.' for p in self.board) + " |"
+        return f"{squares}\n{pieces}"
+'''
+
+
+# ============================================================
+# Match runner code (play_game + main for agent-vs-agent)
+# ============================================================
+MATCH_RUNNER_CODE = r'''
+class MoveTimeoutException(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise MoveTimeoutException("Move timeout")
+
+
+def play_game(game_num, match_stats):
+    game = OneDChessGame()
+
+    if random.random() < 0.5:
+        white_agent_class = OneDChessAgent_1
+        black_agent_class = OneDChessAgent_2
+        white_name = "Agent-1"
+        black_name = "Agent-2"
+    else:
+        white_agent_class = OneDChessAgent_2
+        black_agent_class = OneDChessAgent_1
+        white_name = "Agent-2"
+        black_name = "Agent-1"
+
+    print()
+    print("=" * 60)
+    print(f"Game {game_num}")
+    a1_color = 'W' if white_name == "Agent-1" else 'B'
+    a2_color = 'W' if white_name == "Agent-2" else 'B'
+    print(f"Agent-1: {AGENT1_INFO} ({a1_color})")
+    print(f"Agent-2: {AGENT2_INFO} ({a2_color})")
+    print("-" * 60)
+
+    # --- Init agents (crash = forfeit) ---
+    try:
+        agent_white = white_agent_class(white_name, game.WHITE)
+    except Exception as e:
+        print(f"{white_name} (W) init crash: {e}")
+        match_stats[white_name]["other_crash"] += 1
+        match_stats[black_name]["wins"] += 1
+        match_stats[black_name]["points"] += 3
+        match_stats[black_name]["score"] += 12
+        match_stats[white_name]["losses"] += 1
+        match_stats[white_name]["score"] -= 12
+
+        print("Final Position: N/A (initialization crash)")
+        print("-" * 40)
+        print(f"Final Result: {black_name} wins by forfeit.")
+        print("-" * 40)
+        print("Points:")
+        print(f"{black_name}: 3")
+        print(f"{white_name}: 0")
+        print("-" * 40)
+        print("Scores:")
+        print(f"{black_name}: 12")
+        print(f"{white_name}: -12")
+        print("=" * 60)
+        return black_name
+
+    try:
+        agent_black = black_agent_class(black_name, game.BLACK)
+    except Exception as e:
+        print(f"{black_name} (B) init crash: {e}")
+        match_stats[black_name]["other_crash"] += 1
+        match_stats[white_name]["wins"] += 1
+        match_stats[white_name]["points"] += 3
+        match_stats[white_name]["score"] += 12
+        match_stats[black_name]["losses"] += 1
+        match_stats[black_name]["score"] -= 12
+
+        print("Final Position: N/A (initialization crash)")
+        print("-" * 40)
+        print(f"Final Result: {white_name} wins by forfeit.")
+        print("-" * 40)
+        print("Points:")
+        print(f"{white_name}: 3")
+        print(f"{black_name}: 0")
+        print("-" * 40)
+        print("Scores:")
+        print(f"{white_name}: 12")
+        print(f"{black_name}: -12")
+        print("=" * 60)
+        return white_name
+
+    agents = {game.WHITE: agent_white, game.BLACK: agent_black}
+    names = {game.WHITE: white_name, game.BLACK: black_name}
+
+    move_count = 0
+
+    while move_count < MAX_MOVES:
+        current_color = game.current_turn
+        current_agent = agents[current_color]
+        current_name = names[current_color]
+        opponent_color = game.BLACK if current_color == game.WHITE else game.WHITE
+        opponent_name = names[opponent_color]
+
+        move = None
+        valid = False
+
+        try:
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(max(1, int(MOVE_TIMEOUT)))
+            try:
+                move = current_agent.make_move(game.board[:], game.move_history[:])
+            finally:
+                signal.alarm(0)
+        except MoveTimeoutException:
+            print(f"{current_name} ({current_color}): TIMEOUT")
+            match_stats[current_name]["timeout"] += 1
+            move = None
+        except Exception as e:
+            print(f"{current_name} ({current_color}): CRASH '{str(e)[:80]}'")
+            match_stats[current_name]["make_move_crash"] += 1
+            move = None
+
+        if move is not None:
+            ok, err = game.is_valid_move(move, current_color)
+            if ok:
+                valid = True
+            else:
+                print(f"{current_name} ({current_color}): INVALID '{move}' - {err}")
+                match_stats[current_name]["invalid"] += 1
+
+        if valid:
+            game.make_move(move, current_color)
+            print(f"{current_name} ({current_color}): {move}")
+        else:
+            all_moves = game.get_all_valid_moves(current_color)
+            if all_moves:
+                fallback = random.choice(all_moves)
+                game.make_move(fallback, current_color)
+                print(f"{current_name} ({current_color}): random {fallback}")
+            else:
+                break
+
+        move_count += 1
+
+        state = game.get_game_state()
+        if state != 'ongoing':
+            break
+
+    # --- Game over: determine result ---
+    state = game.get_game_state()
+
+    print()
+    print("Final Position:")
+    board_display = game.get_board_display()
+    for line in board_display.split('\n'):
+        print(f"BOARD: {line}")
+
+    if state == 'white_wins':
+        winner = names[game.WHITE]
+        loser = names[game.BLACK]
+        result_reason = f"{winner} wins by checkmate"
+    elif state == 'black_wins':
+        winner = names[game.BLACK]
+        loser = names[game.WHITE]
+        result_reason = f"{winner} wins by checkmate"
+    elif state == 'ongoing':
+        winner = "DRAW"
+        result_reason = f"Draw by move limit ({MAX_MOVES} moves)"
+    else:
+        draw_reasons = {
+            'draw_stalemate': 'stalemate',
+            'draw_repetition': 'threefold repetition',
+            'draw_material': 'insufficient material',
+        }
+        winner = "DRAW"
+        result_reason = f"Draw by {draw_reasons.get(state, 'unknown')}"
+
+    # Calculate tie-breaker score: full_moves = len(move_history) // 2
+    if winner != "DRAW":
+        full_moves = len(game.move_history) // 2
+        if full_moves <= 5:
+            winner_score = 10
+        elif full_moves <= 10:
+            winner_score = 5
+        else:
+            winner_score = 3
+        loser_score = -winner_score
+    else:
+        winner_score = 0
+        loser_score = 0
+
+    print("-" * 40)
+    print(f"Final Result: {result_reason}")
+    print("-" * 40)
+
+    print("Points:")
+    if winner != "DRAW":
+        print(f"{winner}: 3")
+        print(f"{loser}: 0")
+    else:
+        print("Agent-1: 1")
+        print("Agent-2: 1")
+    print("-" * 40)
+
+    print("Scores:")
+    if winner != "DRAW":
+        print(f"{winner}: {winner_score}")
+        print(f"{loser}: {loser_score}")
+    else:
+        print("Agent-1: 0")
+        print("Agent-2: 0")
+    print("=" * 60)
+
+    # Update match stats
+    if winner != "DRAW":
+        match_stats[winner]["wins"] += 1
+        match_stats[winner]["points"] += 3
+        match_stats[winner]["score"] += winner_score
+        match_stats[loser]["losses"] += 1
+        match_stats[loser]["score"] += loser_score
+    else:
+        match_stats["Agent-1"]["draws"] += 1
+        match_stats["Agent-1"]["points"] += 1
+        match_stats["Agent-2"]["draws"] += 1
+        match_stats["Agent-2"]["points"] += 1
+
+    sys.stdout.flush()
+    return winner
+
+
+def main():
+    match_stats = {
+        "Agent-1": {
+            "wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0,
+            "make_move_crash": 0, "other_crash": 0, "crash": 0,
+            "timeout": 0, "invalid": 0,
+        },
+        "Agent-2": {
+            "wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0,
+            "make_move_crash": 0, "other_crash": 0, "crash": 0,
+            "timeout": 0, "invalid": 0,
+        },
+    }
+
+    for i in range(NUM_GAMES):
+        play_game(i + 1, match_stats)
+        sys.stdout.flush()
+
+    # Aggregate crash stat for backward compatibility
+    for agent_key in ["Agent-1", "Agent-2"]:
+        match_stats[agent_key]["crash"] = (
+            match_stats[agent_key]["make_move_crash"]
+            + match_stats[agent_key]["other_crash"]
+        )
+
+    print("=" * 60)
+    print(f"Agent-1: {AGENT1_INFO}")
+    print(f"Agent-2: {AGENT2_INFO}")
+    print(f"RESULT:Agent-1={match_stats['Agent-1']['points']},Agent-2={match_stats['Agent-2']['points']}")
+    print(f"SCORE:Agent-1={match_stats['Agent-1']['score']},Agent-2={match_stats['Agent-2']['score']}")
+    print(f"WINS:Agent-1={match_stats['Agent-1']['wins']},Agent-2={match_stats['Agent-2']['wins']}")
+    print(f"DRAWS:{match_stats['Agent-1']['draws']}")
+    print("--- MATCH STATISTICS ---")
+    print(f"Agent-1 make_move_crash: {match_stats['Agent-1']['make_move_crash']}")
+    print(f"Agent-2 make_move_crash: {match_stats['Agent-2']['make_move_crash']}")
+    print(f"Agent-1 other_crash: {match_stats['Agent-1']['other_crash']}")
+    print(f"Agent-2 other_crash: {match_stats['Agent-2']['other_crash']}")
+    print(f"Agent-1 crash (total): {match_stats['Agent-1']['crash']}")
+    print(f"Agent-2 crash (total): {match_stats['Agent-2']['crash']}")
+    print(f"Agent-1 Timeouts: {match_stats['Agent-1']['timeout']}")
+    print(f"Agent-2 Timeouts: {match_stats['Agent-2']['timeout']}")
+    print(f"Agent-1 Invalid: {match_stats['Agent-1']['invalid']}")
+    print(f"Agent-2 Invalid: {match_stats['Agent-2']['invalid']}")
+    print(f"STATS:Agent-1={match_stats['Agent-1']},Agent-2={match_stats['Agent-2']}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+# ============================================================
+# Human play mode code (self-contained with own engine copy)
+# ============================================================
+HUMAN_GAME_CODE = '''
+import random
+
+class OneDChessGame:
+    """
+    1D Chess game engine.
+    Board: 8 squares (index 0-7, displayed as 1-8 to players)
+    Pieces: K/N/R (White), k/n/r (Black), '' (empty)
+    """
+
+    WHITE = 'W'
+    BLACK = 'B'
+
+    def __init__(self):
+        self.board = ['K', 'N', 'R', '', '', 'r', 'n', 'k']
+        self.current_turn = self.WHITE
+        self.move_history = []
+        self.position_history = []
+        self._record_position()
+
+    def _record_position(self):
+        pos = (tuple(self.board), self.current_turn)
+        self.position_history.append(pos)
+
+    def _is_white_piece(self, piece):
+        return piece in ('K', 'N', 'R')
+
+    def _is_black_piece(self, piece):
+        return piece in ('k', 'n', 'r')
+
+    def _is_own_piece(self, piece, color):
+        if color == self.WHITE:
+            return self._is_white_piece(piece)
+        return self._is_black_piece(piece)
+
+    def _is_enemy_piece(self, piece, color):
+        if piece == '':
+            return False
+        return not self._is_own_piece(piece, color)
+
+    def _get_piece_type(self, piece):
+        return piece.upper() if piece else ''
+
+    def _find_king(self, color):
+        target = 'K' if color == self.WHITE else 'k'
+        for i, piece in enumerate(self.board):
+            if piece == target:
+                return i
+        return -1
+
+    def _get_valid_moves_for_piece(self, pos, ignore_check=False):
+        piece = self.board[pos]
+        if not piece:
+            return []
+
+        color = self.WHITE if self._is_white_piece(piece) else self.BLACK
+        piece_type = self._get_piece_type(piece)
+        moves = []
+
+        if piece_type == 'K':
+            for delta in [-1, 1]:
+                to_pos = pos + delta
+                if 0 <= to_pos < 8:
+                    target = self.board[to_pos]
+                    if not self._is_own_piece(target, color):
+                        is_capture = self._is_enemy_piece(target, color)
+                        moves.append((to_pos, is_capture))
+
+        elif piece_type == 'N':
+            for delta in [-2, 2]:
+                to_pos = pos + delta
+                if 0 <= to_pos < 8:
+                    target = self.board[to_pos]
+                    if not self._is_own_piece(target, color):
+                        is_capture = self._is_enemy_piece(target, color)
+                        moves.append((to_pos, is_capture))
+
+        elif piece_type == 'R':
+            for direction in [-1, 1]:
+                to_pos = pos + direction
+                while 0 <= to_pos < 8:
+                    target = self.board[to_pos]
+                    if target == '':
+                        moves.append((to_pos, False))
+                    elif self._is_enemy_piece(target, color):
+                        moves.append((to_pos, True))
+                        break
+                    else:
+                        break
+                    to_pos += direction
+
+        if ignore_check:
+            return moves
+
+        valid_moves = []
+        for to_pos, is_capture in moves:
+            if self._is_move_safe(pos, to_pos, color):
+                valid_moves.append((to_pos, is_capture))
+
+        return valid_moves
+
+    def _is_move_safe(self, from_pos, to_pos, color):
+        original_from = self.board[from_pos]
+        original_to = self.board[to_pos]
+
+        self.board[to_pos] = self.board[from_pos]
+        self.board[from_pos] = ''
+
+        in_check = self._is_in_check(color)
+
+        self.board[from_pos] = original_from
+        self.board[to_pos] = original_to
+
+        return not in_check
+
+    def _is_in_check(self, color):
+        king_pos = self._find_king(color)
+        if king_pos == -1:
+            return True
+
+        enemy_color = self.BLACK if color == self.WHITE else self.WHITE
+
+        for pos in range(8):
+            piece = self.board[pos]
+            if piece and self._is_own_piece(piece, enemy_color):
+                enemy_moves = self._get_valid_moves_for_piece(pos, ignore_check=True)
+                for to_pos, _ in enemy_moves:
+                    if to_pos == king_pos:
+                        return True
+        return False
+
+    def _has_legal_moves(self, color):
+        for pos in range(8):
+            piece = self.board[pos]
+            if piece and self._is_own_piece(piece, color):
+                if self._get_valid_moves_for_piece(pos):
+                    return True
+        return False
+
+    def _is_insufficient_material(self):
+        for piece in self.board:
+            if piece and piece.upper() != 'K':
+                return False
+        return True
+
+    def _is_threefold_repetition(self):
+        if len(self.position_history) < 3:
+            return False
+        current_pos = self.position_history[-1]
+        count = sum(1 for pos in self.position_history if pos == current_pos)
+        return count >= 3
+
+    def get_all_valid_moves(self, color):
+        """Get all valid moves for a color. Returns list of move strings."""
+        moves = []
+        for pos in range(8):
+            piece = self.board[pos]
+            if piece and self._is_own_piece(piece, color):
+                piece_type = self._get_piece_type(piece)
+                for to_pos, is_capture in self._get_valid_moves_for_piece(pos):
+                    from_sq = pos + 1
+                    to_sq = to_pos + 1
+                    if is_capture:
+                        move_str = f"{piece_type}{from_sq}x{to_sq}"
+                    else:
+                        move_str = f"{piece_type}{from_sq}{to_sq}"
+                    moves.append(move_str)
+        return moves
+
+    def parse_move(self, move_str):
+        if not isinstance(move_str, str):
+            return None
+        move_str = move_str.strip()
+        if len(move_str) < 3:
+            return None
+
+        piece = move_str[0].upper()
+        if piece not in ('K', 'N', 'R'):
+            return None
+
+        if 'x' in move_str.lower():
+            parts = move_str[1:].lower().split('x')
+            if len(parts) != 2:
+                return None
+            try:
+                from_sq = int(parts[0])
+                to_sq = int(parts[1])
+                is_capture = True
+            except ValueError:
+                return None
+        else:
+            if len(move_str) != 3:
+                return None
+            try:
+                from_sq = int(move_str[1])
+                to_sq = int(move_str[2])
+                is_capture = False
+            except ValueError:
+                return None
+
+        from_pos = from_sq - 1
+        to_pos = to_sq - 1
+
+        if not (0 <= from_pos < 8 and 0 <= to_pos < 8):
+            return None
+
+        return (piece, from_pos, to_pos, is_capture)
+
+    def is_valid_move(self, move_str, color):
+        parsed = self.parse_move(move_str)
+        if not parsed:
+            return False, "Invalid move notation"
+
+        piece_type, from_pos, to_pos, is_capture = parsed
+
+        piece = self.board[from_pos]
+        if not piece:
+            return False, f"No piece at square {from_pos + 1}"
+
+        if not self._is_own_piece(piece, color):
+            return False, "Cannot move opponent's piece"
+
+        if self._get_piece_type(piece) != piece_type:
+            return False, f"Piece at square {from_pos + 1} is not a {piece_type}"
+
+        valid_moves = self._get_valid_moves_for_piece(from_pos)
+        for valid_to, valid_capture in valid_moves:
+            if valid_to == to_pos:
+                if is_capture != valid_capture:
+                    if is_capture:
+                        return False, "No piece to capture at destination"
+                    else:
+                        return False, "Must use capture notation (x) when capturing"
+                return True, ""
+
+        if self._is_in_check(color):
+            return False, "Must escape check"
+        return False, "Invalid move for this piece"
+
+    def make_move(self, move_str, color):
+        valid, error = self.is_valid_move(move_str, color)
+        if not valid:
+            return False, error
+
+        parsed = self.parse_move(move_str)
+        _, from_pos, to_pos, _ = parsed
+
+        self.board[to_pos] = self.board[from_pos]
+        self.board[from_pos] = ''
+
+        self.move_history.append(move_str)
+        self._record_position()
+
+        self.current_turn = self.BLACK if self.current_turn == self.WHITE else self.WHITE
+
+        return True, ""
+
+    def get_game_state(self):
+        if self._is_insufficient_material():
+            return 'draw_material'
+
+        if self._is_threefold_repetition():
+            return 'draw_repetition'
+
+        current = self.current_turn
+        in_check = self._is_in_check(current)
+        has_moves = self._has_legal_moves(current)
+
+        if not has_moves:
+            if in_check:
+                return 'white_wins' if current == self.BLACK else 'black_wins'
+            else:
+                return 'draw_stalemate'
+
+        return 'ongoing'
+
+    def get_board_display(self):
         squares = "| " + " | ".join(str(i+1) for i in range(8)) + " |"
         pieces = "| " + " | ".join(p if p else '.' for p in self.board) + " |"
         return f"{squares}\\n{pieces}"
@@ -887,19 +895,17 @@ class OneDChessGame:
 
 class HumanAgent:
     """Human player that inputs moves via terminal."""
-    
+
     def __init__(self, name, color):
         self.name = name
         self.color = color
-    
+
     def make_move(self, board, move_history):
-        """Display board state and prompt for move input."""
         game = OneDChessGame()
         game.board = board[:]
         game.current_turn = self.color
-        
+
         while True:
-            # Display current board state
             print()
             print("=" * 40)
             print(f"{self.name}'s turn ({'White' if self.color == 'W' else 'Black'})")
@@ -912,26 +918,24 @@ class HumanAgent:
             print("Pieces: K=King, N=Knight, R=Rook")
             print("        Uppercase=White, lowercase=Black")
             print()
-            
-            # Show check status
+
             if game._is_in_check(self.color):
                 print("*** YOU ARE IN CHECK! ***")
                 print()
-            
-            # Show available moves
+
             valid_moves = game.get_all_valid_moves(self.color)
             print(f"Valid moves: {', '.join(valid_moves)}")
             print()
             print("Move format: [Piece][From][To] or [Piece][From]x[To] for captures")
             print("Examples: N24 (Knight from 2 to 4), R3x6 (Rook from 3 captures on 6)")
             print()
-            
+
             move = input("Enter your move: ").strip()
-            
+
             if not move:
                 print("Please enter a move.")
                 continue
-            
+
             valid, error = game.is_valid_move(move, self.color)
             if valid:
                 return move
@@ -942,17 +946,16 @@ class HumanAgent:
 
 class RandomAgent:
     """Bot that plays random valid moves."""
-    
+
     def __init__(self, name, color):
         self.name = name
         self.color = color
-    
+
     def make_move(self, board, move_history):
-        """Pick a random valid move."""
         game = OneDChessGame()
         game.board = board[:]
         game.current_turn = self.color
-        
+
         valid_moves = game.get_all_valid_moves(self.color)
         if not valid_moves:
             return None
@@ -960,7 +963,6 @@ class RandomAgent:
 
 
 def print_board(board):
-    """Print the board."""
     print("| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |")
     print("| " + " | ".join(p if p else '.' for p in board) + " |")
 
@@ -974,10 +976,9 @@ if __name__ == "__main__":
     print("White: King(1), Knight(2), Rook(3)")
     print("Black: rook(6), knight(7), king(8)")
     print()
-    
+
     game = OneDChessGame()
-    
-    # Randomize starting color
+
     if random.random() < 0.5:
         human = HumanAgent("Human", game.WHITE)
         bot = RandomAgent("Bot", game.BLACK)
@@ -986,54 +987,51 @@ if __name__ == "__main__":
         human = HumanAgent("Human", game.BLACK)
         bot = RandomAgent("Bot", game.WHITE)
         print("You are Black (move second).")
-    
-    agents = {game.WHITE: human if human.color == game.WHITE else bot, 
+
+    agents = {game.WHITE: human if human.color == game.WHITE else bot,
               game.BLACK: human if human.color == game.BLACK else bot}
     names = {game.WHITE: agents[game.WHITE].name, game.BLACK: agents[game.BLACK].name}
-    
+
     move_count = 0
     MAX_MOVES = 200
-    
+
     while move_count < MAX_MOVES:
         current_color = game.current_turn
         current_agent = agents[current_color]
         current_name = names[current_color]
         opponent_name = names[game.BLACK if current_color == game.WHITE else game.WHITE]
-        
-        # Get move from agent
+
         try:
             move = current_agent.make_move(game.board[:], game.move_history[:])
         except Exception as e:
             print(f"{current_name} crashed: {e}")
             print(f"{opponent_name} wins!")
             break
-        
+
         if move is None:
             print(f"{current_name} has no valid moves!")
             break
-        
-        # Execute move
+
         success, error = game.make_move(move, current_color)
         if not success:
-            print(f"{current_name} made invalid move '{move}': {error}")
+            print(f"{current_name} made invalid move \\'{move}\\': {error}")
             print(f"{opponent_name} wins!")
             break
-        
+
         print(f"{current_name} plays: {move}")
         move_count += 1
-        
-        # Check game state
+
         state = game.get_game_state()
         if state != 'ongoing':
             print()
             print("Final Board:")
             print_board(game.board)
             print()
-            
+
             if state == 'white_wins':
-                print("CHECKMATE! Human (White) wins!")
+                print("CHECKMATE! White wins!")
             elif state == 'black_wins':
-                print("CHECKMATE! Bot (Black) wins!")
+                print("CHECKMATE! Black wins!")
             elif state == 'draw_stalemate':
                 print("DRAW by stalemate!")
             elif state == 'draw_repetition':
@@ -1046,11 +1044,15 @@ if __name__ == "__main__":
         print("Final Board:")
         print_board(game.board)
         print(f"DRAW by move limit ({MAX_MOVES} moves)")
-    
+
     print()
     print("Thanks for playing!")
 '''
 
+
+# ============================================================
+# Outer layer: agent loading, match orchestration, logging
+# ============================================================
 
 def load_prompt() -> str:
     prompt_path = Path(__file__).parent.parent / "games" / "A7-1D_Chess.txt"
@@ -1065,12 +1067,10 @@ def find_model_folder(pattern: str) -> str | None:
         logger.error("Agents directory not found: %s", AGENTS_DIR)
         return None
 
-    # Exact match first (matchmaker passes full folder names)
     exact = AGENTS_DIR / pattern
     if exact.is_dir():
         return pattern
 
-    # Substring fallback for interactive CLI use
     matches = [
         d.name for d in AGENTS_DIR.iterdir()
         if d.is_dir() and pattern.lower() in d.name.lower()
@@ -1079,10 +1079,10 @@ def find_model_folder(pattern: str) -> str | None:
     if not matches:
         logger.error("No model folder matches pattern '%s'", pattern)
         return None
-    
+
     if len(matches) > 1:
         return ModelAPI.resolve_model_interactive(pattern, matches, context="folder")
-    
+
     return matches[0]
 
 
@@ -1091,26 +1091,26 @@ def get_available_runs(model_folder: str, game: str) -> list[int]:
     model_dir = AGENTS_DIR / model_folder
     runs = []
     pattern = re.compile(rf"^{re.escape(game)}_(\d+)\.py$")
-    
+
     for file in model_dir.glob(f"{game}_*.py"):
         match = pattern.match(file.name)
         if match:
             runs.append(int(match.group(1)))
-    
+
     return sorted(runs)
 
 
 def load_stored_agent(model_folder: str, game: str, run: int, agent_idx: int) -> tuple[str, str]:
     """Load agent code from a stored file and rename the class."""
     agent_file = AGENTS_DIR / model_folder / f"{game}_{run}.py"
-    
+
     if not agent_file.exists():
         logger.error("Agent file not found: %s", agent_file)
         return "", ""
-    
+
     content = agent_file.read_text()
     lines = content.split("\n")
-    
+
     # Skip the header docstring
     code_start = 0
     in_docstring = False
@@ -1121,9 +1121,9 @@ def load_stored_agent(model_folder: str, game: str, run: int, agent_idx: int) ->
                 break
             else:
                 in_docstring = True
-    
+
     code_lines = lines[code_start:]
-    
+
     # Extract imports
     imports = []
     for line in code_lines:
@@ -1131,11 +1131,10 @@ def load_stored_agent(model_folder: str, game: str, run: int, agent_idx: int) ->
         if stripped.startswith("import ") or stripped.startswith("from "):
             if "random" not in stripped:
                 imports.append(stripped)
-    
+
     code = "\n".join(code_lines)
-    # Rename OneDChessAgent to OneDChessAgent_{agent_idx}
     code = re.sub(r"class\s+OneDChessAgent\b", f"class OneDChessAgent_{agent_idx}", code)
-    
+
     return code.strip(), "\n".join(imports)
 
 
@@ -1147,42 +1146,153 @@ def parse_agent_spec(spec: str) -> tuple[str, list[int]]:
     return model_pattern, runs
 
 
-def run_match(game_code: str):
-    temp_file = os.path.join(tempfile.gettempdir(), f"chess1d_{uuid.uuid4().hex[:8]}.py")
+def build_game_code(
+    agent1_code: str,
+    agent2_code: str,
+    extra_imports: str,
+    num_games: int,
+    move_timeout: float,
+    max_moves: int,
+    agent1_info: str,
+    agent2_info: str,
+) -> str:
+    """Concatenate header, imports, agent code, engine, and runner into executable script."""
+    header = (
+        "import sys\n"
+        "import random\n"
+        "import signal\n"
+        "\n"
+        f"MOVE_TIMEOUT = {move_timeout}\n"
+        f"MAX_MOVES = {max_moves}\n"
+        f"NUM_GAMES = {num_games}\n"
+        f'AGENT1_INFO = "{agent1_info}"\n'
+        f'AGENT2_INFO = "{agent2_info}"\n'
+    )
+
+    return "\n\n".join([
+        header,
+        extra_imports,
+        agent1_code,
+        agent2_code,
+        GAME_ENGINE_CODE,
+        MATCH_RUNNER_CODE,
+    ])
+
+
+def run_match(
+    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = 600
+) -> dict:
+    """Spawn subprocess, parse structured output, filter log lines."""
+    temp_id = uuid.uuid4().hex[:8]
+    temp_file = os.path.join(
+        tempfile.gettempdir(), f"oned_chess_match_{match_id}_{temp_id}.py"
+    )
+
     try:
         with open(temp_file, "w") as f:
             f.write(game_code)
-        result = subprocess.run(["python", temp_file], capture_output=True, text=True, timeout=600)
-        return result.stdout
+
+        result = subprocess.run(
+            ["python", temp_file], capture_output=True, text=True, timeout=timeout
+        )
+
+        if result.returncode != 0:
+            return {
+                "match_id": match_id,
+                "agent1_run_id": run_ids[0],
+                "agent2_run_id": run_ids[1],
+                "success": False,
+                "agent1_score": 0,
+                "agent2_score": 0,
+                "error": result.stderr[:500],
+            }
+
+        match = re.search(
+            r"RESULT:Agent-1=([\d.]+),Agent-2=([\d.]+)", result.stdout
+        )
+
+        stats_block = ""
+        if "--- MATCH STATISTICS ---" in result.stdout:
+            stats_block = result.stdout.split("--- MATCH STATISTICS ---")[1].strip()
+
+        if match:
+            wins_match = re.search(
+                r"WINS:Agent-1=(\d+),Agent-2=(\d+)", result.stdout
+            )
+            draws_match = re.search(r"DRAWS:(\d+)", result.stdout)
+            score_match = re.search(
+                r"SCORE:Agent-1=(-?[\d.]+),Agent-2=(-?[\d.]+)", result.stdout
+            )
+
+            agent1_wins = int(wins_match.group(1)) if wins_match else 0
+            agent2_wins = int(wins_match.group(2)) if wins_match else 0
+            draws = int(draws_match.group(1)) if draws_match else 0
+            agent1_points = int(float(match.group(1)))
+            agent2_points = int(float(match.group(2)))
+            agent1_score = float(score_match.group(1)) if score_match else 0.0
+            agent2_score = float(score_match.group(2)) if score_match else 0.0
+
+            # Log filtering: keep only structurally meaningful lines
+            log_lines = []
+            for line in result.stdout.splitlines():
+                if line.startswith((
+                    "Agent-1:", "Agent-2:", "Game ",
+                    "=====", "----",
+                    "Final", "Scores:", "Points:",
+                    "BOARD:",
+                    "CRASH", "RESULT", "SCORE", "WINS", "DRAWS",
+                    "STATS",
+                )) or line.strip() == "":
+                    log_lines.append(line)
+
+            return {
+                "match_id": match_id,
+                "agent1_run_id": run_ids[0],
+                "agent2_run_id": run_ids[1],
+                "success": True,
+                "agent1_score": agent1_score,
+                "agent2_score": agent2_score,
+                "agent1_wins": agent1_wins,
+                "agent2_wins": agent2_wins,
+                "agent1_points": agent1_points,
+                "agent2_points": agent2_points,
+                "draws": draws,
+                "error": None,
+                "stats_block": stats_block,
+                "log": "\n".join(log_lines),
+            }
+
+        return {
+            "match_id": match_id,
+            "agent1_run_id": run_ids[0],
+            "agent2_run_id": run_ids[1],
+            "success": False,
+            "agent1_score": 0,
+            "agent2_score": 0,
+            "error": "Could not parse results:\n" + result.stdout[:200],
+        }
+
     except Exception as e:
-        return f"ERROR: {e}"
+        return {
+            "match_id": match_id,
+            "agent1_run_id": run_ids[0],
+            "agent2_run_id": run_ids[1],
+            "success": False,
+            "agent1_score": 0,
+            "agent2_score": 0,
+            "error": str(e),
+        }
     finally:
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
 
 async def run_match_async(
-    game_code: str,
-    match_id: int,
-    run_ids: tuple[int, int],
-    log_f: Path,
-    folder1: str,
-    folder2: str,
-):
-    """Run a single match and return the score."""
-    output = await asyncio.get_event_loop().run_in_executor(None, run_match, game_code)
-    
-    with open(log_f, "a") as f:
-        f.write(f"--- Match {match_id}: {folder1} ({run_ids[0]}) vs {folder2} ({run_ids[1]}) ---\n")
-        f.write(output)
-        f.write("-" * 40 + "\n\n")
-
-    res_match = re.search(r"RESULT:Agent-1=([\d.]+),Agent-2=([\d.]+)", output)
-    if res_match:
-        a1, a2 = float(res_match.group(1)), float(res_match.group(2))
-        return {"success": True, "a1": a1, "a2": a2, "match_id": match_id}
-    else:
-        return {"success": False, "error": "Result parsing failed", "match_id": match_id}
+    game_code: str, match_id: int, run_ids: tuple[int, int]
+) -> dict:
+    """Wrap run_match in executor for async scheduling."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, run_match, game_code, match_id, run_ids)
 
 
 async def main_async():
@@ -1218,24 +1328,18 @@ async def main_async():
     if not folder1 or not folder2:
         sys.exit(1)
 
-    # Infer runs if not specified
     if not runs1:
         runs1 = get_available_runs(folder1, GAME_NAME)
     if not runs2:
         runs2 = get_available_runs(folder2, GAME_NAME)
 
-    # Match the number of runs
     num_matches = min(len(runs1), len(runs2))
     if len(runs1) != len(runs2):
         logger.warning(
-            "Number of runs for %s (%d) and %s (%d) don't match. Using first %d.",
-            folder1,
-            len(runs1),
-            folder2,
-            len(runs2),
-            num_matches,
+            "Run count mismatch: %s (%d) vs %s (%d). Using first %d.",
+            folder1, len(runs1), folder2, len(runs2), num_matches,
         )
-    
+
     runs1 = runs1[:num_matches]
     runs2 = runs2[:num_matches]
 
@@ -1248,35 +1352,32 @@ async def main_async():
     print("=" * 60)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    agent_suffix = f"{folder1}_vs_{folder2}"
-    log_f = GAME_LOGS_DIR / f"{ts}_{agent_suffix}_match.txt"
 
     match_tasks = []
-    
+
     for i in range(num_matches):
         run1 = runs1[i]
         run2 = runs2[i]
-        
+
         code1, imp1 = load_stored_agent(folder1, GAME_NAME, run1, 1)
         code2, imp2 = load_stored_agent(folder2, GAME_NAME, run2, 2)
-        
+
         if not code1 or not code2:
-            print(f"  FAILED to prepare match {i+1}: Could not load agent code.")
+            print(f"  FAILED to load match {i + 1}")
             continue
 
-        game_code = GAME_CODE_TEMPLATE.format(
-            extra_imports="\n".join(set(imp1.split("\n") + imp2.split("\n"))),
-            agent1_code=code1,
-            agent2_code=code2,
-            num_games=NUM_ROUNDS_PER_MATCH,
-            move_timeout=MOVE_TIME_LIMIT,
-            max_moves=MAX_MOVES_PER_GAME,
+        all_imports = set(imp1.split("\n") + imp2.split("\n"))
+        extra_imports = "\n".join(imp for imp in all_imports if imp.strip())
+
+        agent1_info = f"{folder1}:{run1}"
+        agent2_info = f"{folder2}:{run2}"
+
+        game_code = build_game_code(
+            code1, code2, extra_imports, NUM_GAMES_PER_MATCH,
+            MOVE_TIME_LIMIT, MAX_MOVES_PER_GAME, agent1_info, agent2_info,
         )
-        
-        match_tasks.append(run_match_async(game_code, i + 1, (run1, run2), log_f, folder1, folder2))
+
+        match_tasks.append(run_match_async(game_code, i + 1, (run1, run2)))
 
     if not match_tasks:
         print("No valid matches to run.")
@@ -1284,26 +1385,72 @@ async def main_async():
 
     print(f"\nRunning {len(match_tasks)} matches in parallel...")
     results = await asyncio.gather(*match_tasks)
-    
-    # Sort results by match_id for consistent output
-    results.sort(key=lambda x: x["match_id"])
-    
-    total1, total2 = 0.0, 0.0
-    for res in results:
-        m_id = res["match_id"]
-        r1, r2 = runs1[m_id - 1], runs2[m_id - 1]
-        if res["success"]:
-            a1, a2 = res["a1"], res["a2"]
-            total1 += a1
-            total2 += a2
-            print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): {a1} - {a2}")
-        else:
-            print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): FAILED - {res.get('error')}")
 
-    print("\nFINAL RESULTS:")
-    print(f"  {folder1}: {total1}")
-    print(f"  {folder2}: {total2}")
-    print(f"\nLogs saved to: {log_f}")
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+
+    for result in sorted(results, key=lambda x: x["match_id"]):
+        match_id = result["match_id"]
+        run1 = runs1[match_id - 1]
+        run2 = runs2[match_id - 1]
+
+        log_f = RESULTS_DIR / f"{ts}_{folder1}:{run1}_vs_{folder2}:{run2}_match.txt"
+
+        if result["success"]:
+            s1 = result["agent1_score"]
+            s2 = result["agent2_score"]
+            p1 = result.get("agent1_points", 0)
+            p2 = result.get("agent2_points", 0)
+
+            with open(log_f, "w") as f:
+                f.write("Match Contenders:\n")
+                f.write(f"{folder1}:{run1}\n")
+                f.write(f"{folder2}:{run2}\n\n")
+
+                f.write("Result:\n")
+                f.write(f"{folder1}:{run1} : Pts: {p1} - Score: {s1:.1f}\n")
+                f.write(f"{folder2}:{run2} : Pts: {p2} - Score: {s2:.1f}\n")
+
+                game_log = result.get("log", "")
+                if game_log:
+                    f.write(f"\n{game_log}\n")
+                if result.get("stats_block"):
+                    f.write(
+                        f"\n--- MATCH STATISTICS ---\n{result['stats_block']}\n"
+                    )
+                f.write("-" * 60 + "\n")
+
+            print(f"  Match {match_id} ({folder1}:{run1} vs {folder2}:{run2}): Pts {p1}-{p2}")
+
+            # Update scoreboard for both agents
+            agent1_key = f"{folder1}:{run1}"
+            agent2_key = f"{folder2}:{run2}"
+            a1_wins = result.get("agent1_wins", 0)
+            a2_wins = result.get("agent2_wins", 0)
+            match_draws = result.get("draws", 0)
+
+            update_scoreboard(
+                SCOREBOARD_PATH, agent1_key,
+                games_played=NUM_GAMES_PER_MATCH,
+                wins=a1_wins,
+                losses=a2_wins,
+                draws=match_draws,
+                score=s1,
+                points=p1,
+            )
+            update_scoreboard(
+                SCOREBOARD_PATH, agent2_key,
+                games_played=NUM_GAMES_PER_MATCH,
+                wins=a2_wins,
+                losses=a1_wins,
+                draws=match_draws,
+                score=s2,
+                points=p2,
+            )
+        else:
+            print(f"  Match {match_id} ({folder1}:{run1} vs {folder2}:{run2}): FAILED - {result.get('error')}")
+
+    print(f"\nLogs saved to: {RESULTS_DIR}")
+    print(f"Scoreboard updated: {SCOREBOARD_PATH}")
 
 
 if __name__ == "__main__":

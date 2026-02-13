@@ -73,7 +73,8 @@ import os
 # Load variables from .env file if it exists
 load_dotenv()
 
-# Example: Robustly loading the configuration
+# Robustly loading the configuration.
+# These are the true values that are being used in the match runner.
 NUM_GAMES = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", 100))
 MOVE_TIMEOUT = float(os.getenv("MOVE_TIME_LIMIT", 1.0))
 ```
@@ -211,6 +212,8 @@ This is how to determine the name of the log file explicitly:
     log_f = RESULTS_DIR / f"{ts}_{agent_suffix}_match.txt"
 
 Logs should be directly placed in the RESULTS_DIR. There is no intermediate folder after it.
+
+Each log records information for a single match, though it may contain multiple games within that match. However, only one match is represented per log. So, if the matchmaker runs two matches—such as mistral vs. opus—the number of log files will correspond to the number of agents involved. For example, if there are two agents, one log file will be generated for mistral:1 vs. opus:1 and another for mistral:2 vs. opus:2.
 
 
 ## 10. Metadata Injection (Agent Renaming)

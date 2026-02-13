@@ -44,7 +44,6 @@ except (ValueError, TypeError):
 
 # Results directories
 RESULTS_DIR = Path(__file__).parent.parent / "results" / "connect4"
-GAME_LOGS_DIR = RESULTS_DIR / "game_logs"
 MODEL_RESPONSES_DIR = RESULTS_DIR / "model_responses"
 SCOREBOARD_PATH = Path(__file__).parent.parent / "scoreboard" / "A5-scoreboard.txt"
 
@@ -61,6 +60,8 @@ import copy
 
 # Move timeout in seconds
 MOVE_TIMEOUT = {move_timeout}
+AGENT1_NAME = "{agent1_name}"
+AGENT2_NAME = "{agent2_name}"
 
 class MoveTimeoutException(Exception):
     pass
@@ -109,34 +110,34 @@ class Connect4Game:
         return None
 
     def check_winner(self):
-        """Check for 4 in a row."""
+        """Check for 4 in a row. Returns (winner, start_pos, end_pos) or None."""
         # Horizontal
         for r in range(self.ROWS):
             for c in range(self.COLS - 3):
-                if self.board[r][c] != self.EMPTY and \\
+                if self.board[r][c] != self.EMPTY and \
                    self.board[r][c] == self.board[r][c+1] == self.board[r][c+2] == self.board[r][c+3]:
-                    return self.board[r][c]
+                    return self.board[r][c], (r, c), (r, c+3)
 
         # Vertical
         for r in range(self.ROWS - 3):
             for c in range(self.COLS):
-                if self.board[r][c] != self.EMPTY and \\
+                if self.board[r][c] != self.EMPTY and \
                    self.board[r][c] == self.board[r+1][c] == self.board[r+2][c] == self.board[r+3][c]:
-                    return self.board[r][c]
+                    return self.board[r][c], (r, c), (r+3, c)
 
         # Diagonal /
         for r in range(3, self.ROWS):
             for c in range(self.COLS - 3):
-                if self.board[r][c] != self.EMPTY and \\
+                if self.board[r][c] != self.EMPTY and \
                    self.board[r][c] == self.board[r-1][c+1] == self.board[r-2][c+2] == self.board[r-3][c+3]:
-                    return self.board[r][c]
+                    return self.board[r][c], (r, c), (r-3, c+3)
 
         # Diagonal \\
         for r in range(self.ROWS - 3):
             for c in range(self.COLS - 3):
-                if self.board[r][c] != self.EMPTY and \\
+                if self.board[r][c] != self.EMPTY and \
                    self.board[r][c] == self.board[r+1][c+1] == self.board[r+2][c+2] == self.board[r+3][c+3]:
-                    return self.board[r][c]
+                    return self.board[r][c], (r, c), (r+3, c+3)
 
         return None
 
@@ -189,8 +190,12 @@ def play_game(game_num, match_stats):
 
     print(f"============================================================")
     print(f"Game {{game_num}}")
-    print(f"{{red_name}}: RED (has random start piece)")
-    print(f"{{yellow_name}}: YELLOW (first decision)")
+    if red_name == "Agent-1":
+        print(f"Agent-1: {{AGENT1_NAME}} (RED - has random start)")
+        print(f"Agent-2: {{AGENT2_NAME}} (YELLOW)")
+    else:
+        print(f"Agent-1: {{AGENT1_NAME}} (YELLOW)")
+        print(f"Agent-2: {{AGENT2_NAME}} (RED - has random start)")
     print("------------------------------------------------------------")
 
     # --- Initialize Agents ---
@@ -318,13 +323,17 @@ def play_game(game_num, match_stats):
             print(f"{{current_name}} moves {{move}}")
         
         # Check Winner
-        winner = game.check_winner() # Returns 'R', 'Y', or None
+        win_info = game.check_winner() # Returns (winner, start, end) or None
+        winner = win_info[0] if win_info else None
         
         is_full = game.is_full()
         
         if winner or is_full:
             print("Final Position:")
             print_board_log(game.board)
+            if winner:
+                print()
+                print(f"Successfull 4 disc start and end positions: {{win_info[1]}} {{win_info[2]}}")
             print("----------------------------------------")
             
             empty_cells = sum(row.count(game.EMPTY) for row in game.board)
@@ -392,10 +401,10 @@ def main():
     num_games = {num_games}
     
     # Not using standard logging logger in subprocess for simplicity, just print
-    print(f"Match Contenders:")
-    print(f"Agent-1")
-    print(f"Agent-2")
-    print()
+    # print(f"Match Contenders:")
+    # print(f"{{AGENT1_NAME}}")
+    # print(f"{{AGENT2_NAME}}")
+    # print()
 
     for i in range(num_games):
         play_game(i + 1, match_stats)
@@ -406,11 +415,18 @@ def main():
         match_stats[agent]['crash'] = match_stats[agent]['make_move_crash'] + match_stats[agent]['other_crash']
 
     # Final Output
+    # Final Output
+    print("=" * 60)
+    print("=" * 60)
+    print(f"Agent-1: {{AGENT1_NAME}}")
+    print(f"Agent-2: {{AGENT2_NAME}}")
     print(f"RESULT:Agent-1={{match_stats['Agent-1']['points']}},Agent-2={{match_stats['Agent-2']['points']}}")
     print(f"SCORE:Agent-1={{match_stats['Agent-1']['score']}},Agent-2={{match_stats['Agent-2']['score']}}")
     print(f"WINS:Agent-1={{match_stats['Agent-1']['wins']}},Agent-2={{match_stats['Agent-2']['wins']}}")
     print(f"DRAWS:{{match_stats['Agent-1']['draws']}}")
+    print(f"STATS:Agent-1={{match_stats['Agent-1']}},Agent-2={{match_stats['Agent-2']}}")
     
+    print()
     print("--- MATCH STATISTICS ---")
     print(f"Agent-1 make_move_crash: {{match_stats['Agent-1']['make_move_crash']}}")
     print(f"Agent-2 make_move_crash: {{match_stats['Agent-2']['make_move_crash']}}")
@@ -420,6 +436,7 @@ def main():
     print(f"Agent-2 Timeouts: {{match_stats['Agent-2']['timeout']}}")
     print(f"Agent-1 Invalid: {{match_stats['Agent-1']['invalid']}}")
     print(f"Agent-2 Invalid: {{match_stats['Agent-2']['invalid']}}")
+    print("------------------------------------------------------------")
 
 if __name__ == "__main__":
     main()
@@ -710,15 +727,10 @@ def run_match(game_code: str):
     finally:
         if os.path.exists(temp_file): os.remove(temp_file)
 
-async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int], log_f: Path, folder1: str, folder2: str):
+async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int], folder1: str, folder2: str):
     """Run a single match and return the score."""
     output = await asyncio.get_event_loop().run_in_executor(None, run_match, game_code)
     
-    with open(log_f, "a") as f:
-        f.write(f"--- Match {match_id}: {folder1} ({run_ids[0]}) vs {folder2} ({run_ids[1]}) ---\n")
-        f.write(output)
-        f.write("-" * 40 + "\n\n")
-
     res_match = re.search(r"RESULT:Agent-1=([\d.]+),Agent-2=([\d.]+)", output)
     
     if res_match:
@@ -729,8 +741,8 @@ async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int
         agent1_wins = int(wins_match.group(1)) if wins_match else 0
         agent2_wins = int(wins_match.group(2)) if wins_match else 0
         draws = int(draws_match.group(1)) if draws_match else 0
-        agent1_points = float(res_match.group(1))
-        agent2_points = float(res_match.group(2))
+        agent1_points = int(float(res_match.group(1)))
+        agent2_points = int(float(res_match.group(2)))
         agent1_score = float(score_match.group(1)) if score_match else 0.0
         agent2_score = float(score_match.group(2)) if score_match else 0.0
 
@@ -745,10 +757,11 @@ async def run_match_async(game_code: str, match_id: int, run_ids: tuple[int, int
             "agent1_points": agent1_points,
             "agent2_points": agent2_points,
             "agent1_score": agent1_score,
-            "agent2_score": agent2_score
+            "agent2_score": agent2_score,
+            "log": output
         }
     else:
-        return {"success": False, "error": "Result parsing failed", "match_id": match_id}
+        return {"success": False, "error": "Result parsing failed", "match_id": match_id, "log": output}
 
 
 async def main_async():
@@ -807,11 +820,10 @@ async def main_async():
     print("=" * 60)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     agent_suffix = f"{folder1}_vs_{folder2}"
-    log_f = GAME_LOGS_DIR / f"{ts}_{agent_suffix}_match.txt"
+    log_f = RESULTS_DIR / f"{ts}_{agent_suffix}_match.txt"
 
     match_tasks = []
     
@@ -831,10 +843,12 @@ async def main_async():
             agent1_code=code1,
             agent2_code=code2,
             num_games=NUM_ROUNDS_PER_MATCH,
-            move_timeout=MOVE_TIME_LIMIT
+            move_timeout=MOVE_TIME_LIMIT,
+            agent1_name=f"{folder1}:{run1}",
+            agent2_name=f"{folder2}:{run2}"
         )
         
-        match_tasks.append(run_match_async(game_code, i + 1, (run1, run2), log_f, folder1, folder2))
+        match_tasks.append(run_match_async(game_code, i + 1, (run1, run2), folder1, folder2))
 
     if not match_tasks:
         print("No valid matches to run.")
@@ -848,44 +862,66 @@ async def main_async():
     
     total1, total2 = 0.0, 0.0
     
-    for res in results:
-        m_id = res["match_id"]
-        r1, r2 = runs1[m_id-1], runs2[m_id-1]
-        
-        if res["success"]:
-            a1_pts, a2_pts = res["agent1_points"], res["agent2_points"]
-            total1 += a1_pts
-            total2 += a2_pts
+    # Open file for writing (overwrite)
+    with open(log_f, "w") as f:
+        # Header
+        f.write(f"Match Contenders:\n")
+        if runs1:
+             f.write(f"{folder1}:{runs1[0]}\n")
+        if runs2:
+             f.write(f"{folder2}:{runs2[0]}\n\n")
+
+        for res in results:
+            m_id = res["match_id"]
+            r1, r2 = runs1[m_id-1], runs2[m_id-1]
             
-            print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): {a1_pts} - {a2_pts}")
-            
-            # SCOREBOARD INTEGRATION
-            # Agent 1
-            agent1_key = f"{folder1}:{res['agent1_run_id']}"
-            update_scoreboard(
-                SCOREBOARD_PATH, agent1_key,
-                games_played=NUM_ROUNDS_PER_MATCH,
-                wins=res["agent1_wins"],
-                losses=res["agent2_wins"],
-                draws=res["draws"],
-                score=res["agent1_score"],
-                points=res["agent1_points"]
-            )
-            
-            # Agent 2
-            agent2_key = f"{folder2}:{res['agent2_run_id']}"
-            update_scoreboard(
-                SCOREBOARD_PATH, agent2_key,
-                games_played=NUM_ROUNDS_PER_MATCH,
-                wins=res["agent2_wins"],
-                losses=res["agent1_wins"],
-                draws=res["draws"],
-                score=res["agent2_score"],
-                points=res["agent2_points"]
-            )
-            
-        else:
-            print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): FAILED - {res.get('error')}")
+            if res["success"]:
+                a1_pts, a2_pts = res["agent1_points"], res["agent2_points"]
+                total1 += a1_pts
+                total2 += a2_pts
+                
+                print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): {a1_pts} - {a2_pts}")
+                
+                 # Result section for log
+                status = "Result:\n"
+                status += f"{folder1}:{res['agent1_run_id']} : Pts: {res['agent1_points']} - Score: {res['agent1_score']}\n"
+                status += f"{folder2}:{res['agent2_run_id']} : Pts: {res['agent2_points']} - Score: {res['agent2_score']}\n"
+                
+                if res.get("log"):
+                    status += f"\n{res['log'].strip()}"
+
+                f.write(f"{status}\n")
+                
+                # SCOREBOARD INTEGRATION
+                # Agent 1
+                agent1_key = f"{folder1}:{res['agent1_run_id']}"
+                update_scoreboard(
+                    SCOREBOARD_PATH, agent1_key,
+                    games_played=NUM_ROUNDS_PER_MATCH,
+                    wins=res["agent1_wins"],
+                    losses=res["agent2_wins"],
+                    draws=res["draws"],
+                    score=res["agent1_score"],
+                    points=res["agent1_points"]
+                )
+                
+                # Agent 2
+                agent2_key = f"{folder2}:{res['agent2_run_id']}"
+                update_scoreboard(
+                    SCOREBOARD_PATH, agent2_key,
+                    games_played=NUM_ROUNDS_PER_MATCH,
+                    wins=res["agent2_wins"],
+                    losses=res["agent1_wins"],
+                    draws=res["draws"],
+                    score=res["agent2_score"],
+                    points=res["agent2_points"]
+                )
+                
+            else:
+                print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): FAILED - {res.get('error')}")
+                f.write(f"FAILED Match {m_id}: {res.get('error')}\n")
+                if res.get("log"):
+                     f.write(f"\nLog:\n{res['log']}\n")
 
     print("\nFINAL RESULTS:")
     print(f"  {folder1}: {total1}")

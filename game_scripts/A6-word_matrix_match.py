@@ -1,15 +1,8 @@
 """
 WordMatrix Match Runner: Orchestrates head-to-head matches for A6-WordMatrixGame.
 
-Game Rules: (2 Players)
-1. 4x4 board of random lowercase letters.
-2. Players take turns selecting a path of adjacent cells and providing a word
-   whose letters contain the path letters as a subsequence.
-3. Valid moves clear cells and score 10 + 10 * cleared_cells.
-4. Invalid path/word: -25 per attempt, up to 3 attempts per turn with error feedback.
-   Valid path + invalid word locks the path; subsequent retries only accept a word string.
-5. CANCEL: -10, ends turn. Timeout/crash/invalid message: -50, ends turn (no retry).
-6. Game ends when no valid path exists or 6 total passes accumulate.
+Loads pre-generated agents from agents/, matches them in pairs, runs games via
+subprocess, and reports win/loss/draw statistics with scoreboard integration.
 """
 
 import argparse
@@ -21,8 +14,6 @@ import subprocess
 import sys
 import tempfile
 import uuid
-import random
-import signal
 from pathlib import Path
 import logging
 from dotenv import load_dotenv
@@ -32,6 +23,7 @@ sys.path.append(str(Path(__file__).parent.parent / "utils"))
 
 from model_api import ModelAPI
 from logging_config import setup_logging
+from scoreboard import update_scoreboard
 
 logger = setup_logging(__name__)
 
@@ -39,68 +31,60 @@ load_dotenv()
 
 # Configuration
 try:
-    NUM_GAMES_PER_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "10"))
+    NUM_GAMES_PER_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
 except (ValueError, TypeError):
-    NUM_GAMES_PER_MATCH = 10
+    NUM_GAMES_PER_MATCH = 100
 
 try:
-    MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0")) * 5
+    MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
 except (ValueError, TypeError):
-    MOVE_TIME_LIMIT = 5.0
+    MOVE_TIME_LIMIT = 1.0
 
-# Results directories
-RESULTS_DIR = Path(__file__).parent.parent / "results" / "word_matrix"
-GAME_LOGS_DIR = RESULTS_DIR / "game_logs"
+BASE_DIR = Path(__file__).parent.parent
+RESULTS_DIR = BASE_DIR / "results" / "word_matrix"
+SCOREBOARD_PATH = BASE_DIR / "scoreboard" / "A6-scoreboard.txt"
+AGENTS_DIR = BASE_DIR / "agents"
 
-# Stored agents directory
-AGENTS_DIR = Path(__file__).parent.parent / "agents"
 GAME_NAME = "A6-WordMatrixGame"
+WORDS_FILE = BASE_DIR / "game_scripts" / "words_small.txt"
 
-# Dictionary path
-WORDS_FILE = Path(__file__).parent.parent / "games" / "words.txt"
+# Penalty for invalid move / crash / timeout (no random fallback for this game)
+INVALID_PENALTY = 10
 
-# The game code template (runs in subprocess)
-GAME_CODE_TEMPLATE = '''
-import sys
-import random
-import signal
-import time
-import string
+# Max tie-breaker score used for forfeit games
+FORFEIT_SCORE = 12
 
-# Move timeout in seconds
-MOVE_TIMEOUT = {move_timeout}
+MODE_TITLES = {
+    "humanvsbot": "Human vs Random Bot",
+    "humanvshuman": "Human vs Human",
+    "humanvsagent": "Human vs Stored Agent",
+}
 
-class MoveTimeoutException(Exception):
-    pass
 
-def timeout_handler(signum, frame):
-    raise MoveTimeoutException("Move timeout")
-
-# --- Game Configuration ---
-NUM_GAMES = {num_games}
+# ============================================================
+# Game engine code (WordMatrixGame class, board display, load_words)
+# ============================================================
+GAME_ENGINE_CODE = r'''
 WORDS_FILE_PATH = r"{words_file_path}"
-AGENT1_INFO = "{agent1_info}"
-AGENT2_INFO = "{agent2_info}"
-
-{extra_imports}
-
-{agent1_code}
-
-{agent2_code}
+_WORDS_CACHE = None
 
 
 def load_words():
-    """Load dictionary: alphabetic-only words (no hyphens)."""
+    """Load dictionary from words_small.txt (cached per process)."""
+    global _WORDS_CACHE
+    if _WORDS_CACHE is not None:
+        return _WORDS_CACHE
     try:
         with open(WORDS_FILE_PATH, 'r') as f:
-            return {{
+            _WORDS_CACHE = {
                 line.strip().lower()
                 for line in f
                 if line.strip() and line.strip().isalpha()
-            }}
+            }
     except Exception as e:
-        print(f"ERROR: Could not load words from {{WORDS_FILE_PATH}}: {{e}}")
+        print(f"ERROR: Could not load words from {WORDS_FILE_PATH}: {e}")
         sys.exit(1)
+    return _WORDS_CACHE
 
 
 class WordMatrixGame:
@@ -112,7 +96,7 @@ class WordMatrixGame:
             [random.choice(string.ascii_lowercase) for _ in range(4)]
             for _ in range(4)
         ]
-        self.scores = {{"Agent-1": 0, "Agent-2": 0}}
+        self.scores = {"Agent-1": 0, "Agent-2": 0}
         self.total_passes = 0
 
     def has_valid_path(self):
@@ -136,69 +120,58 @@ class WordMatrixGame:
         return [row[:] for row in self.board]
 
     def validate_path(self, path):
-        """Validate a path. Returns (ok, reason, error_code)."""
+        """Validate a path. Returns (ok, reason)."""
         if not isinstance(path, (list, tuple)) or len(path) < 2:
-            return False, "Path must be a list/tuple of at least 2 cells", "INVALID_PATH_TOO_SHORT"
+            return False, "Path must be a list/tuple of at least 2 cells"
 
         visited = set()
         for i, cell in enumerate(path):
             if not isinstance(cell, (list, tuple)) or len(cell) != 2:
-                return False, f"Cell {{i}} is not a valid (row, col) pair", "INVALID_PATH_BAD_CELL"
+                return False, f"Cell {i} is not a valid (row, col) pair"
 
             try:
                 r, c = int(cell[0]), int(cell[1])
             except (ValueError, TypeError):
-                return False, f"Cell {{i}} has non-integer coordinates", "INVALID_PATH_BAD_CELL"
+                return False, f"Cell {i} has non-integer coordinates"
 
             if not (0 <= r < 4 and 0 <= c < 4):
-                return False, f"Cell ({{}},{{}}) is out of bounds".format(r, c), "INVALID_PATH_OOB"
+                return False, f"Cell ({r},{c}) is out of bounds"
 
             if (r, c) in visited:
-                return False, f"Cell ({{}},{{}}) visited twice".format(r, c), "INVALID_PATH_REVISIT"
+                return False, f"Cell ({r},{c}) visited twice"
 
             if self.board[r][c] == "":
-                return False, f"Cell ({{}},{{}}) is empty".format(r, c), "INVALID_PATH_EMPTY"
+                return False, f"Cell ({r},{c}) is empty"
 
             if i > 0:
                 pr, pc = int(path[i - 1][0]), int(path[i - 1][1])
                 if abs(r - pr) + abs(c - pc) != 1:
-                    return False, (
-                        f"Cells ({{}},{{}}) and ({{}},{{}}) are not adjacent"
-                        .format(pr, pc, r, c)
-                    ), "INVALID_PATH_NOT_ADJACENT"
+                    return False, f"Cells ({pr},{pc}) and ({r},{c}) are not adjacent"
 
             visited.add((r, c))
 
-        return True, "Valid", ""
+        return True, "Valid"
 
     def get_path_letters(self, path):
         """Extract letters along the path."""
         return [self.board[int(r)][int(c)] for r, c in path]
 
     def validate_word(self, word, path):
-        """
-        Validate a word against a path.
-        Returns (ok, reason, extra_letters, error_code).
-        """
+        """Validate a word against a path. Returns (ok, reason, extra_letters)."""
         if not isinstance(word, str) or not word:
-            return False, "Word must be a non-empty string", [], "INVALID_WORD_EMPTY"
+            return False, "Word must be a non-empty string", []
 
         word = word.lower()
         path_letters = self.get_path_letters(path)
         path_len = len(path_letters)
 
-        # Length constraint
         if len(word) > 2 * path_len:
-            return False, (
-                f"Word length {{len(word)}} exceeds 2 * path length {{path_len}}"
-            ), [], "INVALID_WORD_TOO_LONG"
+            return False, f"Word length {len(word)} exceeds 2 * path length {path_len}", []
 
         if len(word) < path_len:
-            return False, (
-                f"Word length {{len(word)}} less than path length {{path_len}}"
-            ), [], "INVALID_WORD_TOO_SHORT"
+            return False, f"Word length {len(word)} less than path length {path_len}", []
 
-        # Subsequence check: path letters must appear as subsequence of word
+        # Subsequence check
         path_idx = 0
         extra_letters = []
         for ch in word:
@@ -208,27 +181,19 @@ class WordMatrixGame:
                 extra_letters.append(ch)
 
         if path_idx < path_len:
-            return False, (
-                f"Path letters not found as subsequence in word "
-                f"(matched {{path_idx}}/{{path_len}})"
-            ), [], "INVALID_WORD_SUBSEQUENCE"
+            return False, f"Path letters not found as subsequence in word (matched {path_idx}/{path_len})", []
 
-        # Dictionary check
         if word not in self.words_set:
-            return False, f"Word '{{word}}' not in dictionary", [], "INVALID_WORD_NOT_IN_DICT"
+            return False, f"Word '{word}' not in dictionary", []
 
-        return True, "Valid", extra_letters, ""
+        return True, "Valid", extra_letters
 
     def apply_move(self, agent_name, path, word):
-        """
-        Apply a valid move: update board and score.
-        Returns (points, cleared_cells).
-        """
+        """Apply a valid move: update board and score. Returns (points, cleared_cells)."""
         word = word.lower()
         path_letters = self.get_path_letters(path)
         path_len = len(path_letters)
 
-        # Compute extra letters via subsequence walk
         path_idx = 0
         extra_letters = []
         for ch in word:
@@ -237,11 +202,9 @@ class WordMatrixGame:
             else:
                 extra_letters.append(ch)
 
-        # Shuffle path cell indices
         cell_indices = [(int(r), int(c)) for r, c in path]
         random.shuffle(cell_indices)
 
-        # Place extra letters, clear the rest
         for i, (r, c) in enumerate(cell_indices):
             if i < len(extra_letters):
                 self.board[r][c] = extra_letters[i]
@@ -263,553 +226,62 @@ class WordMatrixGame:
         self.total_passes += 1
 
     def display_board(self):
-        """Print the board in a readable format."""
+        """Print the board in a readable format (no BOARD: prefix, for human modes)."""
         print("    0  1  2  3")
         print("   -----------")
         for r in range(4):
             row_str = " ".join(
-                f" {{self.board[r][c]}}" if self.board[r][c] else " ."
+                f" {self.board[r][c]}" if self.board[r][c] else " ."
                 for c in range(4)
             )
-            print(f"{{r}} |{{row_str}}")
+            print(f"{r} |{row_str}")
 
-
-# --- Stats ---
-stats = {{
-    "p1_invalid_path": 0,
-    "p2_invalid_path": 0,
-    "p1_invalid_word": 0,
-    "p2_invalid_word": 0,
-    "p1_timeout": 0,
-    "p2_timeout": 0,
-    "p1_crash": 0,
-    "p2_crash": 0,
-    "p1_invalid_message": 0,
-    "p2_invalid_message": 0,
-    "p1_pass": 0,
-    "p2_pass": 0,
-    "p1_cancel": 0,
-    "p2_cancel": 0,
-    "p1_retry_success": 0,
-    "p2_retry_success": 0,
-    "normal_end": 0,
-    "pass_end": 0,
-    "turns": 0,
-}}
-
-
-def play_game(game_num, total_scores):
-    words_set = load_words()
-    game = WordMatrixGame(words_set)
-
-    # Initialize agents
-    try:
-        agent1 = WordMatrixAgent_1("Agent-1")
-    except Exception as e:
-        print(f"Agent-1 init crash: {{e}}")
-        return "Agent-2"
-
-    try:
-        agent2 = WordMatrixAgent_2("Agent-2")
-    except Exception as e:
-        print(f"Agent-2 init crash: {{e}}")
-        return "Agent-1"
-
-    current_agent, other_agent = (
-        (agent1, agent2) if random.random() < 0.5 else (agent2, agent1)
-    )
-
-    print()
-    print("=" * 60)
-    print(f"GAME {{game_num}}")
-    print(f"Agent-1: {{AGENT1_INFO}}")
-    print(f"Agent-2: {{AGENT2_INFO}}")
-    print("=" * 60)
-
-    game.display_board()
-
-    MAX_ATTEMPTS = 3
-    PENALTY_INVALID = 25
-    PENALTY_CANCEL = 10
-    PENALTY_FATAL = 50
-
-    while not game.is_game_over():
-        stats["turns"] += 1
-        agent_name = current_agent.name
-        p_prefix = "p1" if agent_name == "Agent-1" else "p2"
-
-        failed_attempts = []
-        turn_penalty = 0
-        turn_resolved = False
-        locked_path = None
-
-        for attempt in range(MAX_ATTEMPTS):
-            feedback = None
-            if attempt > 0:
-                feedback = {{
-                    "error_code": failed_attempts[-1]["error_code"],
-                    "error_message": failed_attempts[-1]["error_message"],
-                    "failed_attempts": list(failed_attempts),
-                    "locked_path": [list(cell) for cell in locked_path] if locked_path else None,
-                }}
-
-            # Get move with timeout
-            move = None
-            try:
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(max(1, int(MOVE_TIMEOUT)))
-                try:
-                    move = current_agent.make_move(
-                        game.board_copy(), dict(game.scores), game.total_passes, feedback
-                    )
-                finally:
-                    signal.alarm(0)
-
-            except MoveTimeoutException:
-                print(f"{{agent_name}}: TIMEOUT (-{{PENALTY_FATAL}})")
-                stats[f"{{p_prefix}}_timeout"] += 1
-                turn_penalty += PENALTY_FATAL
-                game.apply_penalty(agent_name, turn_penalty)
-                game.apply_pass()
-                turn_resolved = True
-                break
-
-            except Exception as e:
-                print(f"{{agent_name}}: CRASH '{{str(e)[:80]}}' (-{{PENALTY_FATAL}})")
-                stats[f"{{p_prefix}}_crash"] += 1
-                turn_penalty += PENALTY_FATAL
-                game.apply_penalty(agent_name, turn_penalty)
-                game.apply_pass()
-                turn_resolved = True
-                break
-
-            # Handle PASS (only valid on first attempt)
-            if isinstance(move, str) and move.strip().upper() == "PASS":
-                if attempt == 0:
-                    print(f"{{agent_name}}: PASS")
-                    stats[f"{{p_prefix}}_pass"] += 1
-                    game.apply_pass()
-                else:
-                    print(f"{{agent_name}}: PASS during retry (invalid) (-{{PENALTY_FATAL}})")
-                    stats[f"{{p_prefix}}_invalid_message"] += 1
-                    turn_penalty += PENALTY_FATAL
-                    game.apply_penalty(agent_name, turn_penalty)
-                    game.apply_pass()
-                turn_resolved = True
-                break
-
-            # Handle CANCEL (only valid during retries)
-            if isinstance(move, str) and move.strip().upper() == "CANCEL":
-                if attempt > 0:
-                    # Valid CANCEL during retry
-                    print(f"{{agent_name}}: CANCEL (-{{PENALTY_CANCEL}})")
-                    stats[f"{{p_prefix}}_cancel"] += 1
-                    turn_penalty += PENALTY_CANCEL
-                    game.apply_penalty(agent_name, turn_penalty)
-                    game.apply_pass()
-                else:
-                    # Invalid: CANCEL on first attempt
-                    print(f"{{agent_name}}: CANCEL on first attempt (invalid) (-{{PENALTY_FATAL}})")
-                    stats[f"{{p_prefix}}_invalid_message"] += 1
-                    turn_penalty += PENALTY_FATAL
-                    game.apply_penalty(agent_name, turn_penalty)
-                    game.apply_pass()
-                turn_resolved = True
-                break
-
-            # Locked-path retry: agent must return a word string or CANCEL
-            if locked_path is not None:
-                if not isinstance(move, str):
-                    print(
-                        f"{{agent_name}}: INVALID OUTPUT during locked-path retry "
-                        f"(expected word string or 'CANCEL', "
-                        f"got {{type(move).__name__}}) (-{{PENALTY_FATAL}})"
-                    )
-                    stats[f"{{p_prefix}}_invalid_message"] += 1
-                    turn_penalty += PENALTY_FATAL
-                    game.apply_penalty(agent_name, turn_penalty)
-                    game.apply_pass()
-                    turn_resolved = True
-                    break
-
-                word = move.strip()
-                word_ok, word_reason, extra_letters, word_error_code = game.validate_word(word, locked_path)
-                if word_ok:
-                    if turn_penalty > 0:
-                        game.apply_penalty(agent_name, turn_penalty)
-                    stats[f"{{p_prefix}}_retry_success"] += 1
-                    path_str = " -> ".join(f"({{int(r)}},{{int(c)}})" for r, c in locked_path)
-                    points, cleared = game.apply_move(agent_name, locked_path, word)
-                    penalty_note = f" (penalty: -{{turn_penalty}})" if turn_penalty > 0 else ""
-                    print(
-                        f"{{agent_name}}: path=[{{path_str}}] word='{{word}}' "
-                        f"cleared={{cleared}} points=+{{points}}{{penalty_note}}"
-                    )
-                    game.display_board()
-                    turn_resolved = True
-                    break
-                else:
-                    turn_penalty += PENALTY_INVALID
-                    stats[f"{{p_prefix}}_invalid_word"] += 1
-                    failed_attempts.append({{
-                        "path": [list(cell) for cell in locked_path],
-                        "word": word,
-                        "error_code": word_error_code,
-                        "error_message": word_reason,
-                    }})
-                    remaining = MAX_ATTEMPTS - attempt - 1
-                    print(
-                        f"{{agent_name}}: INVALID WORD '{{word_reason}}' "
-                        f"(-{{PENALTY_INVALID}}, {{remaining}} retries left)"
-                    )
-                    continue
-
-            # Validate move structure
-            if not isinstance(move, (tuple, list)) or len(move) != 2:
-                print(
-                    f"{{agent_name}}: INVALID OUTPUT "
-                    f"(expected (path, word), 'PASS', or 'CANCEL', "
-                    f"got {{type(move).__name__}}) (-{{PENALTY_FATAL}})"
-                )
-                stats[f"{{p_prefix}}_invalid_message"] += 1
-                turn_penalty += PENALTY_FATAL
-                game.apply_penalty(agent_name, turn_penalty)
-                game.apply_pass()
-                turn_resolved = True
-                break
-
-            path, word = move[0], move[1]
-
-            # Validate path
-            path_ok, path_reason, path_error_code = game.validate_path(path)
-            if not path_ok:
-                turn_penalty += PENALTY_INVALID
-                stats[f"{{p_prefix}}_invalid_path"] += 1
-                failed_attempts.append({{
-                    "path": [list(cell) for cell in path] if isinstance(path, (list, tuple)) else str(path),
-                    "word": word if isinstance(word, str) else str(word),
-                    "error_code": path_error_code,
-                    "error_message": path_reason,
-                }})
-                remaining = MAX_ATTEMPTS - attempt - 1
-                print(
-                    f"{{agent_name}}: INVALID PATH '{{path_reason}}' "
-                    f"(-{{PENALTY_INVALID}}, {{remaining}} retries left)"
-                )
-                continue
-
-            # Validate word
-            word_ok, word_reason, extra_letters, word_error_code = game.validate_word(word, path)
-            if not word_ok:
-                turn_penalty += PENALTY_INVALID
-                stats[f"{{p_prefix}}_invalid_word"] += 1
-                locked_path = path
-                failed_attempts.append({{
-                    "path": [list(cell) for cell in path],
-                    "word": word if isinstance(word, str) else str(word),
-                    "error_code": word_error_code,
-                    "error_message": word_reason,
-                }})
-                remaining = MAX_ATTEMPTS - attempt - 1
-                print(
-                    f"{{agent_name}}: INVALID WORD '{{word_reason}}' "
-                    f"(-{{PENALTY_INVALID}}, {{remaining}} retries left)"
-                )
-                continue
-
-            # Valid move — apply accumulated penalty then score
-            if turn_penalty > 0:
-                game.apply_penalty(agent_name, turn_penalty)
-            if attempt > 0:
-                stats[f"{{p_prefix}}_retry_success"] += 1
-            path_str = " -> ".join(f"({{int(r)}},{{int(c)}})" for r, c in path)
-            points, cleared = game.apply_move(agent_name, path, word)
-            penalty_note = f" (penalty: -{{turn_penalty}})" if turn_penalty > 0 else ""
-            print(
-                f"{{agent_name}}: path=[{{path_str}}] word='{{word}}' "
-                f"cleared={{cleared}} points=+{{points}}{{penalty_note}}"
-            )
-            game.display_board()
-            turn_resolved = True
-            break
-
-        # Loop exhausted (3 invalid attempts, no break)
-        if not turn_resolved:
-            print(f"{{agent_name}}: 3 failed attempts (-{{turn_penalty}})")
-            game.apply_penalty(agent_name, turn_penalty)
-            game.apply_pass()
-
-        current_agent, other_agent = other_agent, current_agent
-
-    # Game over
-    if game.total_passes >= 6:
-        stats["pass_end"] += 1
-        end_reason = "6 passes reached"
-    else:
-        stats["normal_end"] += 1
-        end_reason = "No valid paths remaining"
-
-    print()
-    print(f"GAME {{game_num}} ENDED: {{end_reason}}")
-    print(
-        f"Scores - Agent-1: {{game.scores['Agent-1']}} | "
-        f"Agent-2: {{game.scores['Agent-2']}}"
-    )
-
-    total_scores["Agent-1"] += game.scores["Agent-1"]
-    total_scores["Agent-2"] += game.scores["Agent-2"]
-
-    if game.scores["Agent-1"] > game.scores["Agent-2"]:
-        winner = "Agent-1"
-    elif game.scores["Agent-2"] > game.scores["Agent-1"]:
-        winner = "Agent-2"
-    else:
-        winner = "DRAW"
-
-    print(f"Winner: {{winner}}")
-    print(
-        f"Running Total - Agent-1: {{total_scores['Agent-1']}} | "
-        f"Agent-2: {{total_scores['Agent-2']}}"
-    )
-    print("=" * 60)
-    sys.stdout.flush()
-
-    return winner
-
-
-def main():
-    total_scores = {{"Agent-1": 0, "Agent-2": 0}}
-
-    for i in range(NUM_GAMES):
-        play_game(i + 1, total_scores)
-        sys.stdout.flush()
-
-    print(
-        f"RESULT:Agent-1={{total_scores['Agent-1']}}"
-        f",Agent-2={{total_scores['Agent-2']}}"
-    )
-    print("--- MATCH STATISTICS ---")
-    print(f"Agent-1 Invalid Paths: {{stats['p1_invalid_path']}}")
-    print(f"Agent-2 Invalid Paths: {{stats['p2_invalid_path']}}")
-    print(f"Agent-1 Invalid Words: {{stats['p1_invalid_word']}}")
-    print(f"Agent-2 Invalid Words: {{stats['p2_invalid_word']}}")
-    print(f"Agent-1 Timeouts: {{stats['p1_timeout']}}")
-    print(f"Agent-2 Timeouts: {{stats['p2_timeout']}}")
-    print(f"Agent-1 Crashes: {{stats['p1_crash']}}")
-    print(f"Agent-2 Crashes: {{stats['p2_crash']}}")
-    print(f"Agent-1 Invalid Messages: {{stats['p1_invalid_message']}}")
-    print(f"Agent-2 Invalid Messages: {{stats['p2_invalid_message']}}")
-    print(f"Agent-1 Passes: {{stats['p1_pass']}}")
-    print(f"Agent-2 Passes: {{stats['p2_pass']}}")
-    print(f"Agent-1 Cancels: {{stats['p1_cancel']}}")
-    print(f"Agent-2 Cancels: {{stats['p2_cancel']}}")
-    print(f"Agent-1 Retry Successes: {{stats['p1_retry_success']}}")
-    print(f"Agent-2 Retry Successes: {{stats['p2_retry_success']}}")
-    print(f"Normal Ends: {{stats['normal_end']}}")
-    print(f"Pass Ends: {{stats['pass_end']}}")
-    print(f"Total Turns: {{stats['turns']}}")
-
-
-if __name__ == "__main__":
-    main()
-'''
-
-
-# --- Human play mode ---
-HUMAN_GAME_CODE = '''
-import sys
-import random
-import string
-
-WORDS_FILE_PATH = r"{words_file_path}"
-
-
-def load_words():
-    """Load dictionary: alphabetic-only words (no hyphens)."""
-    try:
-        with open(WORDS_FILE_PATH, 'r') as f:
-            return {{
-                line.strip().lower()
-                for line in f
-                if line.strip() and line.strip().isalpha()
-            }}
-    except Exception as e:
-        print(f"ERROR: Could not load words from {{WORDS_FILE_PATH}}: {{e}}")
-        sys.exit(1)
-
-
-class WordMatrixGame:
-    """Manages the WordMatrix game state and validation."""
-
-    def __init__(self, words_set):
-        self.words_set = words_set
-        self.board = [
-            [random.choice(string.ascii_lowercase) for _ in range(4)]
-            for _ in range(4)
-        ]
-        self.scores = {{"Human": 0, "Bot": 0}}
-        self.total_passes = 0
-
-    def has_valid_path(self):
-        """Check if any path of at least 2 adjacent non-empty cells exists."""
-        for r in range(4):
-            for c in range(4):
-                if self.board[r][c] == "":
-                    continue
-                for dr, dc in [(0, 1), (1, 0)]:
-                    nr, nc = r + dr, c + dc
-                    if 0 <= nr < 4 and 0 <= nc < 4 and self.board[nr][nc] != "":
-                        return True
-        return False
-
-    def is_game_over(self):
-        return not self.has_valid_path() or self.total_passes >= 6
-
-    def board_copy(self):
-        return [row[:] for row in self.board]
-
-    def validate_path(self, path):
-        if not isinstance(path, (list, tuple)) or len(path) < 2:
-            return False, "Path must have at least 2 cells", "INVALID_PATH_TOO_SHORT"
-        visited = set()
-        for i, cell in enumerate(path):
-            if not isinstance(cell, (list, tuple)) or len(cell) != 2:
-                return False, f"Cell {{i}} is not a valid (row, col) pair", "INVALID_PATH_BAD_CELL"
-            r, c = int(cell[0]), int(cell[1])
-            if not (0 <= r < 4 and 0 <= c < 4):
-                return False, f"Cell ({{r}},{{c}}) out of bounds", "INVALID_PATH_OOB"
-            if (r, c) in visited:
-                return False, f"Cell ({{r}},{{c}}) visited twice", "INVALID_PATH_REVISIT"
-            if self.board[r][c] == "":
-                return False, f"Cell ({{r}},{{c}}) is empty", "INVALID_PATH_EMPTY"
-            if i > 0:
-                pr, pc = int(path[i - 1][0]), int(path[i - 1][1])
-                if abs(r - pr) + abs(c - pc) != 1:
-                    return False, f"Cells ({{pr}},{{pc}}) and ({{r}},{{c}}) not adjacent", "INVALID_PATH_NOT_ADJACENT"
-            visited.add((r, c))
-        return True, "Valid", ""
-
-    def get_path_letters(self, path):
-        return [self.board[int(r)][int(c)] for r, c in path]
-
-    def validate_word(self, word, path):
-        if not isinstance(word, str) or not word:
-            return False, "Word must be a non-empty string", [], "INVALID_WORD_EMPTY"
-        word = word.lower()
-        path_letters = self.get_path_letters(path)
-        path_len = len(path_letters)
-        if len(word) > 2 * path_len:
-            return False, f"Word too long ({{len(word)}} > 2*{{path_len}})", [], "INVALID_WORD_TOO_LONG"
-        if len(word) < path_len:
-            return False, f"Word too short ({{len(word)}} < {{path_len}})", [], "INVALID_WORD_TOO_SHORT"
-        path_idx = 0
-        extra_letters = []
-        for ch in word:
-            if path_idx < path_len and ch == path_letters[path_idx]:
-                path_idx += 1
-            else:
-                extra_letters.append(ch)
-        if path_idx < path_len:
-            return False, "Path letters not found as subsequence in word", [], "INVALID_WORD_SUBSEQUENCE"
-        if word not in self.words_set:
-            return False, f"Word '{{word}}' not in dictionary", [], "INVALID_WORD_NOT_IN_DICT"
-        return True, "Valid", extra_letters, ""
-
-    def apply_move(self, agent_name, path, word):
-        word = word.lower()
-        path_letters = self.get_path_letters(path)
-        path_len = len(path_letters)
-        path_idx = 0
-        extra_letters = []
-        for ch in word:
-            if path_idx < path_len and ch == path_letters[path_idx]:
-                path_idx += 1
-            else:
-                extra_letters.append(ch)
-        cell_indices = [(int(r), int(c)) for r, c in path]
-        random.shuffle(cell_indices)
-        for i, (r, c) in enumerate(cell_indices):
-            if i < len(extra_letters):
-                self.board[r][c] = extra_letters[i]
-            else:
-                self.board[r][c] = ""
-        cleared = path_len - len(extra_letters)
-        points = 10 + 10 * cleared
-        self.scores[agent_name] += points
-        self.total_passes = 0
-        return points, cleared
-
-    def apply_penalty(self, agent_name, amount):
-        self.scores[agent_name] -= amount
-
-    def apply_pass(self):
-        self.total_passes += 1
-
-    def display_board(self):
-        print("    0  1  2  3")
-        print("   -----------")
+    def display_board_log(self):
+        """Print the board with BOARD: prefix for log filtering."""
+        print("BOARD:     0  1  2  3")
+        print("BOARD:    -----------")
         for r in range(4):
             row_str = " ".join(
-                f" {{self.board[r][c]}}" if self.board[r][c] else " ."
+                f" {self.board[r][c]}" if self.board[r][c] else " ."
                 for c in range(4)
             )
-            print(f"{{r}} |{{row_str}}")
-        print()
+            print(f"BOARD: {r} |{row_str}")
+
+
+class RandomAgent:
+    """Simple bot that always passes (no meaningful random move for word games)."""
+    def __init__(self, name):
+        self.name = name
+
+    def make_move(self, board, scores, total_passes):
+        return "PASS"
 
 
 class HumanAgent:
     def __init__(self, name):
         self.name = name
 
-    def make_move(self, board, scores, total_passes=0, feedback=None):
-        print(f"\\nYour turn ({{self.name}})")
-        print(f"Scores: {{scores}}")
-        print(f"Passes remaining: {{6 - total_passes}}")
-
-        if feedback:
-            print()
-            print(f"  Last error: [{{feedback['error_code']}}] {{feedback['error_message']}}")
-            for i, fa in enumerate(feedback["failed_attempts"]):
-                print(f"  Attempt {{i + 1}}: path={{fa['path']}} word='{{fa['word']}}' -> {{fa['error_code']}}")
-
+    def make_move(self, board, scores, total_passes):
+        print(f"\nYour turn ({self.name})")
+        print(f"Scores: {scores}")
+        print(f"Passes remaining: {6 - total_passes}")
         print()
 
-        # Display board
         print("    0  1  2  3")
         print("   -----------")
         for r in range(4):
             row_str = " ".join(
-                f" {{board[r][c]}}" if board[r][c] else " ."
+                f" {board[r][c]}" if board[r][c] else " ."
                 for c in range(4)
             )
-            print(f"{{r}} |{{row_str}}")
+            print(f"{r} |{row_str}")
         print()
 
-        # Locked-path retry: path is fixed, only prompt for word
-        if feedback and feedback.get("locked_path"):
-            lp = feedback["locked_path"]
-            path_letters = [board[int(r)][int(c)] for r, c in lp if 0 <= int(r) < 4 and 0 <= int(c) < 4 and board[int(r)][int(c)]]
-            path_str = " -> ".join(f"({{int(r)}},{{int(c)}})" for r, c in lp)
-            print(f"  Path LOCKED: [{{path_str}}]")
-            print(f"  Path letters: {{path_letters}}")
-            print()
-            word_input = input("Enter word for locked path (or CANCEL): ").strip()
-            if word_input.upper() == "CANCEL":
-                return "CANCEL"
-            return word_input.lower()
-
-        if feedback:
-            path_input = input("Enter path (e.g., '0,0 0,1 1,1') or CANCEL: ").strip()
-        else:
-            path_input = input("Enter path (e.g., '0,0 0,1 1,1') or PASS: ").strip()
+        path_input = input("Enter path (e.g., '0,0 0,1 1,1') or PASS: ").strip()
 
         if path_input.upper() == "PASS":
             return "PASS"
 
-        if path_input.upper() == "CANCEL":
-            return "CANCEL"
-
-        # Parse path — format failures return invalid move for game engine to penalize
         try:
             cells = path_input.split()
             path = []
@@ -820,246 +292,311 @@ class HumanAgent:
             print("Invalid format. Use 'row,col row,col ...' (e.g., '0,0 0,1 1,1')")
             return ([], "")
 
-        # Show path letters (raw, pre-validation)
         path_letters = [board[r][c] for r, c in path if 0 <= r < 4 and 0 <= c < 4 and board[r][c]]
-        print(f"Path letters: {{path_letters}}")
+        print(f"Path letters: {path_letters}")
 
-        word_input = input("Enter word (or CANCEL): ").strip()
-
-        if word_input.upper() == "CANCEL":
-            return "CANCEL"
-
+        word_input = input("Enter word: ").strip()
         return (path, word_input.lower())
+'''
 
 
-class BotAgent:
-    """Simple bot that always passes."""
-    def __init__(self, name):
-        self.name = name
+# ============================================================
+# Match runner code (play_game, main, stats, output)
+# ============================================================
+MATCH_RUNNER_CODE = r'''
+class MoveTimeoutException(Exception):
+    pass
 
-    def make_move(self, board, scores, total_passes=0, feedback=None):
-        return "PASS"
+def timeout_handler(signum, frame):
+    raise MoveTimeoutException("Move timeout")
+
+INVALID_PENALTY = 10
+FORFEIT_SCORE = {forfeit_score}
 
 
-def main():
-    print("=== WordMatrixGame - Human Play Mode ===")
-    print("Loading dictionary...")
+def play_game(game_num, match_stats):
+    """Play a single game and update match_stats. Returns winner name or 'DRAW'."""
     words_set = load_words()
-    print(f"Dictionary loaded: {{len(words_set)}} words")
-    print()
-
     game = WordMatrixGame(words_set)
-    human = HumanAgent("Human")
-    bot = BotAgent("Bot")
 
-    current_agent = human
-    other_agent = bot
+    # Determine agent classes based on game mode
+    if GAME_MODE == "humanvsbot":
+        class_1, class_2 = HumanAgent, RandomAgent
+    elif GAME_MODE == "humanvshuman":
+        class_1, class_2 = HumanAgent, HumanAgent
+    elif GAME_MODE == "humanvsagent":
+        class_1, class_2 = HumanAgent, WordMatrixAgent_1
+    else:
+        class_1, class_2 = WordMatrixAgent_1, WordMatrixAgent_2
+
+    # Randomize who goes first
+    if random.random() < 0.5:
+        a1_class, a2_class = class_1, class_2
+    else:
+        a1_class, a2_class = class_2, class_1
+
+    print()
+    print("=" * 60)
+    print(f"Game {game_num}")
+    print(f"Agent-1: {AGENT1_NAME}")
+    print(f"Agent-2: {AGENT2_NAME}")
+    print("-" * 60)
+
+    # --- Initialize agents (other_crash on failure = forfeit) ---
+    try:
+        agent1 = a1_class("Agent-1")
+    except Exception as e:
+        print(f"Agent-1 init crash: {e}")
+        match_stats["Agent-1"]["other_crash"] += 1
+        match_stats["Agent-2"]["wins"] += 1
+        match_stats["Agent-2"]["points"] += 3
+        match_stats["Agent-2"]["score"] += FORFEIT_SCORE
+        match_stats["Agent-1"]["losses"] += 1
+        match_stats["Agent-1"]["score"] -= FORFEIT_SCORE
+
+        print("Final Position: N/A (initialization crash)")
+        print("-" * 40)
+        print("Final Result: Agent-2 wins. (opponent crashed)")
+        print("-" * 40)
+        print("Points:")
+        print("Agent-1: 0")
+        print("Agent-2: 3")
+        print("-" * 40)
+        print("Scores:")
+        print(f"Agent-2: {FORFEIT_SCORE}")
+        print(f"Agent-1: -{FORFEIT_SCORE}")
+        print("=" * 60)
+        return "Agent-2"
+
+    try:
+        agent2 = a2_class("Agent-2")
+    except Exception as e:
+        print(f"Agent-2 init crash: {e}")
+        match_stats["Agent-2"]["other_crash"] += 1
+        match_stats["Agent-1"]["wins"] += 1
+        match_stats["Agent-1"]["points"] += 3
+        match_stats["Agent-1"]["score"] += FORFEIT_SCORE
+        match_stats["Agent-2"]["losses"] += 1
+        match_stats["Agent-2"]["score"] -= FORFEIT_SCORE
+
+        print("Final Position: N/A (initialization crash)")
+        print("-" * 40)
+        print("Final Result: Agent-1 wins. (opponent crashed)")
+        print("-" * 40)
+        print("Points:")
+        print("Agent-1: 3")
+        print("Agent-2: 0")
+        print("-" * 40)
+        print("Scores:")
+        print(f"Agent-1: {FORFEIT_SCORE}")
+        print(f"Agent-2: -{FORFEIT_SCORE}")
+        print("=" * 60)
+        return "Agent-1"
+
+    agents = {"Agent-1": agent1, "Agent-2": agent2}
+    turn_order = ["Agent-1", "Agent-2"]
+    current_idx = 0
 
     game.display_board()
 
-    MAX_ATTEMPTS = 3
-    PENALTY_INVALID = 25
-    PENALTY_CANCEL = 10
-    PENALTY_FATAL = 50
-
+    # --- Game loop ---
     while not game.is_game_over():
-        agent_name = current_agent.name
+        agent_name = turn_order[current_idx]
+        current_agent = agents[agent_name]
 
-        if isinstance(current_agent, BotAgent):
-            print(f"{{agent_name}}: PASS")
+        move = None
+        error_type = None
+
+        try:
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(max(1, int(MOVE_TIMEOUT)))
+            try:
+                move = current_agent.make_move(
+                    game.board_copy(), dict(game.scores), game.total_passes
+                )
+            finally:
+                signal.alarm(0)
+        except MoveTimeoutException:
+            match_stats[agent_name]["timeout"] += 1
+            error_type = "timeout"
+            print(f"{agent_name}: TIMEOUT (-{INVALID_PENALTY})")
+        except Exception as e:
+            match_stats[agent_name]["make_move_crash"] += 1
+            error_type = "crash"
+            print(f"{agent_name}: CRASH '{str(e)[:80]}' (-{INVALID_PENALTY})")
+
+        if error_type is not None:
+            game.apply_penalty(agent_name, INVALID_PENALTY)
             game.apply_pass()
-            print(f"Scores: {{game.scores}}")
-            current_agent, other_agent = other_agent, current_agent
+            current_idx = 1 - current_idx
             continue
 
-        failed_attempts = []
-        turn_penalty = 0
-        turn_resolved = False
-        locked_path = None
-
-        for attempt in range(MAX_ATTEMPTS):
-            feedback = None
-            if attempt > 0:
-                feedback = {{
-                    "error_code": failed_attempts[-1]["error_code"],
-                    "error_message": failed_attempts[-1]["error_message"],
-                    "failed_attempts": list(failed_attempts),
-                    "locked_path": [list(cell) for cell in locked_path] if locked_path else None,
-                }}
-
-            print(f"\\n--- Attempt {{attempt + 1}}/{{MAX_ATTEMPTS}} | Penalty so far: -{{turn_penalty}} ---")
-
-            move = current_agent.make_move(
-                game.board_copy(), dict(game.scores), game.total_passes, feedback
-            )
-
-            # Handle PASS (only valid on first attempt)
-            if isinstance(move, str) and move.strip().upper() == "PASS":
-                if attempt == 0:
-                    print(f"{{agent_name}}: PASS")
-                    game.apply_pass()
-                else:
-                    print(f"{{agent_name}}: PASS during retry (invalid) (-{{PENALTY_FATAL}})")
-                    turn_penalty += PENALTY_FATAL
-                    game.apply_penalty(agent_name, turn_penalty)
-                    game.apply_pass()
-                print(f"Scores: {{game.scores}}")
-                turn_resolved = True
-                break
-
-            # Handle CANCEL (only valid during retries)
-            if isinstance(move, str) and move.strip().upper() == "CANCEL":
-                if attempt > 0:
-                    # Valid CANCEL during retry
-                    turn_penalty += PENALTY_CANCEL
-                    print(f"{{agent_name}}: CANCEL (-{{PENALTY_CANCEL}})")
-                    game.apply_penalty(agent_name, turn_penalty)
-                    game.apply_pass()
-                else:
-                    # Invalid: CANCEL on first attempt
-                    print(f"{{agent_name}}: CANCEL on first attempt (invalid) (-{{PENALTY_FATAL}})")
-                    turn_penalty += PENALTY_FATAL
-                    game.apply_penalty(agent_name, turn_penalty)
-                    game.apply_pass()
-                print(f"Scores: {{game.scores}}")
-                turn_resolved = True
-                break
-
-            # Locked-path retry: agent must return a word string or CANCEL
-            if locked_path is not None:
-                if not isinstance(move, str):
-                    print(
-                        f"{{agent_name}}: INVALID OUTPUT during locked-path retry "
-                        f"(expected word string or 'CANCEL', "
-                        f"got {{type(move).__name__}}) (-{{PENALTY_FATAL}})"
-                    )
-                    turn_penalty += PENALTY_FATAL
-                    game.apply_penalty(agent_name, turn_penalty)
-                    game.apply_pass()
-                    print(f"Scores: {{game.scores}}")
-                    turn_resolved = True
-                    break
-
-                word = move.strip()
-                word_ok, word_reason, extra_letters, word_error_code = game.validate_word(word, locked_path)
-                if word_ok:
-                    if turn_penalty > 0:
-                        game.apply_penalty(agent_name, turn_penalty)
-                    path_str = " -> ".join(f"({{int(r)}},{{int(c)}})" for r, c in locked_path)
-                    points, cleared = game.apply_move(agent_name, locked_path, word)
-                    penalty_note = f" (penalty: -{{turn_penalty}})" if turn_penalty > 0 else ""
-                    print(
-                        f"\\n{{agent_name}}: path=[{{path_str}}] word='{{word}}' "
-                        f"cleared={{cleared}} points=+{{points}}{{penalty_note}}"
-                    )
-                    print(f"Scores: {{game.scores}}")
-                    print()
-                    game.display_board()
-                    turn_resolved = True
-                    break
-                else:
-                    turn_penalty += PENALTY_INVALID
-                    failed_attempts.append({{
-                        "path": [list(cell) for cell in locked_path],
-                        "word": word,
-                        "error_code": word_error_code,
-                        "error_message": word_reason,
-                    }})
-                    remaining = MAX_ATTEMPTS - attempt - 1
-                    print(
-                        f"INVALID WORD: {{word_reason}} "
-                        f"(-{{PENALTY_INVALID}}, {{remaining}} retries left)"
-                    )
-                    print(f"Scores: {{game.scores}}")
-                    continue
-
-            # Validate move structure
-            if not isinstance(move, (tuple, list)) or len(move) != 2:
-                print(
-                    f"{{agent_name}}: INVALID OUTPUT "
-                    f"(expected (path, word), 'PASS', or 'CANCEL', "
-                    f"got {{type(move).__name__}}) (-{{PENALTY_FATAL}})"
-                )
-                turn_penalty += PENALTY_FATAL
-                game.apply_penalty(agent_name, turn_penalty)
-                game.apply_pass()
-                print(f"Scores: {{game.scores}}")
-                turn_resolved = True
-                break
-
-            path, word = move[0], move[1]
-
-            # Validate path
-            path_ok, path_reason, path_error_code = game.validate_path(path)
-            if not path_ok:
-                turn_penalty += PENALTY_INVALID
-                failed_attempts.append({{
-                    "path": [list(cell) for cell in path],
-                    "word": word if isinstance(word, str) else str(word),
-                    "error_code": path_error_code,
-                    "error_message": path_reason,
-                }})
-                remaining = MAX_ATTEMPTS - attempt - 1
-                print(
-                    f"INVALID PATH: {{path_reason}} "
-                    f"(-{{PENALTY_INVALID}}, {{remaining}} retries left)"
-                )
-                print(f"Scores: {{game.scores}}")
-                continue
-
-            # Validate word
-            word_ok, word_reason, extra_letters, word_error_code = game.validate_word(word, path)
-            if not word_ok:
-                turn_penalty += PENALTY_INVALID
-                locked_path = path
-                failed_attempts.append({{
-                    "path": [list(cell) for cell in path],
-                    "word": word if isinstance(word, str) else str(word),
-                    "error_code": word_error_code,
-                    "error_message": word_reason,
-                }})
-                remaining = MAX_ATTEMPTS - attempt - 1
-                print(
-                    f"INVALID WORD: {{word_reason}} "
-                    f"(-{{PENALTY_INVALID}}, {{remaining}} retries left)"
-                )
-                print(f"Scores: {{game.scores}}")
-                continue
-
-            # Valid move — apply accumulated penalty then score
-            if turn_penalty > 0:
-                game.apply_penalty(agent_name, turn_penalty)
-            path_str = " -> ".join(f"({{int(r)}},{{int(c)}})" for r, c in path)
-            points, cleared = game.apply_move(agent_name, path, word)
-            penalty_note = f" (penalty: -{{turn_penalty}})" if turn_penalty > 0 else ""
-            print(
-                f"\\n{{agent_name}}: path=[{{path_str}}] word='{{word}}' "
-                f"cleared={{cleared}} points=+{{points}}{{penalty_note}}"
-            )
-            print(f"Scores: {{game.scores}}")
-            print()
-            game.display_board()
-            turn_resolved = True
-            break
-
-        # Loop exhausted (3 invalid attempts, no break)
-        if not turn_resolved:
-            print(f"{{agent_name}}: 3 failed attempts (-{{turn_penalty}})")
-            game.apply_penalty(agent_name, turn_penalty)
+        # Handle PASS
+        if isinstance(move, str) and move.strip().upper() == "PASS":
+            print(f"{agent_name}: PASS")
             game.apply_pass()
-            print(f"Scores: {{game.scores}}")
+            current_idx = 1 - current_idx
+            continue
 
-        current_agent, other_agent = other_agent, current_agent
+        # Validate move structure
+        if not isinstance(move, (tuple, list)) or len(move) != 2:
+            print(f"{agent_name}: INVALID OUTPUT (expected (path, word) or 'PASS', got {type(move).__name__}) (-{INVALID_PENALTY})")
+            match_stats[agent_name]["invalid"] += 1
+            game.apply_penalty(agent_name, INVALID_PENALTY)
+            game.apply_pass()
+            current_idx = 1 - current_idx
+            continue
 
-    print()
-    print("=== GAME OVER ===")
-    print(f"Final Scores: {{game.scores}}")
-    if game.scores["Human"] > game.scores["Bot"]:
-        print("You win!")
-    elif game.scores["Bot"] > game.scores["Human"]:
-        print("Bot wins!")
+        path, word = move[0], move[1]
+
+        # Validate path
+        path_ok, path_reason = game.validate_path(path)
+        if not path_ok:
+            print(f"{agent_name}: INVALID PATH '{path_reason}' (-{INVALID_PENALTY})")
+            match_stats[agent_name]["invalid"] += 1
+            game.apply_penalty(agent_name, INVALID_PENALTY)
+            game.apply_pass()
+            current_idx = 1 - current_idx
+            continue
+
+        # Validate word
+        word_ok, word_reason, extra_letters = game.validate_word(word, path)
+        if not word_ok:
+            print(f"{agent_name}: INVALID WORD '{word_reason}' (-{INVALID_PENALTY})")
+            match_stats[agent_name]["invalid"] += 1
+            game.apply_penalty(agent_name, INVALID_PENALTY)
+            game.apply_pass()
+            current_idx = 1 - current_idx
+            continue
+
+        # Valid move
+        path_str = " -> ".join(f"({int(r)},{int(c)})" for r, c in path)
+        points, cleared = game.apply_move(agent_name, path, word)
+        print(f"{agent_name}: path=[{path_str}] word='{word}' cleared={cleared} points=+{points}")
+        game.display_board()
+        current_idx = 1 - current_idx
+
+    # --- Game over ---
+    if game.total_passes >= 6:
+        end_reason = "6 consecutive passes reached"
     else:
-        print("Draw!")
+        end_reason = "No valid paths remaining"
+
+    # Determine winner
+    s1, s2 = game.scores["Agent-1"], game.scores["Agent-2"]
+
+    print("Final Position:")
+    game.display_board_log()
+    print(f"Scores: Agent-1={s1} Agent-2={s2}")
+    print("-" * 40)
+
+    if s1 > s2:
+        winner = "Agent-1"
+        loser = "Agent-2"
+        game_score = abs(s1 - s2)
+        print(f"Final Result: Agent-1 wins. ({end_reason})")
+        print("-" * 40)
+        print("Points:")
+        print("Agent-1: 3")
+        print("Agent-2: 0")
+        print("-" * 40)
+        print("Scores:")
+        print(f"Agent-1: {game_score}")
+        print(f"Agent-2: -{game_score}")
+
+        match_stats["Agent-1"]["wins"] += 1
+        match_stats["Agent-1"]["points"] += 3
+        match_stats["Agent-1"]["score"] += game_score
+        match_stats["Agent-2"]["losses"] += 1
+        match_stats["Agent-2"]["score"] -= game_score
+
+    elif s2 > s1:
+        winner = "Agent-2"
+        loser = "Agent-1"
+        game_score = abs(s2 - s1)
+        print(f"Final Result: Agent-2 wins. ({end_reason})")
+        print("-" * 40)
+        print("Points:")
+        print("Agent-1: 0")
+        print("Agent-2: 3")
+        print("-" * 40)
+        print("Scores:")
+        print(f"Agent-1: -{game_score}")
+        print(f"Agent-2: {game_score}")
+
+        match_stats["Agent-2"]["wins"] += 1
+        match_stats["Agent-2"]["points"] += 3
+        match_stats["Agent-2"]["score"] += game_score
+        match_stats["Agent-1"]["losses"] += 1
+        match_stats["Agent-1"]["score"] -= game_score
+
+    else:
+        winner = "DRAW"
+        print(f"Final Result: Draw. ({end_reason})")
+        print("-" * 40)
+        print("Points:")
+        print("Agent-1: 1")
+        print("Agent-2: 1")
+        print("-" * 40)
+        print("Scores:")
+        print("Agent-1: 0")
+        print("Agent-2: 0")
+
+        match_stats["Agent-1"]["draws"] += 1
+        match_stats["Agent-1"]["points"] += 1
+        match_stats["Agent-2"]["draws"] += 1
+        match_stats["Agent-2"]["points"] += 1
+
+    print("=" * 60)
+    sys.stdout.flush()
+    return winner
+
+
+def main():
+    match_stats = {
+        "Agent-1": {
+            "wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0,
+            "make_move_crash": 0, "other_crash": 0, "crash": 0,
+            "timeout": 0, "invalid": 0,
+        },
+        "Agent-2": {
+            "wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0,
+            "make_move_crash": 0, "other_crash": 0, "crash": 0,
+            "timeout": 0, "invalid": 0,
+        },
+    }
+
+    for i in range(NUM_GAMES):
+        play_game(i + 1, match_stats)
+        sys.stdout.flush()
+
+    # Aggregate crash stat for backward compatibility
+    for agent_key in ["Agent-1", "Agent-2"]:
+        match_stats[agent_key]["crash"] = (
+            match_stats[agent_key]["make_move_crash"]
+            + match_stats[agent_key]["other_crash"]
+        )
+
+    print("=" * 60)
+    print(f"Agent-1: {AGENT1_NAME}")
+    print(f"Agent-2: {AGENT2_NAME}")
+    print(f"RESULT:Agent-1={match_stats['Agent-1']['points']},Agent-2={match_stats['Agent-2']['points']}")
+    print(f"SCORE:Agent-1={match_stats['Agent-1']['score']},Agent-2={match_stats['Agent-2']['score']}")
+    print(f"WINS:Agent-1={match_stats['Agent-1']['wins']},Agent-2={match_stats['Agent-2']['wins']}")
+    print(f"DRAWS:{match_stats['Agent-1']['draws']}")
+
+    print("--- MATCH STATISTICS ---")
+    print(f"Agent-1 make_move_crash: {match_stats['Agent-1']['make_move_crash']}")
+    print(f"Agent-2 make_move_crash: {match_stats['Agent-2']['make_move_crash']}")
+    print(f"Agent-1 other_crash: {match_stats['Agent-1']['other_crash']}")
+    print(f"Agent-2 other_crash: {match_stats['Agent-2']['other_crash']}")
+    print(f"Agent-1 crash (total): {match_stats['Agent-1']['crash']}")
+    print(f"Agent-2 crash (total): {match_stats['Agent-2']['crash']}")
+    print(f"Agent-1 Timeouts: {match_stats['Agent-1']['timeout']}")
+    print(f"Agent-2 Timeouts: {match_stats['Agent-2']['timeout']}")
+    print(f"Agent-1 Invalid: {match_stats['Agent-1']['invalid']}")
+    print(f"Agent-2 Invalid: {match_stats['Agent-2']['invalid']}")
+    print(f"STATS:Agent-1={match_stats['Agent-1']},Agent-2={match_stats['Agent-2']}")
 
 
 if __name__ == "__main__":
@@ -1067,18 +604,20 @@ if __name__ == "__main__":
 '''
 
 
+# ============================================================
+# Outer layer: agent loading, subprocess orchestration, logging
+# ============================================================
+
 def find_model_folder(pattern: str) -> str | None:
     """Find a model folder matching the given pattern."""
     if not AGENTS_DIR.exists():
         logger.error("Agents directory not found: %s", AGENTS_DIR)
         return None
 
-    # Exact match first (matchmaker passes full folder names)
     exact = AGENTS_DIR / pattern
     if exact.is_dir():
         return pattern
 
-    # Substring fallback for interactive CLI use
     matches = [
         d.name for d in AGENTS_DIR.iterdir()
         if d.is_dir() and pattern.lower() in d.name.lower()
@@ -1200,28 +739,44 @@ def build_game_code(
     agent2_code: str,
     extra_imports: str,
     num_games: int,
-    words_file_path: str,
     move_timeout: float,
-    agent1_info: str,
-    agent2_info: str,
+    words_file_path: str,
+    forfeit_score: int = FORFEIT_SCORE,
+    game_mode: str = "",
+    agent1_name: str = "Agent-1",
+    agent2_name: str = "Agent-2",
 ) -> str:
-    """Build the complete game code with both agent implementations."""
-    return GAME_CODE_TEMPLATE.format(
-        num_games=num_games,
-        words_file_path=words_file_path,
-        move_timeout=move_timeout,
-        extra_imports=extra_imports,
-        agent1_code=agent1_code,
-        agent2_code=agent2_code,
-        agent1_info=agent1_info,
-        agent2_info=agent2_info,
+    """Build the complete game code by concatenating header, agents, engine, and runner."""
+    header = (
+        "import sys\n"
+        "import random\n"
+        "import signal\n"
+        "import string\n"
+        "\n"
+        f"MOVE_TIMEOUT = {move_timeout}\n"
+        f"NUM_GAMES = {num_games}\n"
+        f'GAME_MODE = "{game_mode}"\n'
+        f'AGENT1_NAME = "{agent1_name}"\n'
+        f'AGENT2_NAME = "{agent2_name}"\n'
     )
+
+    engine = GAME_ENGINE_CODE.replace("{words_file_path}", str(words_file_path))
+    runner = MATCH_RUNNER_CODE.replace("{forfeit_score}", str(forfeit_score))
+
+    return "\n\n".join([
+        header,
+        extra_imports,
+        agent1_code,
+        agent2_code,
+        engine,
+        runner,
+    ])
 
 
 def run_match(
-    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = 600
+    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = 900
 ) -> dict:
-    """Run a single match in a subprocess."""
+    """Execute a match subprocess, parse results, and return structured dict."""
     temp_id = uuid.uuid4().hex[:8]
     temp_file = os.path.join(
         tempfile.gettempdir(), f"wordmatrix_match_{match_id}_{temp_id}.py"
@@ -1246,9 +801,9 @@ def run_match(
                 "error": result.stderr[:500],
             }
 
-        # Parse results
+        # Parse structured output lines
         match = re.search(
-            r"RESULT:Agent-1=([-\d.]+),Agent-2=([-\d.]+)", result.stdout
+            r"RESULT:Agent-1=([\d.]+),Agent-2=([\d.]+)", result.stdout
         )
 
         stats_block = ""
@@ -1256,13 +811,33 @@ def run_match(
             stats_block = result.stdout.split("--- MATCH STATISTICS ---")[1].strip()
 
         if match:
+            wins_match = re.search(
+                r"WINS:Agent-1=(\d+),Agent-2=(\d+)", result.stdout
+            )
+            draws_match = re.search(r"DRAWS:(\d+)", result.stdout)
+            score_match = re.search(
+                r"SCORE:Agent-1=(-?[\d.]+),Agent-2=(-?[\d.]+)", result.stdout
+            )
+
+            agent1_wins = int(wins_match.group(1)) if wins_match else 0
+            agent2_wins = int(wins_match.group(2)) if wins_match else 0
+            draws = int(draws_match.group(1)) if draws_match else 0
+            agent1_points = int(float(match.group(1)))
+            agent2_points = int(float(match.group(2)))
+            agent1_score = float(score_match.group(1)) if score_match else 0.0
+            agent2_score = float(score_match.group(2)) if score_match else 0.0
+
+            # Log filtering: keep only meaningful lines
             log_lines = []
             for line in result.stdout.splitlines():
-                if line.startswith((
-                    "Agent-1:", "Agent-2:", "GAME ", "Reason:",
-                    "Scores", "Winner:", "Result:", "Running Total",
-                    "==========",
-                )) or "ENDED" in line or line.strip() == "":
+                stripped = line.lstrip()
+                if stripped.startswith((
+                    "Agent-1:", "Agent-2:", "Game ",
+                    "=====", "----",
+                    "Final", "Scores:", "Points:",
+                    "BOARD:",
+                    "CRASH", "RESULT", "SCORE", "WINS", "DRAWS", "STATS",
+                )) or line.strip() == "":
                     log_lines.append(line)
 
             return {
@@ -1270,8 +845,13 @@ def run_match(
                 "agent1_run_id": run_ids[0],
                 "agent2_run_id": run_ids[1],
                 "success": True,
-                "agent1_score": float(match.group(1)),
-                "agent2_score": float(match.group(2)),
+                "agent1_score": agent1_score,
+                "agent2_score": agent2_score,
+                "agent1_wins": agent1_wins,
+                "agent2_wins": agent2_wins,
+                "agent1_points": agent1_points,
+                "agent2_points": agent2_points,
+                "draws": draws,
                 "error": None,
                 "stats_block": stats_block,
                 "log": "\n".join(log_lines),
@@ -1302,51 +882,119 @@ def run_match(
             os.remove(temp_file)
 
 
+def run_match_human(game_code: str) -> None:
+    """Run a match in human mode (interactive, stdin/stdout passthrough)."""
+    temp_file = os.path.join(
+        tempfile.gettempdir(), f"wordmatrix_human_{uuid.uuid4().hex[:8]}.py"
+    )
+    try:
+        with open(temp_file, "w") as f:
+            f.write(game_code)
+        subprocess.run(
+            ["python", temp_file],
+            stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr,
+        )
+    finally:
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+
+
 async def run_match_async(
     game_code: str, match_id: int, run_ids: tuple[int, int]
 ) -> dict:
-    """Run a match asynchronously via executor."""
+    """Run a match in a thread pool to avoid blocking the event loop."""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, run_match, game_code, match_id, run_ids)
 
 
 async def main_async():
-    """Main entry point for agent-vs-agent matches."""
-    parser = argparse.ArgumentParser(description="Run WordMatrixGame matches")
+    """Main entry point for all match modes."""
+    parser = argparse.ArgumentParser(
+        description="Run WordMatrixGame matches between stored AI agents"
+    )
     parser.add_argument(
         "--agent", nargs="+",
         help="Agent specs: model1[:run1:run2] model2[:run3:run4]",
     )
-    parser.add_argument(
-        "--human", action="store_true",
-        help="Play interactively against a bot",
+    human_group = parser.add_mutually_exclusive_group()
+    human_group.add_argument(
+        "--humanvsbot", action="store_true",
+        help="Play interactively against a bot that always passes",
+    )
+    human_group.add_argument(
+        "--humanvshuman", action="store_true",
+        help="Two humans play at the same terminal",
+    )
+    human_group.add_argument(
+        "--humanvsagent", action="store_true",
+        help="Play against a stored agent (requires --agent with 1 spec)",
     )
     args = parser.parse_args()
 
-    # Human play mode
-    if args.human:
-        human_code = HUMAN_GAME_CODE.format(words_file_path=str(WORDS_FILE))
-        temp_id = uuid.uuid4().hex[:8]
-        temp_file = os.path.join(
-            tempfile.gettempdir(), f"wordmatrix_human_{temp_id}.py"
-        )
-        try:
-            with open(temp_file, "w") as f:
-                f.write(human_code)
-            subprocess.run(
-                ["python", temp_file],
-                stdin=sys.stdin,
-                stdout=sys.stdout,
-                stderr=sys.stderr,
+    # --- Human play modes ---
+    human_mode = None
+    if args.humanvsbot:
+        human_mode = "humanvsbot"
+    elif args.humanvshuman:
+        human_mode = "humanvshuman"
+    elif args.humanvsagent:
+        human_mode = "humanvsagent"
+
+    if human_mode:
+        print("\n" + "=" * 60)
+        mode_title = MODE_TITLES.get(human_mode, human_mode)
+        print(f"WORD MATRIX GAME - {mode_title}")
+        print("=" * 60)
+
+        agent1_code = ""
+        agent2_code = ""
+        agent_imports = ""
+
+        if human_mode == "humanvsagent":
+            if not args.agent or len(args.agent) != 1:
+                print("ERROR: --humanvsagent requires exactly 1 --agent spec.")
+                print("Example: --humanvsagent --agent mistral:1")
+                sys.exit(1)
+
+            model_pattern, runs = parse_agent_spec(args.agent[0])
+            folder = find_model_folder(model_pattern)
+            if not folder:
+                sys.exit(1)
+            if not runs:
+                runs = get_available_runs(folder, GAME_NAME)
+            if not runs:
+                print(f"ERROR: No runs found for {folder}/{GAME_NAME}")
+                sys.exit(1)
+
+            agent_code, agent_imports = load_stored_agent(
+                folder, GAME_NAME, runs[0], 1
             )
-        finally:
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
+            if not agent_code:
+                print(f"ERROR: Failed to load agent from {folder}")
+                sys.exit(1)
+            agent1_code = agent_code
+        elif args.agent:
+            print("ERROR: --agent is not used with --humanvsbot or --humanvshuman.")
+            sys.exit(1)
+
+        game_code = build_game_code(
+            agent1_code=agent1_code,
+            agent2_code=agent2_code,
+            extra_imports=agent_imports,
+            num_games=10,
+            move_timeout=99999,
+            words_file_path=str(WORDS_FILE),
+            game_mode=human_mode,
+            agent1_name="Human",
+            agent2_name="Bot" if human_mode == "humanvsbot" else "Agent",
+        )
+        run_match_human(game_code)
         return
 
-    # Agent match mode
+    # --- Agent vs Agent mode ---
     if not args.agent or len(args.agent) != 2:
         print("ERROR: Need exactly 2 agent specifications.")
+        print("Example: --agent mistral:1:2 gpt-5-mini:1:4")
         sys.exit(1)
 
     model1_pattern, runs1 = parse_agent_spec(args.agent[0])
@@ -1364,11 +1012,17 @@ async def main_async():
         runs2 = get_available_runs(folder2, GAME_NAME)
 
     num_matches = min(len(runs1), len(runs2))
+    if len(runs1) != len(runs2):
+        logger.warning(
+            "Number of runs for %s (%d) and %s (%d) don't match. Using first %d.",
+            folder1, len(runs1), folder2, len(runs2), num_matches,
+        )
+
     runs1 = runs1[:num_matches]
     runs2 = runs2[:num_matches]
 
     print("\n" + "=" * 60)
-    print("WORDMATRIX MATCH - STORED AGENTS")
+    print("WORD MATRIX MATCH - STORED AGENTS")
     print("=" * 60)
     print(f"Model 1: {folder1} ({len(runs1)} runs)")
     print(f"Model 2: {folder2} ({len(runs2)} runs)")
@@ -1376,11 +1030,10 @@ async def main_async():
     print("=" * 60)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     agent_suffix = f"{folder1}_vs_{folder2}"
-    log_f = GAME_LOGS_DIR / f"{ts}_{agent_suffix}_match.txt"
+    log_f = RESULTS_DIR / f"{ts}_{agent_suffix}_match.txt"
 
     match_tasks = []
 
@@ -1392,19 +1045,17 @@ async def main_async():
         code2, imp2 = load_stored_agent(folder2, GAME_NAME, run2, 2)
 
         if not code1 or not code2:
-            print(f"  FAILED to load match {i + 1}")
+            print(f"  FAILED to load match {i + 1}: Could not load agent code.")
             continue
 
         all_imports = set(imp1.split("\n") + imp2.split("\n"))
         extra_imports = "\n".join(imp for imp in all_imports if imp.strip())
 
-        agent1_info = f"{folder1} (Run {run1})"
-        agent2_info = f"{folder2} (Run {run2})"
-
         game_code = build_game_code(
-            code1, code2, extra_imports, NUM_GAMES_PER_MATCH,
-            str(WORDS_FILE), MOVE_TIME_LIMIT,
-            agent1_info, agent2_info,
+            code1, code2, extra_imports,
+            NUM_GAMES_PER_MATCH, MOVE_TIME_LIMIT,
+            str(WORDS_FILE),
+            agent1_name=folder1, agent2_name=folder2,
         )
 
         match_tasks.append(run_match_async(game_code, i + 1, (run1, run2)))
@@ -1416,41 +1067,81 @@ async def main_async():
     print(f"\nRunning {len(match_tasks)} matches in parallel...")
     results = await asyncio.gather(*match_tasks)
 
+    # Process results and write log
     total1, total2 = 0.0, 0.0
+    total_pts1, total_pts2 = 0, 0
 
     with open(log_f, "w") as f:
-        f.write(f"WordMatrix Match - {ts}\n")
-        f.write("=" * 60 + "\n\n")
+        f.write("Match Contenders:\n")
+        if num_matches > 0:
+            f.write(f"{folder1}:{runs1[0]}\n")
+            f.write(f"{folder2}:{runs2[0]}\n\n")
 
         for result in sorted(results, key=lambda x: x["match_id"]):
             match_id = result["match_id"]
+            p1, p2 = 0, 0
             if result["success"]:
                 s1, s2 = result["agent1_score"], result["agent2_score"]
+                p1 = result.get("agent1_points", 0)
+                p2 = result.get("agent2_points", 0)
                 total1 += s1
                 total2 += s2
-                status = f"Result: {s1:.0f} - {s2:.0f}"
+                total_pts1 += p1
+                total_pts2 += p2
+
+                status = "Result:\n"
+                status += f"{folder1}:{result['agent1_run_id']} : Pts: {p1} - Score: {s1:.1f}\n"
+                status += f"{folder2}:{result['agent2_run_id']} : Pts: {p2} - Score: {s2:.1f}\n"
+
                 game_log = result.get("log", "")
                 if game_log:
                     status += f"\n{game_log}\n"
                 if result.get("stats_block"):
-                    status += (
-                        f"\n--- MATCH STATISTICS ---\n{result['stats_block']}\n"
-                    )
+                    status += f"\n--- MATCH STATISTICS ---\n{result['stats_block']}\n"
             else:
                 status = f"FAILED: {result.get('error', 'Unknown')}"
 
-            print(f"  Match {match_id}: {status}")
-            f.write(f"Match {match_id}: {status}\n")
-            if result.get("stats_block"):
-                f.write(
-                    f"\n--- MATCH STATISTICS ---\n{result['stats_block']}\n"
-                )
-                f.write("-" * 60 + "\n\n")
+            print(f"Match {match_id} Completed. Pts {p1}-{p2}")
 
-    print("\nFINAL RESULTS (Total Score):")
-    print(f"  {folder1}: {total1:.0f}")
-    print(f"  {folder2}: {total2:.0f}")
+            f.write(f"{status}\n")
+            f.write("-" * 60 + "\n\n")
+
+    # Update global scoreboard
+    for result in results:
+        if not result["success"]:
+            continue
+
+        run1 = result["agent1_run_id"]
+        run2 = result["agent2_run_id"]
+        agent1_key = f"{folder1}:{run1}"
+        agent2_key = f"{folder2}:{run2}"
+
+        a1_wins = result.get("agent1_wins", 0)
+        a2_wins = result.get("agent2_wins", 0)
+        match_draws = result.get("draws", 0)
+
+        update_scoreboard(
+            SCOREBOARD_PATH, agent1_key,
+            games_played=NUM_GAMES_PER_MATCH,
+            wins=a1_wins, losses=a2_wins, draws=match_draws,
+            score=result["agent1_score"],
+            points=result.get("agent1_points", 0),
+        )
+        update_scoreboard(
+            SCOREBOARD_PATH, agent2_key,
+            games_played=NUM_GAMES_PER_MATCH,
+            wins=a2_wins, losses=a1_wins, draws=match_draws,
+            score=result["agent2_score"],
+            points=result.get("agent2_points", 0),
+        )
+
+    runs1_str = ",".join(str(r) for r in runs1)
+    runs2_str = ",".join(str(r) for r in runs2)
+    print("\nFINAL RESULTS:")
+    print(f"  {folder1}:{runs1_str}: Pts {total_pts1}, Score {total1:.1f}")
+    print(f"  {folder2}:{runs2_str}: Pts {total_pts2}, Score {total2:.1f}")
     print(f"\nLogs saved to: {log_f}")
+    print(f"Scoreboard updated: {SCOREBOARD_PATH}")
 
 
 if __name__ == "__main__":

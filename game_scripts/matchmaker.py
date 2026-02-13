@@ -235,12 +235,55 @@ async def run_match_subprocess(
             return {"success": False, "label": label, "error": str(e)[:300]}
 
 
+# ---------------------------------------------------------------------------
+# Syntax verification
+# ---------------------------------------------------------------------------
+
+
+def verify_agent_syntax(game_name: str, agents: dict[str, list[int]]) -> bool:
+    """Check all discovered agents for syntax errors.
+
+    Returns True if all agents are valid, False otherwise.
+    """
+    import ast
+
+    print("Verifying agent syntax...", flush=True)
+
+    errors = []
+    agent_count = 0
+
+    for model_name, runs in agents.items():
+        for run in runs:
+            agent_count += 1
+            filename = f"{game_name}_{run}.py"
+            file_path = AGENTS_DIR / model_name / filename
+
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    source = f.read()
+                ast.parse(source)
+            except SyntaxError as e:
+                errors.append(f"  - {model_name}/{filename}: {e}")
+            except Exception as e:
+                errors.append(f"  - {model_name}/{filename}: {e}")
+
+    if errors:
+        print("Found syntax errors in the agents below:")
+        for err in errors:
+            print(err)
+        return False
+    else:
+        print(f"Found no syntax errors in {agent_count} agents.")
+        return True
+
+
 async def run_tournament(
     game_id: str,
     same_opponent_match: int,
     workers: int,
     dry_run: bool,
     new_model: str | None = None,
+    health_check: bool = False,
 ) -> None:
     game = GAME_REGISTRY[game_id]
     game_name = game["name"]
@@ -255,6 +298,10 @@ async def run_tournament(
     if not agents:
         print(f"ERROR: No agents found for {game_name} in {AGENTS_DIR}")
         sys.exit(1)
+
+    if health_check:
+        if not verify_agent_syntax(game_name, agents):
+            sys.exit(1)
 
     if new_model and new_model not in agents:
         print(f"ERROR: --new-model '{new_model}' not found among discovered agents.")
@@ -409,6 +456,11 @@ def main() -> None:
         default=None,
         help="Only generate matches involving this model folder (incremental run)",
     )
+    parser.add_argument(
+        "--health",
+        action="store_true",
+        help="Run syntax verification on all agents before execution",
+    )
     args = parser.parse_args()
 
     asyncio.run(
@@ -418,6 +470,7 @@ def main() -> None:
             args.workers,
             args.dry_run,
             args.new_model,
+            args.health,
         )
     )
 
