@@ -766,6 +766,9 @@ def main():
     for agent_key in [AGENT1_NAME, AGENT2_NAME]:
         match_stats[agent_key]['crash'] = match_stats[agent_key]['make_move_crash'] + match_stats[agent_key]['other_crash']
 
+    print(f"STATS:Agent-1={{match_stats[AGENT1_NAME]}}")
+    print(f"STATS:Agent-2={{match_stats[AGENT2_NAME]}}")
+
     print("--- MATCH STATISTICS ---")
     print(f"Agent-1 make_move_crash: {{match_stats[AGENT1_NAME]['make_move_crash']}}")
     print(f"Agent-2 make_move_crash: {{match_stats[AGENT2_NAME]['make_move_crash']}}")
@@ -777,7 +780,6 @@ def main():
     print(f"Agent-2 Timeouts: {{match_stats[AGENT2_NAME]['timeout']}}")
     print(f"Agent-1 Invalid: {{match_stats[AGENT1_NAME]['invalid']}}")
     print(f"Agent-2 Invalid: {{match_stats[AGENT2_NAME]['invalid']}}")
-    print(f"STATS:Agent-1={{match_stats[AGENT1_NAME]}},Agent-2={{match_stats[AGENT2_NAME]}}")
 
 
 if __name__ == "__main__":

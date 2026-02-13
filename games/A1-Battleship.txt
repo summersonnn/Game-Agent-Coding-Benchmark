@@ -71,6 +71,13 @@ Return a dictionary with:
     'target': (row, col)             # Coordinates to bomb (0-indexed)
 }
 ```
+### Error Handling
+| Failure Type | Consequence |
+| --- | --- |
+| make_move() Crash | Random valid move played; game continues. |
+| Initialization Crash | Immediate game forfeit. Opponent wins with max score. |
+| Move Timeout | Random valid move played; game continues. |
+| Invalid Move | Random valid move played; game continues. |
 
 # AGENT IMPLEMENTATION
 

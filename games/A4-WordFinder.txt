@@ -84,12 +84,12 @@ class WordFinderAgent:
 - **Draw:** 0 for both players.
 
 ### Error Handling
-| Failure Type         | Consequence                                           |
-| -------------------- | ----------------------------------------------------- |
-| make_move() Crash    | -10 point penalty; game continues; turn switches.     |
-| Initialization Crash | Immediate game forfeit. Opponent wins with max score. |
-| Move Timeout         | -10 point penalty; game continues; turn switches.     |
-| Invalid Move         | -10 point penalty; game continues; turn switches.     |
+| Failure Type | Consequence |
+| --- | --- |
+| make_move() Crash | Random valid move played; game continues. |
+| Initialization Crash | Immediate game forfeit (only the current game). Opponent wins with max score. |
+| Move Timeout | Random valid move played; game continues. (Default 1.0s) |
+| Invalid Move | Random valid move played; game continues. |
 
 ## WordFinderAgent Interface
 

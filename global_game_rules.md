@@ -62,6 +62,10 @@ All scripts must respect the following configuration parameters, which should be
 | :--- | :--- | :--- |
 | `NUM_OF_GAMES_IN_A_MATCH` | `100` | Number of games to play in a single match execution. |
 | `MOVE_TIME_LIMIT` | `1.0` | Maximum time (seconds) allowed for an agent to return a move. |
+| `MAX_TIME_PER_GAME` | `60` | Maximum time (seconds) allowed for a single game execution (not whole match). Whole match time limit does not exist. |
+
+Note that "match" means two agents playing against eachother such as mistral:1 vs opus:1
+A "game" is a single unit of game between them. A match usually has many games in it.
 
 **Implementation Standard:**
 The script must prioritize values found in the environment. If the variables are missing or invalid, it must gracefully fall back to the default values. You may use any internal variable name that is clear and maintainable.
@@ -273,52 +277,61 @@ These examples demonstrate how the standardized headers, separators, and machine
 ### A1 Battleship Example
 ```text
 Match Contenders:
-mistralai-mistral-large-2512:1
-openai-gpt-oss-120b-fp8:1
+qwen-qwen3-max-thinking:1
+google-gemini-3-pro-preview:1
 
 Result:
-mistralai-mistral-large-2512:1 : Pts: 3 - Score: -1.0
-openai-gpt-oss-120b-fp8:1 : Pts: 6 - Score: 1.0
+qwen-qwen3-max-thinking:1 : Pts: 93 - Score: -239.0
+google-gemini-3-pro-preview:1 : Pts: 207 - Score: 239.0
 
 ============================================================
 Game 1
-Agent-1: mistralai-mistral-large-2512
-Agent-2: openai-gpt-oss-120b-fp8
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
 ------------------------------------------------------------
 Final Position:
-BOARD: mistralai-mistral-large-2512 Ships:
+BOARD: qwen-qwen3-max-thinking Ships:
 BOARD:    0 1 2 3 4 5 6 7
-BOARD: 0  # O O O O O O O
+BOARD: 0  O O O O O O O O
 ...
-BOARD: 7  S S S S S O O O
+BOARD: 7  O O O O O O O O
 
-BOARD: openai-gpt-oss-120b-fp8 Ships:
+BOARD: google-gemini-3-pro-preview Ships:
 BOARD:    0 1 2 3 4 5 6 7
 ...
 ----------------------------------------
-Final Result: mistralai-mistral-large-2512 wins by Elimination.
+Final Result: qwen-qwen3-max-thinking wins by Elimination.
 ----------------------------------------
 Points:
 Agent-1: 3
 Agent-2: 0
 ----------------------------------------
 Scores:
-Agent-1: 5
-Agent-2: -5
+Agent-1: 2
+Agent-2: -2
 ============================================================
 ============================================================
-Agent-1: mistralai-mistral-large-2512
-Agent-2: openai-gpt-oss-120b-fp8
-RESULT:Agent-1=3.0,Agent-2=6.0
-SCORE:Agent-1=-1.0,Agent-2=1.0
-WINS:Agent-1=1,Agent-2=2
+Agent-1: qwen-qwen3-max-thinking
+Agent-2: google-gemini-3-pro-preview
+RESULT:Agent-1=93.0,Agent-2=207.0
+SCORE:Agent-1=-239.0,Agent-2=239.0
+WINS:Agent-1=31,Agent-2=69
 DRAWS:0
-STATS:Agent-1={...},Agent-2={...}
+STATS:Agent-1={'wins': 31, 'losses': 69, 'draws': 0, 'points': 93, 'score': -239.0, 'make_move_crash': 0, 'other_crash': 0, 'crash': 0, 'timeout': 0, 'invalid': 0}
+STATS:Agent-2={'wins': 69, 'losses': 31, 'draws': 0, 'points': 207, 'score': 239.0, 'make_move_crash': 0, 'other_crash': 0, 'crash': 0, 'timeout': 0, 'invalid': 0}
 
 --- MATCH STATISTICS ---
 Agent-1 make_move_crash: 0
 Agent-2 make_move_crash: 0
-...
+Agent-1 other_crash: 0
+Agent-2 other_crash: 0
+Agent-1 crash (total): 0
+Agent-2 crash (total): 0
+Agent-1 Timeouts: 0
+Agent-2 Timeouts: 0
+Agent-1 Invalid: 0
+Agent-2 Invalid: 0
+
 ------------------------------------------------------------
 ```
 

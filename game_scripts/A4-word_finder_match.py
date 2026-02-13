@@ -278,9 +278,42 @@ def timeout_handler(signum, frame):
     raise MoveTimeoutException("Move timeout")
 
 
-def play_game(game_num, match_stats, agent1, agent2, dictionary):
+def play_game(game_num, match_stats, Agent1Class, Agent2Class, dictionary):
     """Play a single game and update match_stats. Returns winner name or 'DRAW'."""
     game = WordFinderGame(dictionary)
+
+    # Instinctiate agents for this game (Init crash = Game Forfeit)
+    try:
+        agent1 = Agent1Class("Agent-1")
+    except Exception as e:
+        print(f"Agent-1 init crash: {e}")
+        match_stats["Agent-1"]["other_crash"] += 1
+        
+        # Forfeit penalties
+        match_stats["Agent-2"]["wins"] += 1
+        match_stats["Agent-2"]["points"] += 3
+        match_stats["Agent-2"]["score"] += FORFEIT_SCORE
+        match_stats["Agent-1"]["losses"] += 1
+        match_stats["Agent-1"]["score"] -= FORFEIT_SCORE
+        
+        print(f"Game {game_num}: Agent-1 crashed during initialization. Agent-2 wins.")
+        return "Agent-2"
+
+    try:
+        agent2 = Agent2Class("Agent-2")
+    except Exception as e:
+        print(f"Agent-2 init crash: {e}")
+        match_stats["Agent-2"]["other_crash"] += 1
+        
+        # Forfeit penalties
+        match_stats["Agent-1"]["wins"] += 1
+        match_stats["Agent-1"]["points"] += 3
+        match_stats["Agent-1"]["score"] += FORFEIT_SCORE
+        match_stats["Agent-2"]["losses"] += 1
+        match_stats["Agent-2"]["score"] -= FORFEIT_SCORE
+        
+        print(f"Game {game_num}: Agent-2 crashed during initialization. Agent-1 wins.")
+        return "Agent-1"
 
     agents = {"Agent-1": agent1, "Agent-2": agent2}
 
@@ -322,30 +355,57 @@ def play_game(game_num, match_stats, agent1, agent2, dictionary):
         except MoveTimeoutException:
             match_stats[current_name]["timeout"] += 1
             error_type = "timeout"
-        except Exception:
+        except Exception as e:
             match_stats[current_name]["make_move_crash"] += 1
             error_type = "crash"
+            print(f"{current_name} CRASH: {e}")
 
-        # --- Handle errors: -10 penalty, log it, switch turn ---
-        if error_type is not None:
-            game.scores[current_name] += INVALID_PENALTY
-            if error_type == "timeout":
-                print(f"{current_name}: TIMEOUT -> Penalty: {INVALID_PENALTY}")
+        # Validate logic
+        move_status = None
+        reason = ""
+        
+        if error_type is None:
+            if not isinstance(new_word, str) or not new_word.strip():
+                match_stats[current_name]["invalid"] += 1
+                error_type = "invalid_format"
             else:
-                print(f"{current_name}: CRASH -> Penalty: {INVALID_PENALTY}")
-            continue
+                new_word = new_word.strip()
+                move_status, reason = game.is_valid_move(new_word, game.current_word)
+                if move_status == "invalid":
+                     match_stats[current_name]["invalid"] += 1
+                     error_type = "invalid_move"
 
-        # Validate the returned word
-        if not isinstance(new_word, str) or not new_word.strip():
-            match_stats[current_name]["invalid"] += 1
-            game.scores[current_name] += INVALID_PENALTY
-            detail = f"returned {type(new_word).__name__}" if new_word is not None else "returned None"
-            print(f"{current_name}: INVALID ({detail}) -> Penalty: {INVALID_PENALTY}")
-            continue
+        # Handle valid/partial vs fallback
+        if error_type is None and move_status in ["valid", "partial"]:
+            # Acceptable move
+            pass
+        else:
+            # Fallback required
+            print(f"{current_name}: Error ({error_type or reason}). Triggering Random Fallback.")
+            
+            # Find valid fallback
+            candidates = []
+            p_start = game.current_word[0].lower()
+            p_end = game.current_word[-1].lower()
+            t_len = len(game.current_word)
+            
+            for w in game.words_set:
+                if w in game.history: continue
+                if len(w) == t_len: continue
+                if p_start not in w or p_end not in w: continue
+                if w.startswith(p_start) or w.endswith(p_start): continue
+                if w.startswith(p_end) or w.endswith(p_end): continue
+                candidates.append(w)
+            
+            if candidates:
+                new_word = random.choice(candidates)
+                move_status = "valid"
+                print(f"{current_name}: FALLBACK -> {new_word}")
+            else:
+                print(f"{current_name}: FALLBACK failed (no valid words). Skipping turn.")
+                move_status = "skip"
 
-        new_word = new_word.strip()
-        move_status, reason = game.is_valid_move(new_word, game.current_word)
-
+        # Apply move
         if move_status == "valid":
             points, got_bonus, has_hyphen = game.apply_move(
                 current_name, new_word, game.current_word, is_partial=False
@@ -358,15 +418,11 @@ def play_game(game_num, match_stats, agent1, agent2, dictionary):
             points, _, has_hyphen = game.apply_move(
                 current_name, new_word, game.current_word, is_partial=True
             )
-            match_stats[current_name]["invalid"] += 1
             penalty_str = "-50% (hyphen)" if has_hyphen else "None"
             print(f"{current_name}: {new_word} -> PARTIAL ({reason}), Len: {len(new_word)}, Hyphen: {penalty_str}, Points: {points:+d}")
-
+        
         else:
-            # Invalid move: -10 penalty, turn switches, game continues
-            match_stats[current_name]["invalid"] += 1
-            game.scores[current_name] += INVALID_PENALTY
-            print(f"{current_name}: {new_word} -> INVALID ({reason}) -> Penalty: {INVALID_PENALTY}")
+             print(f"{current_name}: Turn Skipped.")
 
     # --- Game over: determine winner by score ---
     print()
@@ -482,35 +538,8 @@ def main():
         },
     }
 
-    # Initialize agents once (init crash = entire match forfeit)
-    try:
-        agent1 = class_1("Agent-1")
-    except Exception as e:
-        print(f"Agent-1 init crash: {e}")
-        match_stats["Agent-1"]["other_crash"] += 1
-        match_stats["Agent-2"]["wins"] += NUM_GAMES
-        match_stats["Agent-2"]["points"] += 3 * NUM_GAMES
-        match_stats["Agent-2"]["score"] += FORFEIT_SCORE * NUM_GAMES
-        match_stats["Agent-1"]["losses"] += NUM_GAMES
-        match_stats["Agent-1"]["score"] -= FORFEIT_SCORE * NUM_GAMES
-        _print_final_stats(match_stats)
-        return
-
-    try:
-        agent2 = class_2("Agent-2")
-    except Exception as e:
-        print(f"Agent-2 init crash: {e}")
-        match_stats["Agent-2"]["other_crash"] += 1
-        match_stats["Agent-1"]["wins"] += NUM_GAMES
-        match_stats["Agent-1"]["points"] += 3 * NUM_GAMES
-        match_stats["Agent-1"]["score"] += FORFEIT_SCORE * NUM_GAMES
-        match_stats["Agent-2"]["losses"] += NUM_GAMES
-        match_stats["Agent-2"]["score"] -= FORFEIT_SCORE * NUM_GAMES
-        _print_final_stats(match_stats)
-        return
-
     for i in range(NUM_GAMES):
-        play_game(i + 1, match_stats, agent1, agent2, dictionary)
+        play_game(i + 1, match_stats, class_1, class_2, dictionary)
         sys.stdout.flush()
 
     _print_final_stats(match_stats)

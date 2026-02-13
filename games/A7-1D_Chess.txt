@@ -49,7 +49,7 @@ A draw occurs if the same board position is repeated 3 times during the game.
 A draw occurs if only Kings remain on the board (no checkmate is possible).
 
 ### Illegal Move
-If a player makes an illegal move (invalid notation, moving into check, impossible move), they forfeit the game.
+If a player makes an illegal move (invalid notation, moving into check, impossible move), a random valid move is played on their behalf and the game continues.
 
 ## Game Interface
 

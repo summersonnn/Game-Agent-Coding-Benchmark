@@ -99,8 +99,17 @@ At the end of each round:
 
 Example:
 - Bid 3, won 3 tricks: +20 + 30 = +50 points
-- Bid 2, won 4 tricks: -10 × 2 = -20 points
 - Bid 0, won 0 tricks: +20 + 0 = +20 points
+- Bid 2, won 4 tricks: -10 × 2 = -20 points
+
+## Error Handling
+
+| Failure Type | Consequence |
+| --- | --- |
+| make_move() Crash | Random valid move played; game continues. |
+| Initialization Crash | Immediate game forfeit (for the match, as Wizard requires 6 stable agents). |
+| Move Timeout | Random valid move played; game continues. |
+| Invalid Move | Random valid move played; game continues. |
 
 ## Implementation Task
 

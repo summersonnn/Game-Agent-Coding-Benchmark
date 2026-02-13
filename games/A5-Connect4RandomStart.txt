@@ -138,29 +138,42 @@ class Connect4Game:
             # Copy board to prevent agents from modifying state
             board_copy = [row[:] for row in self.board]
             
+            col = None
             try:
                 col = current_agent.make_move(board_copy)
-                result = self.drop_disc(col, self.current_turn)
-                
-                if result is None:
-                    # Invalid move (column full or out of bounds)
-                    # Opponent wins
-                    return self.YELLOW if self.current_turn == self.RED else self.RED
-                
-                winner = self.check_winner()
-                if winner:
-                    return winner
-                
-                if self.is_full():
-                    return "DRAW"
-                
-                # Switch turn
-                self.current_turn = self.YELLOW if self.current_turn == self.RED else self.RED
-
             except Exception as e:
-                # Crash means automatic loss
                 print(f"Agent {self.current_turn} crashed: {e}")
-                return self.YELLOW if self.current_turn == self.RED else self.RED
+                col = None
+
+            # Fallback to random if invalid/crash
+            # 1. Validate type and range
+            valid_cols = [c for c in range(self.COLS) if self.board[0][c] == self.EMPTY]
+            
+            is_valid = False
+            if isinstance(col, int) and 0 <= col < self.COLS:
+                 if self.board[0][col] == self.EMPTY:
+                     is_valid = True
+            
+            if not is_valid:
+                # Perform random fallback
+                if valid_cols:
+                    col = random.choice(valid_cols)
+                else:
+                    return "DRAW" # Should not happen if check_full is correct
+
+            # Apply move
+            result = self.drop_disc(col, self.current_turn)
+            
+            # Check Result
+            winner = self.check_winner()
+            if winner:
+                return winner
+            
+            if self.is_full():
+                return "DRAW"
+            
+            # Switch turn
+            self.current_turn = self.YELLOW if self.current_turn == self.RED else self.RED
 ```
 
 ## Competition Format

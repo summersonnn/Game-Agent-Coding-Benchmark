@@ -42,6 +42,11 @@ try:
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
+try:
+    GAME_TIME_LIMIT = float(os.getenv("MAX_TIME_PER_GAME", "60.0"))
+except (ValueError, TypeError):
+    GAME_TIME_LIMIT = 60.0
+
 # Results directories
 RESULTS_DIR = Path(__file__).parent.parent / "results" / "connect4"
 MODEL_RESPONSES_DIR = RESULTS_DIR / "model_responses"
@@ -57,9 +62,11 @@ import sys
 import random
 import signal
 import copy
+import time
 
 # Move timeout in seconds
 MOVE_TIMEOUT = {move_timeout}
+GAME_TIMEOUT = {game_timeout}
 AGENT1_NAME = "{agent1_name}"
 AGENT2_NAME = "{agent2_name}"
 
@@ -262,7 +269,27 @@ def play_game(game_num, match_stats):
     agents = {{game.RED: agent_red, game.YELLOW: agent_yellow}}
     names = {{game.RED: red_name, game.YELLOW: yellow_name}}
 
+    start_time = time.time()
     while True:
+        if time.time() - start_time > GAME_TIMEOUT:
+             print(f"GAME TIMEOUT (> {{GAME_TIMEOUT}}s)")
+             print("Final Result: Draw (Time Limit)")
+             print("----------------------------------------")
+             print("Points:")
+             print("Agent-1: 1")
+             print("Agent-2: 1")
+             print("----------------------------------------")
+             print("Scores:")
+             print("Agent-1: 0")
+             print("Agent-2: 0")
+             print("============================================================")
+             
+             match_stats["Agent-1"]["draws"] += 1
+             match_stats["Agent-1"]["points"] += 1
+             match_stats["Agent-2"]["draws"] += 1
+             match_stats["Agent-2"]["points"] += 1
+             return "DRAW"
+
         current_symbol = game.current_turn
         current_agent = agents[current_symbol]
         current_name = names[current_symbol]
@@ -720,7 +747,7 @@ def run_match(game_code: str):
     temp_file = os.path.join(tempfile.gettempdir(), f"c4_{uuid.uuid4().hex[:8]}.py")
     try:
         with open(temp_file, "w") as f: f.write(game_code)
-        result = subprocess.run(["python", temp_file], capture_output=True, text=True, timeout=300)
+        result = subprocess.run(["python", temp_file], capture_output=True, text=True)
         return result.stdout
     except Exception as e:
         return f"ERROR: {e}"
@@ -844,6 +871,7 @@ async def main_async():
             agent2_code=code2,
             num_games=NUM_ROUNDS_PER_MATCH,
             move_timeout=MOVE_TIME_LIMIT,
+            game_timeout=GAME_TIME_LIMIT,
             agent1_name=f"{folder1}:{run1}",
             agent2_name=f"{folder2}:{run2}"
         )
