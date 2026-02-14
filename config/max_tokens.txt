@@ -8,5 +8,5 @@ A3-Wizard: 5
 A4-WordFinder: 3
 A5-Connect4RandomStart: 2
 A6-WordMatrixGame: 4
-A7-1D_Chess: 2
+A7-TwoByEightChess: 4
 A8-SurroundMorris: 3

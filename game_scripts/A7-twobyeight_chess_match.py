@@ -1,7 +1,7 @@
 """
-1D Chess Match Runner: Orchestrates head-to-head matches for A7-1D_Chess.
+2x8 Mini Chess Match Runner: Orchestrates head-to-head matches for A7-TwoByEightChess.
 
-1D Chess on a 1x8 linear board with King, Knight, and Rook pieces per side.
+2x8 Mini Chess on a 2x8 board with King, Knight, Rook, and Pawn pieces per side.
 Agents compete across multiple games with randomized color assignment.
 """
 
@@ -43,42 +43,47 @@ except (ValueError, TypeError):
 MAX_MOVES_PER_GAME = 200
 
 # Paths
-RESULTS_DIR = Path(__file__).parent.parent / "results" / "oned_chess"
+RESULTS_DIR = Path(__file__).parent.parent / "results" / "twobyeightchess"
 SCOREBOARD_PATH = Path(__file__).parent.parent / "scoreboard" / "A7-scoreboard.txt"
 AGENTS_DIR = Path(__file__).parent.parent / "agents"
-GAME_NAME = "A7-1D_Chess"
+GAME_NAME = "A7-TwoByEightChess"
 
 
 # ============================================================
 # Shared game engine code (used by both match and human modes)
 # ============================================================
 GAME_ENGINE_CODE = r'''
-class OneDChessGame:
+class TwoByEightChess:
     """
-    1D Chess game engine.
-    Board: 8 squares (index 0-7, displayed as 1-8 to players)
-    Pieces: K/N/R (White), k/n/r (Black), '' (empty)
+    2x8 Mini Chess game engine.
+    Board: 2 rows x 8 columns (row 0-1, col 0-7)
+    Displayed as rows 1-2, columns a-h.
+    Pieces: K/N/R/P (White), k/n/r/p (Black), '' (empty)
     """
 
     WHITE = 'W'
     BLACK = 'B'
+    COLS = 'abcdefgh'
 
     def __init__(self):
-        self.board = ['K', 'N', 'R', '', '', 'r', 'n', 'k']
+        self.board = [
+            ['R', 'N', 'P', '', '', 'p', 'n', 'r'],
+            ['K', 'N', 'P', '', '', 'p', 'n', 'k'],
+        ]
         self.current_turn = self.WHITE
         self.move_history = []
         self.position_history = []
         self._record_position()
 
     def _record_position(self):
-        pos = (tuple(self.board), self.current_turn)
+        pos = (tuple(tuple(row) for row in self.board), self.current_turn)
         self.position_history.append(pos)
 
     def _is_white_piece(self, piece):
-        return piece in ('K', 'N', 'R')
+        return piece in ('K', 'N', 'R', 'P')
 
     def _is_black_piece(self, piece):
-        return piece in ('k', 'n', 'r')
+        return piece in ('k', 'n', 'r', 'p')
 
     def _is_own_piece(self, piece, color):
         if color == self.WHITE:
@@ -93,15 +98,37 @@ class OneDChessGame:
     def _get_piece_type(self, piece):
         return piece.upper() if piece else ''
 
+    def _in_bounds(self, row, col):
+        return 0 <= row < 2 and 0 <= col < 8
+
+    def _pos_to_notation(self, row, col):
+        return f"{self.COLS[col]}{row + 1}"
+
+    def _notation_to_pos(self, notation):
+        if len(notation) != 2:
+            return None
+        col_char = notation[0].lower()
+        if col_char not in self.COLS:
+            return None
+        try:
+            row = int(notation[1]) - 1
+        except ValueError:
+            return None
+        col = self.COLS.index(col_char)
+        if not self._in_bounds(row, col):
+            return None
+        return (row, col)
+
     def _find_king(self, color):
         target = 'K' if color == self.WHITE else 'k'
-        for i, piece in enumerate(self.board):
-            if piece == target:
-                return i
-        return -1
+        for r in range(2):
+            for c in range(8):
+                if self.board[r][c] == target:
+                    return (r, c)
+        return None
 
-    def _get_valid_moves_for_piece(self, pos, ignore_check=False):
-        piece = self.board[pos]
+    def _get_valid_moves_for_piece(self, row, col, ignore_check=False):
+        piece = self.board[row][col]
         if not piece:
             return []
 
@@ -110,89 +137,119 @@ class OneDChessGame:
         moves = []
 
         if piece_type == 'K':
-            for delta in [-1, 1]:
-                to_pos = pos + delta
-                if 0 <= to_pos < 8:
-                    target = self.board[to_pos]
-                    if not self._is_own_piece(target, color):
-                        is_capture = self._is_enemy_piece(target, color)
-                        moves.append((to_pos, is_capture))
+            for dr in [-1, 0, 1]:
+                for dc in [-1, 0, 1]:
+                    if dr == 0 and dc == 0:
+                        continue
+                    nr, nc = row + dr, col + dc
+                    if self._in_bounds(nr, nc):
+                        target = self.board[nr][nc]
+                        if not self._is_own_piece(target, color):
+                            is_capture = self._is_enemy_piece(target, color)
+                            moves.append(((nr, nc), is_capture))
 
         elif piece_type == 'N':
-            for delta in [-2, 2]:
-                to_pos = pos + delta
-                if 0 <= to_pos < 8:
-                    target = self.board[to_pos]
+            l_deltas = [(-1, -2), (-1, 2), (1, -2), (1, 2),
+                        (-2, -1), (-2, 1), (2, -1), (2, 1)]
+            linear_deltas = [(0, -2), (0, 2)]
+            for dr, dc in l_deltas + linear_deltas:
+                nr, nc = row + dr, col + dc
+                if self._in_bounds(nr, nc):
+                    target = self.board[nr][nc]
                     if not self._is_own_piece(target, color):
                         is_capture = self._is_enemy_piece(target, color)
-                        moves.append((to_pos, is_capture))
+                        moves.append(((nr, nc), is_capture))
 
         elif piece_type == 'R':
-            for direction in [-1, 1]:
-                to_pos = pos + direction
-                while 0 <= to_pos < 8:
-                    target = self.board[to_pos]
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = row + dr, col + dc
+                while self._in_bounds(nr, nc):
+                    target = self.board[nr][nc]
                     if target == '':
-                        moves.append((to_pos, False))
+                        moves.append(((nr, nc), False))
                     elif self._is_enemy_piece(target, color):
-                        moves.append((to_pos, True))
+                        moves.append(((nr, nc), True))
                         break
                     else:
                         break
-                    to_pos += direction
+                    nr += dr
+                    nc += dc
+
+        elif piece_type == 'P':
+            direction = 1 if color == self.WHITE else -1
+            nc = col + direction
+            if self._in_bounds(row, nc) and self.board[row][nc] == '':
+                moves.append(((row, nc), False))
+            for dr in [-1, 1]:
+                nr = row + dr
+                nc = col + direction
+                if self._in_bounds(nr, nc):
+                    target = self.board[nr][nc]
+                    if self._is_enemy_piece(target, color):
+                        moves.append(((nr, nc), True))
 
         if ignore_check:
             return moves
 
         valid_moves = []
         for to_pos, is_capture in moves:
-            if self._is_move_safe(pos, to_pos, color):
+            if self._is_move_safe((row, col), to_pos, color):
                 valid_moves.append((to_pos, is_capture))
 
         return valid_moves
 
     def _is_move_safe(self, from_pos, to_pos, color):
-        original_from = self.board[from_pos]
-        original_to = self.board[to_pos]
+        fr, fc = from_pos
+        tr, tc = to_pos
+        original_from = self.board[fr][fc]
+        original_to = self.board[tr][tc]
 
-        self.board[to_pos] = self.board[from_pos]
-        self.board[from_pos] = ''
+        moving_piece = original_from
+        if moving_piece.upper() == 'P':
+            if (color == self.WHITE and tc == 7) or (color == self.BLACK and tc == 0):
+                moving_piece = 'R' if color == self.WHITE else 'r'
+        self.board[tr][tc] = moving_piece
+        self.board[fr][fc] = ''
 
         in_check = self._is_in_check(color)
 
-        self.board[from_pos] = original_from
-        self.board[to_pos] = original_to
+        self.board[fr][fc] = original_from
+        self.board[tr][tc] = original_to
 
         return not in_check
 
     def _is_in_check(self, color):
         king_pos = self._find_king(color)
-        if king_pos == -1:
+        if king_pos is None:
             return True
 
         enemy_color = self.BLACK if color == self.WHITE else self.WHITE
 
-        for pos in range(8):
-            piece = self.board[pos]
-            if piece and self._is_own_piece(piece, enemy_color):
-                enemy_moves = self._get_valid_moves_for_piece(pos, ignore_check=True)
-                for to_pos, _ in enemy_moves:
-                    if to_pos == king_pos:
-                        return True
+        for r in range(2):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece and self._is_own_piece(piece, enemy_color):
+                    enemy_moves = self._get_valid_moves_for_piece(r, c, ignore_check=True)
+                    for to_pos, _ in enemy_moves:
+                        if to_pos == king_pos:
+                            return True
         return False
 
     def _has_legal_moves(self, color):
-        for pos in range(8):
-            piece = self.board[pos]
-            if piece and self._is_own_piece(piece, color):
-                if self._get_valid_moves_for_piece(pos):
-                    return True
+        for r in range(2):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece and self._is_own_piece(piece, color):
+                    if self._get_valid_moves_for_piece(r, c):
+                        return True
         return False
 
     def _is_insufficient_material(self):
-        for piece in self.board:
-            if piece and piece.upper() != 'K':
-                return False
+        for r in range(2):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece and piece.upper() != 'K':
+                    return False
         return True
 
     def _is_threefold_repetition(self):
@@ -203,57 +260,47 @@ class OneDChessGame:
         return count >= 3
 
     def get_all_valid_moves(self, color):
-        """Get all valid moves for a color. Returns list of move strings."""
         moves = []
-        for pos in range(8):
-            piece = self.board[pos]
-            if piece and self._is_own_piece(piece, color):
-                piece_type = self._get_piece_type(piece)
-                for to_pos, is_capture in self._get_valid_moves_for_piece(pos):
-                    from_sq = pos + 1
-                    to_sq = to_pos + 1
-                    if is_capture:
-                        move_str = f"{piece_type}{from_sq}x{to_sq}"
-                    else:
-                        move_str = f"{piece_type}{from_sq}{to_sq}"
-                    moves.append(move_str)
+        for r in range(2):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece and self._is_own_piece(piece, color):
+                    piece_type = self._get_piece_type(piece)
+                    from_sq = self._pos_to_notation(r, c)
+                    for to_pos, is_capture in self._get_valid_moves_for_piece(r, c):
+                        to_sq = self._pos_to_notation(to_pos[0], to_pos[1])
+                        if is_capture:
+                            move_str = f"{piece_type}{from_sq}x{to_sq}"
+                        else:
+                            move_str = f"{piece_type}{from_sq}{to_sq}"
+                        moves.append(move_str)
         return moves
 
     def parse_move(self, move_str):
         if not isinstance(move_str, str):
             return None
         move_str = move_str.strip()
-        if len(move_str) < 3:
+        if len(move_str) < 5:
             return None
 
         piece = move_str[0].upper()
-        if piece not in ('K', 'N', 'R'):
+        if piece not in ('K', 'N', 'R', 'P'):
             return None
 
         if 'x' in move_str.lower():
-            parts = move_str[1:].lower().split('x')
-            if len(parts) != 2:
-                return None
-            try:
-                from_sq = int(parts[0])
-                to_sq = int(parts[1])
-                is_capture = True
-            except ValueError:
-                return None
+            idx = move_str.lower().index('x')
+            from_notation = move_str[1:idx]
+            to_notation = move_str[idx+1:]
+            is_capture = True
         else:
-            if len(move_str) != 3:
-                return None
-            try:
-                from_sq = int(move_str[1])
-                to_sq = int(move_str[2])
-                is_capture = False
-            except ValueError:
-                return None
+            from_notation = move_str[1:3]
+            to_notation = move_str[3:5]
+            is_capture = False
 
-        from_pos = from_sq - 1
-        to_pos = to_sq - 1
+        from_pos = self._notation_to_pos(from_notation)
+        to_pos = self._notation_to_pos(to_notation)
 
-        if not (0 <= from_pos < 8 and 0 <= to_pos < 8):
+        if from_pos is None or to_pos is None:
             return None
 
         return (piece, from_pos, to_pos, is_capture)
@@ -264,18 +311,19 @@ class OneDChessGame:
             return False, "Invalid move notation"
 
         piece_type, from_pos, to_pos, is_capture = parsed
+        fr, fc = from_pos
 
-        piece = self.board[from_pos]
+        piece = self.board[fr][fc]
         if not piece:
-            return False, f"No piece at square {from_pos + 1}"
+            return False, f"No piece at {self._pos_to_notation(fr, fc)}"
 
         if not self._is_own_piece(piece, color):
             return False, "Cannot move opponent's piece"
 
         if self._get_piece_type(piece) != piece_type:
-            return False, f"Piece at square {from_pos + 1} is not a {piece_type}"
+            return False, f"Piece at {self._pos_to_notation(fr, fc)} is not a {piece_type}"
 
-        valid_moves = self._get_valid_moves_for_piece(from_pos)
+        valid_moves = self._get_valid_moves_for_piece(fr, fc)
         for valid_to, valid_capture in valid_moves:
             if valid_to == to_pos:
                 if is_capture != valid_capture:
@@ -296,9 +344,17 @@ class OneDChessGame:
 
         parsed = self.parse_move(move_str)
         _, from_pos, to_pos, _ = parsed
+        fr, fc = from_pos
+        tr, tc = to_pos
 
-        self.board[to_pos] = self.board[from_pos]
-        self.board[from_pos] = ''
+        self.board[tr][tc] = self.board[fr][fc]
+        self.board[fr][fc] = ''
+
+        piece = self.board[tr][tc]
+        if piece.upper() == 'P':
+            if (self._is_white_piece(piece) and tc == 7) or \
+               (self._is_black_piece(piece) and tc == 0):
+                self.board[tr][tc] = 'R' if self._is_white_piece(piece) else 'r'
 
         self.move_history.append(move_str)
         self._record_position()
@@ -327,9 +383,10 @@ class OneDChessGame:
         return 'ongoing'
 
     def get_board_display(self):
-        squares = "| " + " | ".join(str(i+1) for i in range(8)) + " |"
-        pieces = "| " + " | ".join(p if p else '.' for p in self.board) + " |"
-        return f"{squares}\n{pieces}"
+        header = "    " + "  ".join(c for c in 'a b c d e f g h'.split())
+        row1 = "1 | " + " | ".join(p if p else '.' for p in self.board[0]) + " |"
+        row2 = "2 | " + " | ".join(p if p else '.' for p in self.board[1]) + " |"
+        return f"{header}\n{row1}\n{row2}"
 '''
 
 
@@ -345,16 +402,16 @@ def timeout_handler(signum, frame):
 
 
 def play_game(game_num, match_stats):
-    game = OneDChessGame()
+    game = TwoByEightChess()
 
-    if random.random() < 0.5:
-        white_agent_class = OneDChessAgent_1
-        black_agent_class = OneDChessAgent_2
+    if game_num % 2 == 1:
+        white_agent_class = TwoByEightChessAgent_1
+        black_agent_class = TwoByEightChessAgent_2
         white_name = "Agent-1"
         black_name = "Agent-2"
     else:
-        white_agent_class = OneDChessAgent_2
-        black_agent_class = OneDChessAgent_1
+        white_agent_class = TwoByEightChessAgent_2
+        black_agent_class = TwoByEightChessAgent_1
         white_name = "Agent-2"
         black_name = "Agent-1"
 
@@ -437,7 +494,7 @@ def play_game(game_num, match_stats):
             signal.signal(signal.SIGALRM, timeout_handler)
             signal.alarm(max(1, int(MOVE_TIMEOUT)))
             try:
-                move = current_agent.make_move(game.board[:], game.move_history[:])
+                move = current_agent.make_move([row[:] for row in game.board], game.move_history[:])
             finally:
                 signal.alarm(0)
         except MoveTimeoutException:
@@ -520,6 +577,7 @@ def play_game(game_num, match_stats):
 
     print("-" * 40)
     print(f"Final Result: {result_reason}")
+    print(f"Moves: {' - '.join(game.move_history)}")
     print("-" * 40)
 
     print("Points:")
@@ -589,6 +647,8 @@ def main():
     print(f"SCORE:Agent-1={match_stats['Agent-1']['score']},Agent-2={match_stats['Agent-2']['score']}")
     print(f"WINS:Agent-1={match_stats['Agent-1']['wins']},Agent-2={match_stats['Agent-2']['wins']}")
     print(f"DRAWS:{match_stats['Agent-1']['draws']}")
+    print(f"STATS:Agent-1={match_stats['Agent-1']}")
+    print(f"STATS:Agent-2={match_stats['Agent-2']}")
     print("--- MATCH STATISTICS ---")
     print(f"Agent-1 make_move_crash: {match_stats['Agent-1']['make_move_crash']}")
     print(f"Agent-2 make_move_crash: {match_stats['Agent-2']['make_move_crash']}")
@@ -600,7 +660,6 @@ def main():
     print(f"Agent-2 Timeouts: {match_stats['Agent-2']['timeout']}")
     print(f"Agent-1 Invalid: {match_stats['Agent-1']['invalid']}")
     print(f"Agent-2 Invalid: {match_stats['Agent-2']['invalid']}")
-    print(f"STATS:Agent-1={match_stats['Agent-1']},Agent-2={match_stats['Agent-2']}")
 
 
 if __name__ == "__main__":
@@ -614,32 +673,37 @@ if __name__ == "__main__":
 HUMAN_GAME_CODE = '''
 import random
 
-class OneDChessGame:
+class TwoByEightChess:
     """
-    1D Chess game engine.
-    Board: 8 squares (index 0-7, displayed as 1-8 to players)
-    Pieces: K/N/R (White), k/n/r (Black), '' (empty)
+    2x8 Mini Chess game engine.
+    Board: 2 rows x 8 columns (row 0-1, col 0-7)
+    Displayed as rows 1-2, columns a-h.
+    Pieces: K/N/R/P (White), k/n/r/p (Black), '' (empty)
     """
 
     WHITE = 'W'
     BLACK = 'B'
+    COLS = 'abcdefgh'
 
     def __init__(self):
-        self.board = ['K', 'N', 'R', '', '', 'r', 'n', 'k']
+        self.board = [
+            ['R', 'N', 'P', '', '', 'p', 'n', 'r'],
+            ['K', 'N', 'P', '', '', 'p', 'n', 'k'],
+        ]
         self.current_turn = self.WHITE
         self.move_history = []
         self.position_history = []
         self._record_position()
 
     def _record_position(self):
-        pos = (tuple(self.board), self.current_turn)
+        pos = (tuple(tuple(row) for row in self.board), self.current_turn)
         self.position_history.append(pos)
 
     def _is_white_piece(self, piece):
-        return piece in ('K', 'N', 'R')
+        return piece in ('K', 'N', 'R', 'P')
 
     def _is_black_piece(self, piece):
-        return piece in ('k', 'n', 'r')
+        return piece in ('k', 'n', 'r', 'p')
 
     def _is_own_piece(self, piece, color):
         if color == self.WHITE:
@@ -654,15 +718,37 @@ class OneDChessGame:
     def _get_piece_type(self, piece):
         return piece.upper() if piece else ''
 
+    def _in_bounds(self, row, col):
+        return 0 <= row < 2 and 0 <= col < 8
+
+    def _pos_to_notation(self, row, col):
+        return f"{self.COLS[col]}{row + 1}"
+
+    def _notation_to_pos(self, notation):
+        if len(notation) != 2:
+            return None
+        col_char = notation[0].lower()
+        if col_char not in self.COLS:
+            return None
+        try:
+            row = int(notation[1]) - 1
+        except ValueError:
+            return None
+        col = self.COLS.index(col_char)
+        if not self._in_bounds(row, col):
+            return None
+        return (row, col)
+
     def _find_king(self, color):
         target = 'K' if color == self.WHITE else 'k'
-        for i, piece in enumerate(self.board):
-            if piece == target:
-                return i
-        return -1
+        for r in range(2):
+            for c in range(8):
+                if self.board[r][c] == target:
+                    return (r, c)
+        return None
 
-    def _get_valid_moves_for_piece(self, pos, ignore_check=False):
-        piece = self.board[pos]
+    def _get_valid_moves_for_piece(self, row, col, ignore_check=False):
+        piece = self.board[row][col]
         if not piece:
             return []
 
@@ -671,89 +757,119 @@ class OneDChessGame:
         moves = []
 
         if piece_type == 'K':
-            for delta in [-1, 1]:
-                to_pos = pos + delta
-                if 0 <= to_pos < 8:
-                    target = self.board[to_pos]
-                    if not self._is_own_piece(target, color):
-                        is_capture = self._is_enemy_piece(target, color)
-                        moves.append((to_pos, is_capture))
+            for dr in [-1, 0, 1]:
+                for dc in [-1, 0, 1]:
+                    if dr == 0 and dc == 0:
+                        continue
+                    nr, nc = row + dr, col + dc
+                    if self._in_bounds(nr, nc):
+                        target = self.board[nr][nc]
+                        if not self._is_own_piece(target, color):
+                            is_capture = self._is_enemy_piece(target, color)
+                            moves.append(((nr, nc), is_capture))
 
         elif piece_type == 'N':
-            for delta in [-2, 2]:
-                to_pos = pos + delta
-                if 0 <= to_pos < 8:
-                    target = self.board[to_pos]
+            l_deltas = [(-1, -2), (-1, 2), (1, -2), (1, 2),
+                        (-2, -1), (-2, 1), (2, -1), (2, 1)]
+            linear_deltas = [(0, -2), (0, 2)]
+            for dr, dc in l_deltas + linear_deltas:
+                nr, nc = row + dr, col + dc
+                if self._in_bounds(nr, nc):
+                    target = self.board[nr][nc]
                     if not self._is_own_piece(target, color):
                         is_capture = self._is_enemy_piece(target, color)
-                        moves.append((to_pos, is_capture))
+                        moves.append(((nr, nc), is_capture))
 
         elif piece_type == 'R':
-            for direction in [-1, 1]:
-                to_pos = pos + direction
-                while 0 <= to_pos < 8:
-                    target = self.board[to_pos]
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = row + dr, col + dc
+                while self._in_bounds(nr, nc):
+                    target = self.board[nr][nc]
                     if target == '':
-                        moves.append((to_pos, False))
+                        moves.append(((nr, nc), False))
                     elif self._is_enemy_piece(target, color):
-                        moves.append((to_pos, True))
+                        moves.append(((nr, nc), True))
                         break
                     else:
                         break
-                    to_pos += direction
+                    nr += dr
+                    nc += dc
+
+        elif piece_type == 'P':
+            direction = 1 if color == self.WHITE else -1
+            nc = col + direction
+            if self._in_bounds(row, nc) and self.board[row][nc] == '':
+                moves.append(((row, nc), False))
+            for dr in [-1, 1]:
+                nr = row + dr
+                nc = col + direction
+                if self._in_bounds(nr, nc):
+                    target = self.board[nr][nc]
+                    if self._is_enemy_piece(target, color):
+                        moves.append(((nr, nc), True))
 
         if ignore_check:
             return moves
 
         valid_moves = []
         for to_pos, is_capture in moves:
-            if self._is_move_safe(pos, to_pos, color):
+            if self._is_move_safe((row, col), to_pos, color):
                 valid_moves.append((to_pos, is_capture))
 
         return valid_moves
 
     def _is_move_safe(self, from_pos, to_pos, color):
-        original_from = self.board[from_pos]
-        original_to = self.board[to_pos]
+        fr, fc = from_pos
+        tr, tc = to_pos
+        original_from = self.board[fr][fc]
+        original_to = self.board[tr][tc]
 
-        self.board[to_pos] = self.board[from_pos]
-        self.board[from_pos] = ''
+        moving_piece = original_from
+        if moving_piece.upper() == 'P':
+            if (color == self.WHITE and tc == 7) or (color == self.BLACK and tc == 0):
+                moving_piece = 'R' if color == self.WHITE else 'r'
+        self.board[tr][tc] = moving_piece
+        self.board[fr][fc] = ''
 
         in_check = self._is_in_check(color)
 
-        self.board[from_pos] = original_from
-        self.board[to_pos] = original_to
+        self.board[fr][fc] = original_from
+        self.board[tr][tc] = original_to
 
         return not in_check
 
     def _is_in_check(self, color):
         king_pos = self._find_king(color)
-        if king_pos == -1:
+        if king_pos is None:
             return True
 
         enemy_color = self.BLACK if color == self.WHITE else self.WHITE
 
-        for pos in range(8):
-            piece = self.board[pos]
-            if piece and self._is_own_piece(piece, enemy_color):
-                enemy_moves = self._get_valid_moves_for_piece(pos, ignore_check=True)
-                for to_pos, _ in enemy_moves:
-                    if to_pos == king_pos:
-                        return True
+        for r in range(2):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece and self._is_own_piece(piece, enemy_color):
+                    enemy_moves = self._get_valid_moves_for_piece(r, c, ignore_check=True)
+                    for to_pos, _ in enemy_moves:
+                        if to_pos == king_pos:
+                            return True
         return False
 
     def _has_legal_moves(self, color):
-        for pos in range(8):
-            piece = self.board[pos]
-            if piece and self._is_own_piece(piece, color):
-                if self._get_valid_moves_for_piece(pos):
-                    return True
+        for r in range(2):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece and self._is_own_piece(piece, color):
+                    if self._get_valid_moves_for_piece(r, c):
+                        return True
         return False
 
     def _is_insufficient_material(self):
-        for piece in self.board:
-            if piece and piece.upper() != 'K':
-                return False
+        for r in range(2):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece and piece.upper() != 'K':
+                    return False
         return True
 
     def _is_threefold_repetition(self):
@@ -764,57 +880,47 @@ class OneDChessGame:
         return count >= 3
 
     def get_all_valid_moves(self, color):
-        """Get all valid moves for a color. Returns list of move strings."""
         moves = []
-        for pos in range(8):
-            piece = self.board[pos]
-            if piece and self._is_own_piece(piece, color):
-                piece_type = self._get_piece_type(piece)
-                for to_pos, is_capture in self._get_valid_moves_for_piece(pos):
-                    from_sq = pos + 1
-                    to_sq = to_pos + 1
-                    if is_capture:
-                        move_str = f"{piece_type}{from_sq}x{to_sq}"
-                    else:
-                        move_str = f"{piece_type}{from_sq}{to_sq}"
-                    moves.append(move_str)
+        for r in range(2):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece and self._is_own_piece(piece, color):
+                    piece_type = self._get_piece_type(piece)
+                    from_sq = self._pos_to_notation(r, c)
+                    for to_pos, is_capture in self._get_valid_moves_for_piece(r, c):
+                        to_sq = self._pos_to_notation(to_pos[0], to_pos[1])
+                        if is_capture:
+                            move_str = f"{piece_type}{from_sq}x{to_sq}"
+                        else:
+                            move_str = f"{piece_type}{from_sq}{to_sq}"
+                        moves.append(move_str)
         return moves
 
     def parse_move(self, move_str):
         if not isinstance(move_str, str):
             return None
         move_str = move_str.strip()
-        if len(move_str) < 3:
+        if len(move_str) < 5:
             return None
 
         piece = move_str[0].upper()
-        if piece not in ('K', 'N', 'R'):
+        if piece not in ('K', 'N', 'R', 'P'):
             return None
 
         if 'x' in move_str.lower():
-            parts = move_str[1:].lower().split('x')
-            if len(parts) != 2:
-                return None
-            try:
-                from_sq = int(parts[0])
-                to_sq = int(parts[1])
-                is_capture = True
-            except ValueError:
-                return None
+            idx = move_str.lower().index('x')
+            from_notation = move_str[1:idx]
+            to_notation = move_str[idx+1:]
+            is_capture = True
         else:
-            if len(move_str) != 3:
-                return None
-            try:
-                from_sq = int(move_str[1])
-                to_sq = int(move_str[2])
-                is_capture = False
-            except ValueError:
-                return None
+            from_notation = move_str[1:3]
+            to_notation = move_str[3:5]
+            is_capture = False
 
-        from_pos = from_sq - 1
-        to_pos = to_sq - 1
+        from_pos = self._notation_to_pos(from_notation)
+        to_pos = self._notation_to_pos(to_notation)
 
-        if not (0 <= from_pos < 8 and 0 <= to_pos < 8):
+        if from_pos is None or to_pos is None:
             return None
 
         return (piece, from_pos, to_pos, is_capture)
@@ -825,18 +931,19 @@ class OneDChessGame:
             return False, "Invalid move notation"
 
         piece_type, from_pos, to_pos, is_capture = parsed
+        fr, fc = from_pos
 
-        piece = self.board[from_pos]
+        piece = self.board[fr][fc]
         if not piece:
-            return False, f"No piece at square {from_pos + 1}"
+            return False, f"No piece at {self._pos_to_notation(fr, fc)}"
 
         if not self._is_own_piece(piece, color):
             return False, "Cannot move opponent's piece"
 
         if self._get_piece_type(piece) != piece_type:
-            return False, f"Piece at square {from_pos + 1} is not a {piece_type}"
+            return False, f"Piece at {self._pos_to_notation(fr, fc)} is not a {piece_type}"
 
-        valid_moves = self._get_valid_moves_for_piece(from_pos)
+        valid_moves = self._get_valid_moves_for_piece(fr, fc)
         for valid_to, valid_capture in valid_moves:
             if valid_to == to_pos:
                 if is_capture != valid_capture:
@@ -857,9 +964,17 @@ class OneDChessGame:
 
         parsed = self.parse_move(move_str)
         _, from_pos, to_pos, _ = parsed
+        fr, fc = from_pos
+        tr, tc = to_pos
 
-        self.board[to_pos] = self.board[from_pos]
-        self.board[from_pos] = ''
+        self.board[tr][tc] = self.board[fr][fc]
+        self.board[fr][fc] = ''
+
+        piece = self.board[tr][tc]
+        if piece.upper() == 'P':
+            if (self._is_white_piece(piece) and tc == 7) or \\
+               (self._is_black_piece(piece) and tc == 0):
+                self.board[tr][tc] = 'R' if self._is_white_piece(piece) else 'r'
 
         self.move_history.append(move_str)
         self._record_position()
@@ -888,9 +1003,10 @@ class OneDChessGame:
         return 'ongoing'
 
     def get_board_display(self):
-        squares = "| " + " | ".join(str(i+1) for i in range(8)) + " |"
-        pieces = "| " + " | ".join(p if p else '.' for p in self.board) + " |"
-        return f"{squares}\\n{pieces}"
+        header = "    " + "  ".join(c for c in 'a b c d e f g h'.split())
+        row1 = "1 | " + " | ".join(p if p else '.' for p in self.board[0]) + " |"
+        row2 = "2 | " + " | ".join(p if p else '.' for p in self.board[1]) + " |"
+        return f"{header}\\n{row1}\\n{row2}"
 
 
 class HumanAgent:
@@ -901,8 +1017,8 @@ class HumanAgent:
         self.color = color
 
     def make_move(self, board, move_history):
-        game = OneDChessGame()
-        game.board = board[:]
+        game = TwoByEightChess()
+        game.board = [row[:] for row in board]
         game.current_turn = self.color
 
         while True:
@@ -911,11 +1027,12 @@ class HumanAgent:
             print(f"{self.name}'s turn ({'White' if self.color == 'W' else 'Black'})")
             print("=" * 40)
             print()
-            print("Board (squares 1-8):")
-            print("| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |")
-            print("| " + " | ".join(p if p else '.' for p in board) + " |")
+            print("Board (columns a-h, rows 1-2):")
+            print("    " + "  ".join(c for c in 'a b c d e f g h'.split()))
+            print("1 | " + " | ".join(p if p else '.' for p in board[0]) + " |")
+            print("2 | " + " | ".join(p if p else '.' for p in board[1]) + " |")
             print()
-            print("Pieces: K=King, N=Knight, R=Rook")
+            print("Pieces: K=King, N=Knight, R=Rook, P=Pawn")
             print("        Uppercase=White, lowercase=Black")
             print()
 
@@ -926,8 +1043,8 @@ class HumanAgent:
             valid_moves = game.get_all_valid_moves(self.color)
             print(f"Valid moves: {', '.join(valid_moves)}")
             print()
-            print("Move format: [Piece][From][To] or [Piece][From]x[To] for captures")
-            print("Examples: N24 (Knight from 2 to 4), R3x6 (Rook from 3 captures on 6)")
+            print("Move format: [Piece][FromSquare][ToSquare] or [Piece][FromSquare]x[ToSquare]")
+            print("Examples: Nb2d1 (Knight from b2 to d1), Ra1xa5 (Rook from a1 captures on a5)")
             print()
 
             move = input("Enter your move: ").strip()
@@ -952,8 +1069,8 @@ class RandomAgent:
         self.color = color
 
     def make_move(self, board, move_history):
-        game = OneDChessGame()
-        game.board = board[:]
+        game = TwoByEightChess()
+        game.board = [row[:] for row in board]
         game.current_turn = self.color
 
         valid_moves = game.get_all_valid_moves(self.color)
@@ -963,21 +1080,22 @@ class RandomAgent:
 
 
 def print_board(board):
-    print("| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |")
-    print("| " + " | ".join(p if p else '.' for p in board) + " |")
+    print("    " + "  ".join(c for c in 'a b c d e f g h'.split()))
+    print("1 | " + " | ".join(p if p else '.' for p in board[0]) + " |")
+    print("2 | " + " | ".join(p if p else '.' for p in board[1]) + " |")
 
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("1D CHESS - Human vs Random Bot")
+    print("2x8 MINI CHESS - Human vs Random Bot")
     print("=" * 50)
     print()
     print("Starting position:")
-    print("White: King(1), Knight(2), Rook(3)")
-    print("Black: rook(6), knight(7), king(8)")
+    print("White: Rook(a1), Knight(b1), Pawn(c1), King(a2), Knight(b2), Pawn(c2)")
+    print("Black: pawn(f1), knight(g1), rook(h1), pawn(f2), knight(g2), king(h2)")
     print()
 
-    game = OneDChessGame()
+    game = TwoByEightChess()
 
     if random.random() < 0.5:
         human = HumanAgent("Human", game.WHITE)
@@ -1002,7 +1120,7 @@ if __name__ == "__main__":
         opponent_name = names[game.BLACK if current_color == game.WHITE else game.WHITE]
 
         try:
-            move = current_agent.make_move(game.board[:], game.move_history[:])
+            move = current_agent.make_move([row[:] for row in game.board], game.move_history[:])
         except Exception as e:
             print(f"{current_name} crashed: {e}")
             print(f"{opponent_name} wins!")
@@ -1055,7 +1173,7 @@ if __name__ == "__main__":
 # ============================================================
 
 def load_prompt() -> str:
-    prompt_path = Path(__file__).parent.parent / "games" / "A7-1D_Chess.txt"
+    prompt_path = Path(__file__).parent.parent / "games" / "A7-TwoByEightChess.txt"
     if not prompt_path.exists():
         raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
     return prompt_path.read_text()
@@ -1133,7 +1251,7 @@ def load_stored_agent(model_folder: str, game: str, run: int, agent_idx: int) ->
                 imports.append(stripped)
 
     code = "\n".join(code_lines)
-    code = re.sub(r"class\s+OneDChessAgent\b", f"class OneDChessAgent_{agent_idx}", code)
+    code = re.sub(r"class\s+TwoByEightChessAgent\b", f"class TwoByEightChessAgent_{agent_idx}", code)
 
     return code.strip(), "\n".join(imports)
 
@@ -1185,7 +1303,7 @@ def run_match(
     """Spawn subprocess, parse structured output, filter log lines."""
     temp_id = uuid.uuid4().hex[:8]
     temp_file = os.path.join(
-        tempfile.gettempdir(), f"oned_chess_match_{match_id}_{temp_id}.py"
+        tempfile.gettempdir(), f"twobyeightchess_match_{match_id}_{temp_id}.py"
     )
 
     try:
@@ -1238,7 +1356,7 @@ def run_match(
                 if line.startswith((
                     "Agent-1:", "Agent-2:", "Game ",
                     "=====", "----",
-                    "Final", "Scores:", "Points:",
+                    "Final", "Moves:", "Scores:", "Points:",
                     "BOARD:",
                     "CRASH", "RESULT", "SCORE", "WINS", "DRAWS",
                     "STATS",
@@ -1296,7 +1414,7 @@ async def run_match_async(
 
 
 async def main_async():
-    parser = argparse.ArgumentParser(description="Run 1D Chess matches between stored AI agents")
+    parser = argparse.ArgumentParser(description="Run 2x8 Mini Chess matches between stored AI agents")
     parser.add_argument("--agent", nargs="+", help="Agent specs: model1[:run1:run2] model2[:run3:run4]")
     parser.add_argument("--human", action="store_true", help="Play interactively against a random bot")
     args = parser.parse_args()
@@ -1344,7 +1462,7 @@ async def main_async():
     runs2 = runs2[:num_matches]
 
     print("\n" + "=" * 60)
-    print("1D CHESS MATCH - STORED AGENTS")
+    print("2x8 MINI CHESS MATCH - STORED AGENTS")
     print("=" * 60)
     print(f"Model 1: {folder1} ({len(runs1)} runs)")
     print(f"Model 2: {folder2} ({len(runs2)} runs)")
@@ -1415,7 +1533,7 @@ async def main_async():
                     f.write(f"\n{game_log}\n")
                 if result.get("stats_block"):
                     f.write(
-                        f"\n--- MATCH STATISTICS ---\n{result['stats_block']}\n"
+                        f"--- MATCH STATISTICS ---\n{result['stats_block']}\n"
                     )
                 f.write("-" * 60 + "\n")
 

@@ -63,7 +63,6 @@ All scripts must respect the following configuration parameters, which should be
 | `NUM_OF_GAMES_IN_A_MATCH` | `100` | Number of games to play in a single match execution. |
 | `MOVE_TIME_LIMIT` | `1.0` | Maximum time (seconds) allowed for an agent to return a move. |
 
-
 Note that "match" means two agents playing against eachother such as mistral:1 vs opus:1
 A "game" is a single unit of game between them. A match usually has many games in it.
 
@@ -107,7 +106,7 @@ The match_stats dictionary for each agent must track the following five keys to 
 There is no retry mechanism in anywhere of the game!
 
 ### 3.2 Prohibited: Broad Exception Handlers in `make_move()`
-Agent code **must not** wrap the body of `make_move()` in a broad exception handler such as `except Exception`, `except BaseException`, or a bare `except:`. The game engine enforces move time limits via `signal.alarm`, which raises an internal timeout exception. A broad outer catch silently swallows this exception and prevents the engine from enforcing time limits, causing matches to hang. Agents that violate this rule will be flagged by the matchmaker's `--health` check and must be corrected before they can compete.
+Agent code **must not** wrap the body of `make_move()` in a broad exception handler such as `except Exception`, `except BaseException`, or a bare `except:`. The game engine enforces move time limits via `signal.alarm`, which raises an internal timeout exception. A broad outer catch silently swallows this exception and prevents the engine from enforcing time limits, causing matches to hang. Agents that violate this rule will be flagged by the matchmaker's `--health` check and must be corrected before they can compete. Inform the agents about this rule!
 
 ---
 
@@ -190,6 +189,8 @@ update_scoreboard(
 *   **Renaming:** Rename class to `Agent_1` / `Agent_2` dynamically to avoid name collisions in the generated script.
 *   **Imports:** Cleanly extract and merge imports from both agents.
 
+See **Section 14: Agent Coding Standards** for detailed requirements on agent implementation.
+
 ---
 
 ## 8. Human Play Modes
@@ -215,8 +216,7 @@ This is how to determine the name of the log file explicitly:
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    agent_suffix = f"{folder1}_vs_{folder2}"
-    log_f = RESULTS_DIR / f"{ts}_{agent_suffix}_match.txt"
+    log_f = RESULTS_DIR / f"{ts}_{folder1}:{run1}_vs_{folder2}:{run2}_match.txt"
 
 Logs should be directly placed in the RESULTS_DIR. There is no intermediate folder after it.
 
@@ -271,7 +271,7 @@ Agent-2: -5
 ## 12. Log Storage & Cleanup
 | Item         | Specification                                                                                                                     |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| **Location** | `RESULTS_DIR / {timestamp}_{folder1}_vs_{folder2}_match.txt`                                                                      |
+| **Location** | `RESULTS_DIR / {timestamp}_{folder1}:{run1}_vs_{folder2}:{run2}_match.txt`                                                                      |
 | **Cleanup**  | Raw subprocess stdout should be processed in memory **or** stored in a `.tmp` file and deleted after the filtered log is written. |
 
 ## 13. Log Examples
@@ -386,3 +386,14 @@ Agent-2 make_move_crash: 0
 ...
 ------------------------------------------------------------
 ```
+
+---
+
+## 14. Agent Coding Standards
+
+To ensure agents are portable and compatible with the dynamic extraction process:
+
+*   **No Internal Imports:** Agents must not import the game engine, match scripts, or any internal project modules.
+*   **Zero Structural Dependency:** Code must not make assumptions regarding the project's file or directory hierarchy.
+*   **Class-Only Focus:** The agent file should be restricted to the agent class definition and its necessary standard library imports. The runner extracts the class text for isolated execution.
+

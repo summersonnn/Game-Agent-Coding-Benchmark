@@ -1,0 +1,556 @@
+2x8 Mini Chess is a chess variant played on a 2-row by 8-column board. Two players (White and Black) compete using King, Knight, Rook, and Pawn pieces to checkmate the opponent's King.
+
+## Game Overview
+
+The game is played on a 2x8 board (2 rows, 8 columns). Columns are labeled a-h, rows are labeled 1-2. Each player starts with 6 pieces: 1 King, 2 Knights, 1 Rook, and 2 Pawns. White pieces occupy columns a-c, Black pieces occupy columns f-h. White moves first.
+
+## Board Setup
+
+```
+     a    b    c    d    e    f    g    h
+1 |  R  | N  | P  |    |    |  p  | n  | r  |
+2 |  K  | N  | P  |    |    |  p  | n  | k  |
+```
+
+| Position | Piece | Side |
+| :--- | :--- | :--- |
+| a1 | R (Rook) | White |
+| b1 | N (Knight) | White |
+| c1 | P (Pawn) | White |
+| a2 | K (King) | White |
+| b2 | N (Knight) | White |
+| c2 | P (Pawn) | White |
+| f1 | p (Pawn) | Black |
+| g1 | n (Knight) | Black |
+| h1 | r (Rook) | Black |
+| f2 | p (Pawn) | Black |
+| g2 | n (Knight) | Black |
+| h2 | k (King) | Black |
+
+Uppercase = White, lowercase = Black.
+
+## Pieces and Movement
+
+### King (K/k)
+Can move exactly 1 square in any direction: horizontally, vertically, or diagonally.
+
+### Knight (N/n)
+Has two types of movement and can jump over any pieces:
+1. **L-shape move**: Moves in an L-shape like a standard chess knight (2 squares in one direction and 1 square perpendicular, or vice versa). All 8 standard L-deltas apply: (±1,±2) and (±2,±1), subject to board bounds.
+2. **Linear jump**: Moves exactly 2 squares horizontally along the same row (left or right).
+
+### Rook (R/r)
+Can move any number of squares horizontally (along a row) or vertically (between rows). Cannot jump over pieces — blocked by the first piece in its path.
+
+### Pawn (P/p)
+- **Movement**: Moves 1 square forward (toward the opponent's side). White pawns move right (increasing column), Black pawns move left (decreasing column). Pawns cannot move backward.
+- **Capture**: Captures diagonally — 1 square forward and 1 square up or down (row change). A pawn can only capture if an enemy piece occupies the diagonal square.
+- **Promotion**: When a pawn reaches the far end of the board (column h for White, column a for Black), it is automatically promoted to a Rook.
+- **No double move**: Pawns always move exactly 1 square. There is no 2-square first move and no en passant.
+
+## Move Notation
+
+Moves use the format: `[Piece][FromSquare][Capture?][ToSquare]`
+
+Squares are identified by column letter (a-h) + row number (1-2).
+
+- **Regular move**: `Nb2d1` — Knight moves from b2 to d1
+- **Capture**: `Ra1xa2` — Rook at a1 captures the piece at a2
+- **Pawn move**: `Pc1d1` — Pawn moves from c1 to d1
+- **Pawn capture**: `Pc2xd1` — Pawn at c2 captures diagonally to d1
+
+## Game Rules
+
+### Check
+A King is in check when it is attacked by an opponent's piece.
+
+### Checkmate (Win)
+A player wins by checkmating the opponent's King. Checkmate occurs when:
+1. The King is in check (under attack), AND
+2. There is no legal move to escape check (no blocking, capturing the attacker, or moving the King to safety)
+
+### Stalemate (Draw)
+A draw occurs if a player is NOT in check but has no legal moves available.
+
+### Threefold Repetition (Draw)
+A draw occurs if the same board position is repeated 3 times during the game.
+
+### Insufficient Material (Draw)
+A draw occurs if only Kings remain on the board (no checkmate is possible).
+
+### Illegal Move
+If a player makes an illegal move (invalid notation, moving into check, impossible move), a random valid move is played on their behalf and the game continues.
+
+## Game Interface
+
+Your agent must implement the following class:
+
+```python
+class TwoByEightChessAgent:
+    def __init__(self, name, color):
+        """
+        Initialize the agent.
+
+        Args:
+            name: str - The agent's name (e.g., "Agent-1")
+            color: str - 'W' for White or 'B' for Black
+        """
+        self.name = name
+        self.color = color
+
+    def make_move(self, board, move_history):
+        """
+        Decide the next move based on the current board state.
+
+        Args:
+            board: list[list[str]] - 2x8 board (2 rows, 8 columns).
+                   board[0] = row 1, board[1] = row 2.
+                   Each row is an 8-element list.
+                   Pieces: 'K','N','R','P' (White), 'k','n','r','p' (Black), '' (empty)
+                   Starting position:
+                       board[0] = ['R','N','P','','','p','n','r']  (row 1)
+                       board[1] = ['K','N','P','','','p','n','k']  (row 2)
+
+            move_history: list[str] - List of all moves played so far.
+                   Example: ["Nb2d1", "ng2e1", "Ra1a5", "pf1xe1"]
+
+        Returns:
+            str: Move in notation format.
+                 Regular move: "[Piece][FromSquare][ToSquare]" e.g., "Nb2d1"
+                 Capture: "[Piece][FromSquare]x[ToSquare]" e.g., "Ra1xa5"
+        """
+        # TODO: Implement your strategy
+        return "Ka2b2"  # Example: King moves from a2 to b2
+```
+
+## Game Engine Implementation
+
+The following code is the official game engine:
+
+```python
+class TwoByEightChess:
+    """
+    2x8 Mini Chess game engine.
+    Board: 2 rows x 8 columns (row 0-1, col 0-7)
+    Displayed as rows 1-2, columns a-h.
+    Pieces: K/N/R/P (White), k/n/r/p (Black), '' (empty)
+    """
+
+    WHITE = 'W'
+    BLACK = 'B'
+    COLS = 'abcdefgh'
+
+    def __init__(self):
+        # board[0] = row 1, board[1] = row 2
+        self.board = [
+            ['R', 'N', 'P', '', '', 'p', 'n', 'r'],
+            ['K', 'N', 'P', '', '', 'p', 'n', 'k'],
+        ]
+        self.current_turn = self.WHITE
+        self.move_history = []
+        self.position_history = []
+        self._record_position()
+
+    def _record_position(self):
+        """Record current position for repetition detection."""
+        pos = (tuple(tuple(row) for row in self.board), self.current_turn)
+        self.position_history.append(pos)
+
+    def _is_white_piece(self, piece):
+        return piece in ('K', 'N', 'R', 'P')
+
+    def _is_black_piece(self, piece):
+        return piece in ('k', 'n', 'r', 'p')
+
+    def _is_own_piece(self, piece, color):
+        if color == self.WHITE:
+            return self._is_white_piece(piece)
+        return self._is_black_piece(piece)
+
+    def _is_enemy_piece(self, piece, color):
+        if piece == '':
+            return False
+        return not self._is_own_piece(piece, color)
+
+    def _get_piece_type(self, piece):
+        """Return piece type in uppercase."""
+        return piece.upper() if piece else ''
+
+    def _in_bounds(self, row, col):
+        return 0 <= row < 2 and 0 <= col < 8
+
+    def _pos_to_notation(self, row, col):
+        """Convert (row, col) to algebraic notation like 'a1'."""
+        return f"{self.COLS[col]}{row + 1}"
+
+    def _notation_to_pos(self, notation):
+        """Convert algebraic notation like 'a1' to (row, col). Returns None if invalid."""
+        if len(notation) != 2:
+            return None
+        col_char = notation[0].lower()
+        if col_char not in self.COLS:
+            return None
+        try:
+            row = int(notation[1]) - 1
+        except ValueError:
+            return None
+        col = self.COLS.index(col_char)
+        if not self._in_bounds(row, col):
+            return None
+        return (row, col)
+
+    def _find_king(self, color):
+        """Find the position of the King for the given color."""
+        target = 'K' if color == self.WHITE else 'k'
+        for r in range(2):
+            for c in range(8):
+                if self.board[r][c] == target:
+                    return (r, c)
+        return None
+
+    def _get_valid_moves_for_piece(self, row, col, ignore_check=False):
+        """
+        Get all valid destination squares for the piece at (row, col).
+        Returns list of ((to_row, to_col), is_capture) tuples.
+        """
+        piece = self.board[row][col]
+        if not piece:
+            return []
+
+        color = self.WHITE if self._is_white_piece(piece) else self.BLACK
+        piece_type = self._get_piece_type(piece)
+        moves = []
+
+        if piece_type == 'K':
+            # King: 1 square in any direction
+            for dr in [-1, 0, 1]:
+                for dc in [-1, 0, 1]:
+                    if dr == 0 and dc == 0:
+                        continue
+                    nr, nc = row + dr, col + dc
+                    if self._in_bounds(nr, nc):
+                        target = self.board[nr][nc]
+                        if not self._is_own_piece(target, color):
+                            is_capture = self._is_enemy_piece(target, color)
+                            moves.append(((nr, nc), is_capture))
+
+        elif piece_type == 'N':
+            # Knight: L-shape + linear 2-square jump, all can jump over pieces
+            # L-shape deltas (standard chess knight)
+            l_deltas = [(-1, -2), (-1, 2), (1, -2), (1, 2),
+                        (-2, -1), (-2, 1), (2, -1), (2, 1)]
+            # Linear 2-square jump (from 2x8 Mini Chess rules)
+            linear_deltas = [(0, -2), (0, 2)]
+            for dr, dc in l_deltas + linear_deltas:
+                nr, nc = row + dr, col + dc
+                if self._in_bounds(nr, nc):
+                    target = self.board[nr][nc]
+                    if not self._is_own_piece(target, color):
+                        is_capture = self._is_enemy_piece(target, color)
+                        moves.append(((nr, nc), is_capture))
+
+        elif piece_type == 'R':
+            # Rook: slide in 4 cardinal directions, blocked by pieces
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = row + dr, col + dc
+                while self._in_bounds(nr, nc):
+                    target = self.board[nr][nc]
+                    if target == '':
+                        moves.append(((nr, nc), False))
+                    elif self._is_enemy_piece(target, color):
+                        moves.append(((nr, nc), True))
+                        break
+                    else:
+                        break
+                    nr += dr
+                    nc += dc
+
+        elif piece_type == 'P':
+            # Pawn: 1 square forward, diagonal capture
+            # White moves right (+col), Black moves left (-col)
+            direction = 1 if color == self.WHITE else -1
+            # Forward move (no capture)
+            nc = col + direction
+            if self._in_bounds(row, nc) and self.board[row][nc] == '':
+                moves.append(((row, nc), False))
+            # Diagonal captures (row ±1, col forward)
+            for dr in [-1, 1]:
+                nr = row + dr
+                nc = col + direction
+                if self._in_bounds(nr, nc):
+                    target = self.board[nr][nc]
+                    if self._is_enemy_piece(target, color):
+                        moves.append(((nr, nc), True))
+
+        if ignore_check:
+            return moves
+
+        # Filter moves that would leave own King in check
+        valid_moves = []
+        for to_pos, is_capture in moves:
+            if self._is_move_safe((row, col), to_pos, color):
+                valid_moves.append((to_pos, is_capture))
+
+        return valid_moves
+
+    def _is_move_safe(self, from_pos, to_pos, color):
+        """Check if making this move would leave the King in check."""
+        fr, fc = from_pos
+        tr, tc = to_pos
+        original_from = self.board[fr][fc]
+        original_to = self.board[tr][tc]
+
+        # Simulate move (with promotion if applicable)
+        moving_piece = original_from
+        if moving_piece.upper() == 'P':
+            if (color == self.WHITE and tc == 7) or (color == self.BLACK and tc == 0):
+                moving_piece = 'R' if color == self.WHITE else 'r'
+        self.board[tr][tc] = moving_piece
+        self.board[fr][fc] = ''
+
+        in_check = self._is_in_check(color)
+
+        # Undo
+        self.board[fr][fc] = original_from
+        self.board[tr][tc] = original_to
+
+        return not in_check
+
+    def _is_in_check(self, color):
+        """Check if the given color's King is under attack."""
+        king_pos = self._find_king(color)
+        if king_pos is None:
+            return True
+
+        enemy_color = self.BLACK if color == self.WHITE else self.WHITE
+
+        for r in range(2):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece and self._is_own_piece(piece, enemy_color):
+                    enemy_moves = self._get_valid_moves_for_piece(r, c, ignore_check=True)
+                    for to_pos, _ in enemy_moves:
+                        if to_pos == king_pos:
+                            return True
+        return False
+
+    def _has_legal_moves(self, color):
+        """Check if the given color has any legal moves."""
+        for r in range(2):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece and self._is_own_piece(piece, color):
+                    if self._get_valid_moves_for_piece(r, c):
+                        return True
+        return False
+
+    def _is_insufficient_material(self):
+        """Check if only Kings remain (draw by insufficient material)."""
+        for r in range(2):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece and piece.upper() != 'K':
+                    return False
+        return True
+
+    def _is_threefold_repetition(self):
+        """Check for threefold repetition."""
+        if len(self.position_history) < 3:
+            return False
+        current_pos = self.position_history[-1]
+        count = sum(1 for pos in self.position_history if pos == current_pos)
+        return count >= 3
+
+    def get_all_valid_moves(self, color):
+        """Get all valid moves for a color. Returns list of move strings."""
+        moves = []
+        for r in range(2):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece and self._is_own_piece(piece, color):
+                    piece_type = self._get_piece_type(piece)
+                    from_sq = self._pos_to_notation(r, c)
+                    for to_pos, is_capture in self._get_valid_moves_for_piece(r, c):
+                        to_sq = self._pos_to_notation(to_pos[0], to_pos[1])
+                        if is_capture:
+                            move_str = f"{piece_type}{from_sq}x{to_sq}"
+                        else:
+                            move_str = f"{piece_type}{from_sq}{to_sq}"
+                        moves.append(move_str)
+        return moves
+
+    def parse_move(self, move_str):
+        """
+        Parse move notation into (piece_type, from_pos, to_pos, is_capture).
+        Returns None if invalid format.
+
+        Format: [Piece][FromSquare][x?][ToSquare]
+        Examples: "Nb2d1", "Ra1xa5", "Pc1d1"
+        """
+        if not isinstance(move_str, str):
+            return None
+        move_str = move_str.strip()
+        if len(move_str) < 5:
+            return None
+
+        piece = move_str[0].upper()
+        if piece not in ('K', 'N', 'R', 'P'):
+            return None
+
+        # Check for capture notation
+        if 'x' in move_str.lower():
+            idx = move_str.lower().index('x')
+            from_notation = move_str[1:idx]
+            to_notation = move_str[idx+1:]
+            is_capture = True
+        else:
+            from_notation = move_str[1:3]
+            to_notation = move_str[3:5]
+            is_capture = False
+
+        from_pos = self._notation_to_pos(from_notation)
+        to_pos = self._notation_to_pos(to_notation)
+
+        if from_pos is None or to_pos is None:
+            return None
+
+        return (piece, from_pos, to_pos, is_capture)
+
+    def is_valid_move(self, move_str, color):
+        """Validate a move for the given color."""
+        parsed = self.parse_move(move_str)
+        if not parsed:
+            return False, "Invalid move notation"
+
+        piece_type, from_pos, to_pos, is_capture = parsed
+        fr, fc = from_pos
+
+        piece = self.board[fr][fc]
+        if not piece:
+            return False, f"No piece at {self._pos_to_notation(fr, fc)}"
+
+        if not self._is_own_piece(piece, color):
+            return False, "Cannot move opponent's piece"
+
+        if self._get_piece_type(piece) != piece_type:
+            return False, f"Piece at {self._pos_to_notation(fr, fc)} is not a {piece_type}"
+
+        # Check if move is in valid moves
+        valid_moves = self._get_valid_moves_for_piece(fr, fc)
+        for valid_to, valid_capture in valid_moves:
+            if valid_to == to_pos:
+                if is_capture != valid_capture:
+                    if is_capture:
+                        return False, "No piece to capture at destination"
+                    else:
+                        return False, "Must use capture notation (x) when capturing"
+                return True, ""
+
+        if self._is_in_check(color):
+            return False, "Must escape check"
+        return False, "Invalid move for this piece"
+
+    def make_move(self, move_str, color):
+        """Execute a move. Returns (success, message)."""
+        valid, error = self.is_valid_move(move_str, color)
+        if not valid:
+            return False, error
+
+        parsed = self.parse_move(move_str)
+        _, from_pos, to_pos, _ = parsed
+        fr, fc = from_pos
+        tr, tc = to_pos
+
+        # Execute move
+        self.board[tr][tc] = self.board[fr][fc]
+        self.board[fr][fc] = ''
+
+        # Pawn promotion (auto-promote to Rook)
+        piece = self.board[tr][tc]
+        if piece.upper() == 'P':
+            if (self._is_white_piece(piece) and tc == 7) or \
+               (self._is_black_piece(piece) and tc == 0):
+                self.board[tr][tc] = 'R' if self._is_white_piece(piece) else 'r'
+
+        # Record move and position
+        self.move_history.append(move_str)
+        self._record_position()
+
+        # Switch turn
+        self.current_turn = self.BLACK if self.current_turn == self.WHITE else self.WHITE
+
+        return True, ""
+
+    def get_game_state(self):
+        """
+        Check the current game state.
+        Returns: 'ongoing', 'white_wins', 'black_wins', 'draw_stalemate',
+                 'draw_repetition', 'draw_material'
+        """
+        if self._is_insufficient_material():
+            return 'draw_material'
+
+        if self._is_threefold_repetition():
+            return 'draw_repetition'
+
+        current = self.current_turn
+        in_check = self._is_in_check(current)
+        has_moves = self._has_legal_moves(current)
+
+        if not has_moves:
+            if in_check:
+                return 'white_wins' if current == self.BLACK else 'black_wins'
+            else:
+                return 'draw_stalemate'
+
+        return 'ongoing'
+
+    def get_board_display(self):
+        """Return a string representation of the board."""
+        header = "    " + "  ".join(c for c in 'a b c d e f g h'.split())
+        row1 = "1 | " + " | ".join(p if p else '.' for p in self.board[0]) + " |"
+        row2 = "2 | " + " | ".join(p if p else '.' for p in self.board[1]) + " |"
+        return f"{header}\n{row1}\n{row2}"
+```
+
+## Competition Format
+
+- **1 vs 1 Match**: Two agents compete across multiple games.
+- **Alternating Colors**: Agent color assignment (White/Black) alternates each game.
+
+## Scoring
+### Match Points (Primary Metric)
+- **Win:** 3 points
+- **Draw:** 1 point each
+- **Loss:** 0 points
+
+### Tie-Breaker Score (Secondary Metric)
+Full moves are calculated as `len(move_history) // 2` (total half-moves divided by 2, integer division).
+- **Win:** <=5 full moves: +10, 6-10 full moves: +5, >10 full moves: +3
+- **Loss:** Negative of the winner's score (e.g., -10, -5, or -3).
+- **Draw:** 0 for both players.
+- **Forfeit:** +12 for the winner, -12 for the forfeiting agent.
+
+## Error Handling & Forfeits
+
+### Error Handling
+| Failure Type         | Consequence                                           |
+| -------------------- | ----------------------------------------------------- |
+| make_move() Crash    | Random valid move played; game continues.             |
+| Initialization Crash | Immediate game forfeit. Opponent wins with max score. |
+| Move Timeout (1s)    | Random valid move played; game continues.             |
+| Invalid Move         | Random valid move played; game continues.             | 
+
+### Initialization Crash
+If an agent crashes during `__init__`, the game is an immediate forfeit. The opponent receives 3 match points and +12 tie-breaker score. The crashing agent receives 0 points and -12 score.
+
+### During Gameplay
+If an agent crashes, times out, or returns an invalid move during `make_move`, a random valid move is generated on its behalf and the game continues. There is no retry mechanism.
+
+### Agent Coding Requirements
+- **No Internal Imports**: Do not import any game engine files, match runners, or project-specific modules. Use only standard library imports.
+- **Isolation**: Your agent must be completely self-contained. Do not assume any specific file structure or directory hierarchy.
+- **Class-Only Output**: Output ONLY the agent class and necessary standard imports. Do not include testing code, game logic outside the class, or example usage.
+- **No Broad Exception Handlers**: Do not wrap the body of `make_move()` in a broad exception handler such as `except Exception:`, `except BaseException:`, or a bare `except:`. The engine uses `signal.alarm` to enforce move time limits; broad catches will swallow the timeout exception and cause the match to hang.
+
+**IMPORTANT**: Output ONLY the `TwoByEightChessAgent` class definition and any necessary imports. Do NOT output the game engine code.

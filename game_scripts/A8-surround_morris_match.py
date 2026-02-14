@@ -706,7 +706,8 @@ def main():
     print(f"Agent-1 Stalemates: {match_stats['Agent-1']['stalemate']}")
     print(f"Agent-2 Stalemates: {match_stats['Agent-2']['stalemate']}")
     print(f"Total Turns: {total_turns}")
-    print(f"STATS:Agent-1={match_stats['Agent-1']},Agent-2={match_stats['Agent-2']}")
+    print(f"STATS:Agent-1={match_stats['Agent-1']}")
+    print(f"STATS:Agent-2={match_stats['Agent-2']}")
 
 
 if __name__ == "__main__":

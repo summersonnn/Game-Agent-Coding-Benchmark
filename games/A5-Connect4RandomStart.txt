@@ -175,7 +175,14 @@ class Connect4Game:
             # Switch turn
             self.current_turn = self.YELLOW if self.current_turn == self.RED else self.RED
 ```
-Do not import Connect4Game class. You don't need it. Just output your agent. Your code will be imported into game. Do not import any function or class from any other file. Do not assume anything about file structure.
+### Agent Coding Requirements
+- **No Internal Imports**: Do not import any game engine files, match runners, or project-specific modules. Use only standard library imports.
+- **Isolation**: Your agent must be completely self-contained. Do not assume any specific file structure or directory hierarchy.
+- **Class-Only Output**: Output ONLY the agent class and necessary standard imports. Do not include testing code, game logic outside the class, or example usage.
+- **No Broad Exception Handlers**: Do not wrap the body of `make_move()` in a broad exception handler such as `except Exception:`, `except BaseException:`, or a bare `except:`. The engine uses `signal.alarm` to enforce move time limits; broad catches will swallow the timeout exception and cause the match to hang.
+
+
+**IMPORTANT**: Output ONLY the `Connect4Agent` class definition and any necessary imports. Do NOT output the game engine code.
 
 ## Competition Format
 

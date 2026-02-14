@@ -232,7 +232,15 @@ class SurroundMorrisAgent:
             return random.choice(moves) if moves else (0, 1)
 ```
 
+### Agent Coding Requirements
+- **No Internal Imports**: Do not import any game engine files, match runners, or project-specific modules. Use only standard library imports.
+- **Isolation**: Your agent must be completely self-contained. Do not assume any specific file structure or directory hierarchy.
+- **Class-Only Output**: Output ONLY the agent class and necessary standard imports. Do not include testing code, game logic outside the class, or example usage.
+- **No Broad Exception Handlers**: Do not wrap the body of `make_move()` in a broad exception handler such as `except Exception:`, `except BaseException:`, or a bare `except:`. The engine uses `signal.alarm` to enforce move time limits; broad catches will swallow the timeout exception and cause the match to hang.
+
+
 **IMPORTANT**: Output ONLY the `SurroundMorrisAgent` class definition and any additional imports you need (`random` is already available). Do NOT output the entire game code. The `ADJACENCY` dict is available as a global variable at runtime.
+
 
 ## Strategy Tips
 
@@ -249,6 +257,6 @@ class SurroundMorrisAgent:
 
 - 1 vs 1 match.
 - Scoring Rules:
-    - Win by Elimination: Score = Winner's remaining pieces (e.g., 5 pieces vs 0 -> 5 points).
+    - Win by Elimination: Score = Winner's remaining pieces (e.g., 5 pieces vs 0 -> Winner +5, Loser -5).
     - Win by Mate: Score = **+7 for Winner, -7 for Loser** (Fixed).
     - Draw (Turn Limit or Repetition): Each player receives 0 score.

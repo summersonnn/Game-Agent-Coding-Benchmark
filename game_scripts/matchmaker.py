@@ -35,7 +35,7 @@ GAME_REGISTRY: dict[str, dict] = {
         "script": "A6-word_matrix_match.py",
         "players": 2,
     },
-    "A7": {"name": "A7-1D_Chess", "script": "A7-oned_chess_match.py", "players": 2},
+    "A7": {"name": "A7-TwoByEightChess", "script": "A7-twobyeight_chess_match.py", "players": 2},
     "A8": {
         "name": "A8-SurroundMorris",
         "script": "A8-surround_morris_match.py",
