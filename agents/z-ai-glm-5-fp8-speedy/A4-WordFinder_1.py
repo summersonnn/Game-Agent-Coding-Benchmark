@@ -6,113 +6,114 @@ Generated: 2026-02-12 09:24:15
 """
 
 
+import random
+
 
 class WordFinderAgent:
     def __init__(self, name):
         self.name = name
         self.dictionary = load_words()
         
-        self.word_data = {}  # word -> (length, middle_letters, consecutive_pairs, has_hyphen)
-        self.words_by_pair = {}  # (letter1, letter2) -> [(score, word), ...]
-        self.words_by_single = {}  # letter -> [(length, word), ...]
+        # Pre-compute indices for fast lookup
+        self.words_with_letter = {}  # letter -> set of words containing it
+        self.consecutive_pairs = {}  # (letter1, letter2) -> set of words with them consecutively
         
         for word in self.dictionary:
-            word_lower = word.lower()
-            length = len(word_lower)
+            # Index by unique letters in word
+            for letter in set(word):
+                if letter not in self.words_with_letter:
+                    self.words_with_letter[letter] = set()
+                self.words_with_letter[letter].add(word)
             
-            if length < 3:
-                continue
-            
-            middle = word_lower[1:-1]
-            middle_letters = set(middle)
-            
-            # Find consecutive pairs in middle
-            consecutive_pairs = set()
-            for i in range(len(middle) - 1):
-                pair = tuple(sorted([middle[i], middle[i+1]]))
-                consecutive_pairs.add(pair)
-            
-            has_hyphen = '-' in word_lower
-            self.word_data[word_lower] = (length, middle_letters, consecutive_pairs, has_hyphen)
-            
-            # Index by letter pair with pre-computed score
-            for l1 in middle_letters:
-                for l2 in middle_letters:
-                    if l1 <= l2:
-                        key = (l1, l2)
-                        if key not in self.words_by_pair:
-                            self.words_by_pair[key] = []
-                        
-                        has_consecutive = key in consecutive_pairs
-                        score = length
-                        if has_hyphen:
-                            score = length // 2
-                        if has_consecutive:
-                            score *= 2
-                        
-                        self.words_by_pair[key].append((score, word_lower))
-            
-            # Index by single letter for partial moves
-            for letter in middle_letters:
-                if letter not in self.words_by_single:
-                    self.words_by_single[letter] = []
-                self.words_by_single[letter].append((length, word_lower))
-        
-        # Sort by score descending (best first)
-        for key in self.words_by_pair:
-            self.words_by_pair[key].sort(reverse=True)
-        
-        # Sort by length ascending (shorter = less penalty for partial)
-        for key in self.words_by_single:
-            self.words_by_single[key].sort()
+            # Index by consecutive letter pairs
+            for i in range(len(word) - 1):
+                pair = (word[i], word[i+1])
+                if pair not in self.consecutive_pairs:
+                    self.consecutive_pairs[pair] = set()
+                self.consecutive_pairs[pair].add(word)
     
     def make_move(self, current_word, word_history):
         current_word = current_word.lower()
-        required_first = current_word[0]
-        required_last = current_word[-1]
-        prev_length = len(current_word)
+        req1, req2 = current_word[0], current_word[-1]
+        curr_len = len(current_word)
         
-        key = tuple(sorted([required_first, required_last]))
+        # Check if both letters exist in dictionary
+        if req1 not in self.words_with_letter or req2 not in self.words_with_letter:
+            return self._partial_move(req1, req2, word_history, curr_len)
         
-        # Find best valid word with both required letters
-        if key in self.words_by_pair:
-            for score, word in self.words_by_pair[key]:
-                if word in word_history:
-                    continue
-                
-                length = self.word_data[word][0]
-                if length == prev_length:
-                    continue
-                
-                return word
+        set1 = self.words_with_letter[req1]
+        set2 = self.words_with_letter[req2]
         
-        # Partial move fallback
-        return self._partial_move(required_first, required_last, word_history, prev_length)
+        # First try bonus words (consecutive letters = 2x multiplier)
+        bonus_candidates = (self.consecutive_pairs.get((req1, req2), set()) | 
+                           self.consecutive_pairs.get((req2, req1), set()))
+        best = self._find_best_word(bonus_candidates, word_history, curr_len, req1, req2, is_bonus=True)
+        if best:
+            return best
+        
+        # Then try regular words
+        all_candidates = set1 & set2
+        regular_candidates = all_candidates - bonus_candidates
+        best = self._find_best_word(regular_candidates, word_history, curr_len, req1, req2, is_bonus=False)
+        if best:
+            return best
+        
+        # No valid word found - attempt partial move
+        return self._partial_move(req1, req2, word_history, curr_len)
     
-    def _partial_move(self, required_first, required_last, word_history, prev_length):
+    def _find_best_word(self, candidates, word_history, curr_len, req1, req2, is_bonus):
+        """Find the highest-scoring valid word from candidates."""
         best_word = None
-        best_length = float('inf')
+        best_score = -1
         
-        for letter in [required_first, required_last]:
-            if letter not in self.words_by_single:
+        for word in candidates:
+            if word in word_history:
                 continue
-            for length, word in self.words_by_single[letter]:
+            if len(word) == curr_len:
+                continue
+            if word[0] in (req1, req2) or word[-1] in (req1, req2):
+                continue
+            
+            # Calculate score
+            score = len(word)
+            if '-' in word:
+                score = score // 2  # Hyphen penalty
+            if is_bonus:
+                score *= 2  # Consecutive letter bonus
+            
+            if score > best_score:
+                best_score = score
+                best_word = word
+        
+        return best_word
+    
+    def _partial_move(self, req1, req2, word_history, curr_len):
+        """Find a word containing at least one required letter (last resort)."""
+        best_word = None
+        best_len = float('inf')
+        
+        # Try each required letter
+        for letter in [req1, req2]:
+            if letter not in self.words_with_letter:
+                continue
+            for word in self.words_with_letter[letter]:
                 if word in word_history:
                     continue
-                if length == prev_length:
+                if len(word) == curr_len:
                     continue
-                # Shorter = less negative penalty
-                if length < best_length:
-                    best_length = length
+                if word[0] == letter or word[-1] == letter:
+                    continue
+                # Prefer shortest word to minimize penalty
+                if len(word) < best_len:
+                    best_len = len(word)
                     best_word = word
         
         if best_word:
             return best_word
         
-        # Absolute fallback
+        # Absolute fallback: any unused word
         for word in self.dictionary:
-            word_lower = word.lower()
-            if word_lower not in word_history:
-                return word_lower
+            if word not in word_history:
+                return word
         
-        return list(self.dictionary)[0]
+        return "a"  # Emergency fallback

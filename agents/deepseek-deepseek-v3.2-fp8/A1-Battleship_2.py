@@ -5,227 +5,128 @@ Run: 2
 Generated: 2026-02-11 19:24:56
 """
 
-from collections import deque
+
 import random
+from collections import deque
 
 class BattleshipAgent:
     """
-    Intelligent Battleship agent with:
-    - Valid random placement (guaranteed no overlap, within board)
-    - Bombing: maintains hit/miss sets, targets adjacent cells, detects sunk ships
-    - Hunting: uses parity (checkerboard) to increase hit probability
+    A smart Battleship agent that uses probabilistic targeting and a hunt mode.
+    - Placement: chooses a random valid location for each ship.
+    - Bombing: maintains a probability map over unknown cells, and switches to
+      hunt mode after a hit to explore adjacent cells.
     """
+
     def __init__(self, name, board_size, ships):
         self.name = name
         self.board_size = board_size
-        self.ships = ships
-        self.reset()
+        self.ships = ships  # list of ship lengths, e.g. [5,4,3]
 
-    # ----------------------------------------------------------------------
-    # Game state reset (called at the beginning of each new game)
-    # ----------------------------------------------------------------------
-    def reset(self):
-        self.shots = set()          # all coordinates already bombed
-        self.hits = set()           # unsunk hits (cells that hit a ship not yet sunk)
-        self.misses = set()        # known misses
-        self.targets = set()       # candidate cells adjacent to unsunk hits
-        self.remaining_ships = sorted(self.ships, reverse=True)   # still alive (largest first)
+        # opponent board: 0 = unknown, 1 = miss, 2 = hit
+        self.opponent_grid = [[0] * board_size for _ in range(board_size)]
 
-    # ----------------------------------------------------------------------
-    # Placement helpers
-    # ----------------------------------------------------------------------
-    def _is_valid_placement(self, board, ship_length, start, orientation):
-        row, col = start
-        if orientation == 'horizontal':
-            if col + ship_length > self.board_size:
-                return False
-            for i in range(ship_length):
-                if board[row][col + i] != 'O':   # 'O' = empty
-                    return False
-        else:  # vertical
-            if row + ship_length > self.board_size:
-                return False
-            for i in range(ship_length):
-                if board[row + i][col] != 'O':
-                    return False
-        return True
+        # queue of cells to try when in hunt mode (after a hit)
+        self.hunt_queue = deque()
 
-    def _get_all_placements(self, board, ship_length):
-        placements = []
-        for r in range(self.board_size):
-            for c in range(self.board_size):
-                if self._is_valid_placement(board, ship_length, (r, c), 'horizontal'):
-                    placements.append((ship_length, (r, c), 'horizontal'))
-                if self._is_valid_placement(board, ship_length, (r, c), 'vertical'):
-                    placements.append((ship_length, (r, c), 'vertical'))
-        return placements
-
-    # ----------------------------------------------------------------------
-    # Sunk detection and target management
-    # ----------------------------------------------------------------------
-    def _find_components(self, hits):
-        """Return list of 4‑connected components from the hit set."""
-        visited = set()
-        components = []
-        for h in hits:
-            if h not in visited:
-                q = deque([h])
-                comp = set()
-                while q:
-                    r, c = q.popleft()
-                    if (r, c) in visited:
-                        continue
-                    visited.add((r, c))
-                    comp.add((r, c))
-                    for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
-                        nr, nc = r+dr, c+dc
-                        if (nr, nc) in hits and (nr, nc) not in visited:
-                            q.append((nr, nc))
-                components.append(comp)
-        return components
-
-    def _is_straight_line(self, comp):
-        """Check if a component forms an unbroken horizontal or vertical line."""
-        if not comp:
-            return False, None, None, None, None, 0
-        rows = {r for r, _ in comp}
-        cols = {c for _, c in comp}
-        if len(rows) == 1:          # horizontal
-            row = next(iter(rows))
-            min_c = min(cols)
-            max_c = max(cols)
-            length = max_c - min_c + 1
-            expected = {(row, c) for c in range(min_c, max_c + 1)}
-            if comp == expected:
-                return True, 'h', row, row, min_c, max_c, length
-        elif len(cols) == 1:        # vertical
-            col = next(iter(cols))
-            min_r = min(rows)
-            max_r = max(rows)
-            length = max_r - min_r + 1
-            expected = {(r, col) for r in range(min_r, max_r + 1)}
-            if comp == expected:
-                return True, 'v', min_r, max_r, col, col, length
-        return False, None, None, None, None, None, 0
-
-    def _check_sunk_and_update(self):
-        """
-        Identify any fully sunk ship:
-        - component is a straight line of length L
-        - L is still in remaining_ships
-        - both ends are off‑board or known misses
-        Remove the ship and rebuild target set.
-        """
-        components = self._find_components(self.hits)
-        sunk = False
-        for comp in components:
-            ok, orient, r1, r2, c1, c2, length = self._is_straight_line(comp)
-            if ok and length in self.remaining_ships:
-                if orient == 'h':
-                    left_blocked = (c1 == 0) or ((r1, c1-1) in self.misses)
-                    right_blocked = (c2 == self.board_size-1) or ((r2, c2+1) in self.misses)
-                    if left_blocked and right_blocked:
-                        self.remaining_ships.remove(length)
-                        self.hits -= comp
-                        sunk = True
-                else:   # vertical
-                    top_blocked = (r1 == 0) or ((r1-1, c1) in self.misses)
-                    bottom_blocked = (r2 == self.board_size-1) or ((r2+1, c2) in self.misses)
-                    if top_blocked and bottom_blocked:
-                        self.remaining_ships.remove(length)
-                        self.hits -= comp
-                        sunk = True
-        if sunk:
-            # rebuild targets from the remaining (unsunk) hits
-            self.targets.clear()
-            for r, c in self.hits:
-                for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
-                    nr, nc = r+dr, c+dc
-                    if 0 <= nr < self.board_size and 0 <= nc < self.board_size:
-                        if (nr, nc) not in self.shots and (nr, nc) not in self.targets:
-                            self.targets.add((nr, nc))
-        return sunk
-
-    # ----------------------------------------------------------------------
-    # Main entry point
-    # ----------------------------------------------------------------------
     def make_move(self, state, feedback):
         # ----- PLACEMENT PHASE -----
         if state['phase'] == 'placement':
-            # Detect start of a new game and reset state
-            if state['ships_placed'] == 0:
-                self.reset()
+            ship_len = state['ships_to_place'][0]
+            my_board = state['my_board']
 
-            ship_length = state['ships_to_place'][0]
-            board = state['my_board']
-            placements = self._get_all_placements(board, ship_length)
+            # collect all valid placements for this ship
+            valid_placements = []
 
-            if placements:
-                chosen = random.choice(placements)
-                return {
-                    'ship_length': chosen[0],
-                    'start': chosen[1],
-                    'orientation': chosen[2]
-                }
-            else:
-                # Extremely unlikely fallback – random placement (will be penalised)
-                orientation = random.choice(['horizontal', 'vertical'])
-                if orientation == 'horizontal':
-                    row = random.randint(0, self.board_size - 1)
-                    col = random.randint(0, self.board_size - ship_length)
-                else:
-                    row = random.randint(0, self.board_size - ship_length)
-                    col = random.randint(0, self.board_size - 1)
-                return {
-                    'ship_length': ship_length,
-                    'start': (row, col),
-                    'orientation': orientation
-                }
+            # horizontal
+            for r in range(self.board_size):
+                for c in range(self.board_size - ship_len + 1):
+                    if all(my_board[r][c + i] == 'O' for i in range(ship_len)):
+                        valid_placements.append((ship_len, (r, c), 'horizontal'))
+            # vertical
+            for r in range(self.board_size - ship_len + 1):
+                for c in range(self.board_size):
+                    if all(my_board[r + i][c] == 'O' for i in range(ship_len)):
+                        valid_placements.append((ship_len, (r, c), 'vertical'))
+
+            # choose randomly among them (guaranteed to be valid)
+            chosen = random.choice(valid_placements)
+            return {
+                'ship_length': chosen[0],
+                'start': chosen[1],
+                'orientation': chosen[2]
+            }
 
         # ----- BOMBING PHASE -----
         else:
-            # 1. Update knowledge from the result of our last shot
-            last_coord = state.get('last_shot_coord')
-            last_result = state.get('last_shot_result')
-
+            # update our knowledge from the last shot (if any)
+            last_coord = state['last_shot_coord']
+            last_result = state['last_shot_result']
             if last_coord is not None:
-                self.shots.add(last_coord)
-
+                r, c = last_coord
                 if last_result == 'HIT':
-                    self.hits.add(last_coord)
-                    # Add adjacent cells as potential targets
-                    r, c = last_coord
-                    for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
-                        nr, nc = r+dr, c+dc
+                    self.opponent_grid[r][c] = 2   # hit
+                    # add neighbours to hunt queue (if unknown)
+                    for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
+                        nr, nc = r + dr, c + dc
                         if 0 <= nr < self.board_size and 0 <= nc < self.board_size:
-                            if (nr, nc) not in self.shots and (nr, nc) not in self.targets:
-                                self.targets.add((nr, nc))
-                    # Check whether any ship has been sunk
-                    self._check_sunk_and_update()
-
+                            if self.opponent_grid[nr][nc] == 0:
+                                self.hunt_queue.append((nr, nc))
                 elif last_result == 'MISS':
-                    self.misses.add(last_coord)
-                    # Remove this coordinate from the target set if it was there
-                    if last_coord in self.targets:
-                        self.targets.remove(last_coord)
+                    self.opponent_grid[r][c] = 1   # miss
 
-            # 2. Choose next target
-            if self.targets:
-                # We have active targets – pop one arbitrarily
-                target = self.targets.pop()
+            # decide next target
+            # 1. if we have pending hunt targets, use them
+            while self.hunt_queue:
+                r, c = self.hunt_queue.popleft()
+                if self.opponent_grid[r][c] == 0:   # still unknown
+                    return {'target': (r, c)}
+                # otherwise already known – skip
+
+            # 2. otherwise compute a probability map over all unknown cells
+            best_score = -1
+            candidates = []
+
+            for r in range(self.board_size):
+                for c in range(self.board_size):
+                    if self.opponent_grid[r][c] != 0:
+                        continue
+
+                    score = 0
+                    for L in self.ships:   # consider all ships (still afloat assumption)
+                        # horizontal placements covering (r,c)
+                        for start_c in range(max(0, c - L + 1), min(c, self.board_size - L) + 1):
+                            valid = True
+                            for i in range(L):
+                                if self.opponent_grid[r][start_c + i] == 1:   # miss
+                                    valid = False
+                                    break
+                            if valid:
+                                score += 1
+                        # vertical placements covering (r,c)
+                        for start_r in range(max(0, r - L + 1), min(r, self.board_size - L) + 1):
+                            valid = True
+                            for i in range(L):
+                                if self.opponent_grid[start_r + i][c] == 1:
+                                    valid = False
+                                    break
+                            if valid:
+                                score += 1
+
+                    if score > best_score:
+                        best_score = score
+                        candidates = [(r, c)]
+                    elif score == best_score:
+                        candidates.append((r, c))
+
+            if candidates:
+                chosen = random.choice(candidates)
+                return {'target': chosen}
+
+            # fallback (should never happen on a non‑full board)
+            unknowns = [(r, c) for r in range(self.board_size)
+                        for c in range(self.board_size) if self.opponent_grid[r][c] == 0]
+            if unknowns:
+                return {'target': random.choice(unknowns)}
             else:
-                # Hunt mode: prefer cells with even parity (checkerboard) for higher hit rate
-                untested = [(r, c) for r in range(self.board_size) for c in range(self.board_size)
-                            if (r, c) not in self.shots]
-                if untested:
-                    even = [pos for pos in untested if (pos[0] + pos[1]) % 2 == 0]
-                    odd  = [pos for pos in untested if (pos[0] + pos[1]) % 2 == 1]
-                    # Choose from the larger parity group to keep pattern balanced
-                    if len(even) >= len(odd):
-                        target = random.choice(even) if even else random.choice(odd)
-                    else:
-                        target = random.choice(odd) if odd else random.choice(even)
-                else:
-                    target = (0, 0)   # should never happen
-
-            return {'target': target}
+                # every cell has been shot – game should have ended, but return something
+                return {'target': (0, 0)}

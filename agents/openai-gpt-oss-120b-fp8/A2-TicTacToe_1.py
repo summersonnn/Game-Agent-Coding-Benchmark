@@ -2,175 +2,153 @@
 Agent Code: A2-TicTacToe
 Model: openai/gpt-oss-120b@preset/fp8
 Run: 1
-Generated: 2026-02-13 14:53:21
+Generated: 2026-02-14 16:45:38
 """
 
-from typing import List, Tuple, Optional
+
 
 import random
-from typing import List, Tuple, Optional
-
-# Pre‑compute all possible 3‑in‑a‑row triples on the 5×5 board
-WIN_LINES: List[Tuple[int, int, int]] = []
-
-# rows
-for r in range(5):
-    for c in range(3):
-        start = r * 5 + c
-        WIN_LINES.append((start, start + 1, start + 2))
-
-# columns
-for c in range(5):
-    for r in range(3):
-        start = r * 5 + c
-        WIN_LINES.append((start, start + 5, start + 10))
-
-# diagonals ↘ (down‑right)
-for r in range(3):
-    for c in range(3):
-        start = r * 5 + c
-        WIN_LINES.append((start, start + 6, start + 12))
-
-# diagonals ↙ (down‑left)
-for r in range(3):
-    for c in range(2, 5):
-        start = r * 5 + c
-        WIN_LINES.append((start, start + 4, start + 8))
-
-
-def _winner(board: List[str]) -> Optional[str]:
-    """Return 'X', 'O', 'DRAW', or None."""
-    for a, b, c in WIN_LINES:
-        if board[a] == board[b] == board[c] != ' ':
-            return board[a]
-    if ' ' not in board:
-        return 'DRAW'
-    return None
-
 
 class TicTacToeAgent:
     """
-    Mini‑max agent with alpha‑beta pruning for 5×5 Tic‑Tac‑Toe (3‑in‑a‑row).
-    It looks a few moves ahead, blocks opponent threats and tries to create
-    forks.  If the search does not finish (e.g., because of depth limit),
-    it falls back to a random legal move.
+    Simple but effective 5x5 Tic‑Tac‑Toe agent (3‑in‑a‑row win condition).
+    Strategy hierarchy:
+        1. Win immediately if possible.
+        2. Block opponent's immediate win.
+        3. Choose a move that creates the most two‑in‑a‑row opportunities.
+        4. Block opponent's most threatening two‑in‑a‑row setups.
+        5. Prefer centre, then corners and nearby cells.
+        6. Fallback to a random legal move.
     """
+
+    # pre‑computed list of all winning triples (indices 0‑24)
+    WIN_LINES = []
 
     def __init__(self, name: str, symbol: str):
         self.name = name
-        self.symbol = symbol            # 'X' or 'O'
-        self.opponent = 'O' if symbol == 'X' else 'X'
-        self.max_depth = 4              # depth of minimax search (adjustable)
+        self.symbol = symbol.upper()          # 'X' or 'O'
+        self.opponent = 'O' if self.symbol == 'X' else 'X'
 
-    # ----------------------------------------------------------------------
-    # Evaluation function ----------------------------------------------------
-    def _evaluate(self, board: List[str]) -> int:
+        # generate win lines once (class‑wide)
+        if not TicTacToeAgent.WIN_LINES:
+            TicTacToeAgent.WIN_LINES = self._generate_win_lines()
+
+    @staticmethod
+    def _generate_win_lines():
+        """Return a list of all 3‑cell winning combinations for a 5×5 board."""
+        lines = []
+
+        # rows
+        for r in range(5):
+            for c in range(3):
+                start = r * 5 + c
+                lines.append((start, start + 1, start + 2))
+
+        # columns
+        for c in range(5):
+            for r in range(3):
+                start = r * 5 + c
+                lines.append((start, start + 5, start + 10))
+
+        # diagonal down‑right
+        for r in range(3):
+            for c in range(3):
+                start = r * 5 + c
+                lines.append((start, start + 6, start + 12))
+
+        # diagonal down‑left
+        for r in range(3):
+            for c in range(2, 5):
+                start = r * 5 + c
+                lines.append((start, start + 4, start + 8))
+
+        return lines
+
+    # --------------------------------------------------------------------- #
+    # Helper methods operating directly on the mutable board list
+    # --------------------------------------------------------------------- #
+
+    def _is_winning_move(self, board, move, player):
+        """Check whether placing `player` at `move` wins the game."""
+        original = board[move]
+        board[move] = player
+        win = any(all(board[i] == player for i in line) for line in self.WIN_LINES)
+        board[move] = original
+        return win
+
+    def _count_two_in_row(self, board, move, player):
         """
-        Simple heuristic:
-          +1000 for a win, -1000 for a loss.
-          +50 for a line with two own marks, +10 for a line with one.
-          -50 for a line with two opponent marks, -10 for a line with one.
+        After playing `move` for `player`, count how many lines contain
+        exactly two of `player` and one empty cell.
         """
-        win = _winner(board)
-        if win == self.symbol:
-            return 1000 + board.count(' ')          # reward quick wins
-        if win == self.opponent:
-            return -1000 - board.count(' ')         # penalise quick losses
-        if win == 'DRAW':
-            return 0
+        original = board[move]
+        board[move] = player
+        cnt = 0
+        for line in self.WIN_LINES:
+            cells = [board[i] for i in line]
+            if cells.count(player) == 2 and cells.count(' ') == 1:
+                cnt += 1
+        board[move] = original
+        return cnt
 
-        score = 0
-        for a, b, c in WIN_LINES:
-            line = (board[a], board[b], board[c])
-            own = line.count(self.symbol)
-            opp = line.count(self.opponent)
+    # --------------------------------------------------------------------- #
+    # Core decision routine
+    # --------------------------------------------------------------------- #
 
-            if own > 0 and opp == 0:          # only my marks in the line
-                if own == 2:
-                    score += 50
-                elif own == 1:
-                    score += 10
-            elif opp > 0 and own == 0:        # only opponent marks
-                if opp == 2:
-                    score -= 50
-                elif opp == 1:
-                    score -= 10
-        return score
+    def make_move(self, board):
+        """Return the index (0‑24) of the chosen move."""
+        empty_cells = [i for i, v in enumerate(board) if v == ' ']
 
-    # ----------------------------------------------------------------------
-    # Mini‑max with alpha‑beta ------------------------------------------------
-    def _minimax(self,
-                 board: List[str],
-                 depth: int,
-                 alpha: int,
-                 beta: int,
-                 maximizing: bool) -> Tuple[int, Optional[int]]:
-        """
-        Returns (score, best_move).  `best_move` is None when depth == 0
-        or the board is terminal.
-        """
-        win = _winner(board)
-        if win or depth == 0:
-            return self._evaluate(board), None
+        # 1. Win if possible
+        for mv in empty_cells:
+            if self._is_winning_move(board, mv, self.symbol):
+                return mv
 
-        moves = [i for i, v in enumerate(board) if v == ' ']
-        best_move: Optional[int] = None
+        # 2. Block opponent's immediate win
+        for mv in empty_cells:
+            if self._is_winning_move(board, mv, self.opponent):
+                return mv
 
-        if maximizing:
-            max_eval = -float('inf')
-            for m in moves:
-                board[m] = self.symbol
-                eval_score, _ = self._minimax(board, depth - 1, alpha, beta, False)
-                board[m] = ' '
-                if eval_score > max_eval:
-                    max_eval, best_move = eval_score, m
-                alpha = max(alpha, eval_score)
-                if beta <= alpha:
-                    break
-            return max_eval, best_move
-        else:
-            min_eval = float('inf')
-            for m in moves:
-                board[m] = self.opponent
-                eval_score, _ = self._minimax(board, depth - 1, alpha, beta, True)
-                board[m] = ' '
-                if eval_score < min_eval:
-                    min_eval, best_move = eval_score, m
-                beta = min(beta, eval_score)
-                if beta <= alpha:
-                    break
-            return min_eval, best_move
+        # 3. Choose move that creates the most own two‑in‑row opportunities
+        best_score = -1
+        best_moves = []
+        for mv in empty_cells:
+            score = self._count_two_in_row(board, mv, self.symbol)
+            if score > best_score:
+                best_score = score
+                best_moves = [mv]
+            elif score == best_score:
+                best_moves.append(mv)
+        if best_score > 0:
+            return random.choice(best_moves)
 
-    # ----------------------------------------------------------------------
-    # Public interface -------------------------------------------------------
-    def make_move(self, board: List[str]) -> int:
-        """
-        Choose a move:
-          1. Win immediately if possible.
-          2. Block opponent's immediate win.
-          3. Use minimax to pick the best continuation.
-          4. Fallback to a random legal move.
-        """
-        empty = [i for i, v in enumerate(board) if v == ' ']
+        # 4. Block opponent's most threatening two‑in‑row setups
+        opp_best_score = -1
+        opp_best_moves = []
+        for mv in empty_cells:
+            score = self._count_two_in_row(board, mv, self.opponent)
+            if score > opp_best_score:
+                opp_best_score = score
+                opp_best_moves = [mv]
+            elif score == opp_best_score:
+                opp_best_moves.append(mv)
+        if opp_best_score > 0:
+            # Prefer a move that also helps us if possible
+            intersect = set(best_moves).intersection(opp_best_moves)
+            if intersect:
+                return random.choice(list(intersect))
+            return random.choice(opp_best_moves)
 
-        # --- 1. Immediate winning move ------------------------------------------------
-        for a, b, c in WIN_LINES:
-            line = (board[a], board[b], board[c])
-            if line.count(self.symbol) == 2 and line.count(' ') == 1:
-                win_idx = (a, b, c)[line.index(' ')]
-                return win_idx
+        # 5. Positional preference: centre, then corners and near‑centre cells
+        preference_order = [
+            12,                     # centre
+            6, 8, 10, 14,           # cells adjacent to centre
+            0, 4, 20, 24,           # corners
+            2, 22, 18, 16, 1, 3, 5, 9, 15, 19, 21, 23, 7, 11, 13, 17
+        ]
+        for pos in preference_order:
+            if pos in empty_cells:
+                return pos
 
-        # --- 2. Block opponent's immediate win ----------------------------------------
-        for a, b, c in WIN_LINES:
-            line = (board[a], board[b], board[c])
-            if line.count(self.opponent) == 2 and line.count(' ') == 1:
-                block_idx = (a, b, c)[line.index(' ')]
-                return block_idx
-
-        # --- 3. Mini‑max search ---------------------------------------------------------
-        _, best = self._minimax(board[:], self.max_depth, -float('inf'), float('inf'), True)
-        if best is not None and board[best] == ' ':
-            return best
-
-        # --- 4. Random fallback ---------------------------------------------------------
-        return random.choice(empty) if empty else -1
+        # 6. Fallback – random legal move (should never be reached if board not full)
+        return random.choice(empty_cells) if empty_cells else None

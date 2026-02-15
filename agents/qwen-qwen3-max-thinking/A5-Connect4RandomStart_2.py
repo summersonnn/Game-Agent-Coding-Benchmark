@@ -5,211 +5,167 @@ Run: 2
 Generated: 2026-02-13 14:10:12
 """
 
-
-
 import random
+import time
 
 class Connect4Agent:
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
-        self.opp_symbol = 'Y' if symbol == 'R' else 'R'
-        # Move ordering: prioritize center, then symmetry
-        self.move_order = [3, 2, 4, 1, 5, 0, 6]
-    
-    def get_valid_moves(self, board):
-        """Return list of columns with free space (top row empty)."""
-        return [c for c in range(7) if board[0][c] == ' ']
-    
-    def get_next_open_row(self, board, col):
-        """Find the lowest empty row in given column."""
+        self.opponent = 'R' if symbol == 'Y' else 'Y'
+        self.time_limit = 0.95
+
+    def make_move(self, board):
+        valid_cols = [c for c in range(7) if board[0][c] == ' ']
+        if not valid_cols:
+            return 0
+
+        for col in valid_cols:
+            if self._is_winning_move(board, col, self.symbol):
+                return col
+
+        for col in valid_cols:
+            if self._is_winning_move(board, col, self.opponent):
+                return col
+
+        self.start_time = time.time()
+        best_col = random.choice(valid_cols)
+        max_depth = 5
+        for depth in range(1, max_depth + 1):
+            try:
+                col, _ = self._minimax(board, depth, True, -float('inf'), float('inf'))
+                if col is not None:
+                    best_col = col
+            except self.TimeoutException:
+                break
+            if time.time() - self.start_time > self.time_limit:
+                break
+        return best_col
+
+    def _minimax(self, board, depth, maximizing, alpha, beta):
+        if time.time() - self.start_time > self.time_limit:
+            raise self.TimeoutException()
+
+        valid_cols = [c for c in range(7) if board[0][c] == ' ']
+        winner = self._check_winner(board)
+        if winner == self.symbol:
+            return None, 1000000
+        if winner == self.opponent:
+            return None, -1000000
+        if not valid_cols or depth == 0:
+            return None, self._evaluate_board(board)
+
+        col_order = [3, 2, 4, 1, 5, 0, 6]
+        ordered_cols = [c for c in col_order if c in valid_cols]
+
+        if maximizing:
+            max_eval = -float('inf')
+            best_col = ordered_cols[0] if ordered_cols else random.choice(valid_cols)
+            for col in ordered_cols:
+                new_board = self._drop_disc(board, col, self.symbol)
+                _, eval_score = self._minimax(new_board, depth - 1, False, alpha, beta)
+                if eval_score > max_eval:
+                    max_eval = eval_score
+                    best_col = col
+                alpha = max(alpha, eval_score)
+                if beta <= alpha:
+                    break
+            return best_col, max_eval
+        else:
+            min_eval = float('inf')
+            best_col = ordered_cols[0] if ordered_cols else random.choice(valid_cols)
+            for col in ordered_cols:
+                new_board = self._drop_disc(board, col, self.opponent)
+                _, eval_score = self._minimax(new_board, depth - 1, True, alpha, beta)
+                if eval_score < min_eval:
+                    min_eval = eval_score
+                    best_col = col
+                beta = min(beta, eval_score)
+                if beta <= alpha:
+                    break
+            return best_col, min_eval
+
+    def _drop_disc(self, board, col, disc):
+        new_board = [row[:] for row in board]
         for r in range(5, -1, -1):
-            if board[r][col] == ' ':
-                return r
-        return None  # Should not occur for valid columns
-    
-    def is_winning_move(self, board, piece):
-        """Check if the given piece has a winning position on this board."""
-        # Horizontal
+            if new_board[r][col] == ' ':
+                new_board[r][col] = disc
+                break
+        return new_board
+
+    def _check_winner(self, board):
         for r in range(6):
             for c in range(4):
-                if (board[r][c] == piece and board[r][c+1] == piece and 
-                    board[r][c+2] == piece and board[r][c+3] == piece):
-                    return True
-        
-        # Vertical
+                if board[r][c] != ' ' and board[r][c] == board[r][c+1] == board[r][c+2] == board[r][c+3]:
+                    return board[r][c]
         for r in range(3):
             for c in range(7):
-                if (board[r][c] == piece and board[r+1][c] == piece and 
-                    board[r+2][c] == piece and board[r+3][c] == piece):
-                    return True
-        
-        # Diagonal \
+                if board[r][c] != ' ' and board[r][c] == board[r+1][c] == board[r+2][c] == board[r+3][c]:
+                    return board[r][c]
         for r in range(3):
             for c in range(4):
-                if (board[r][c] == piece and board[r+1][c+1] == piece and 
-                    board[r+2][c+2] == piece and board[r+3][c+3] == piece):
-                    return True
-        
-        # Diagonal /
+                if board[r][c] != ' ' and board[r][c] == board[r+1][c+1] == board[r+2][c+2] == board[r+3][c+3]:
+                    return board[r][c]
         for r in range(3, 6):
             for c in range(4):
-                if (board[r][c] == piece and board[r-1][c+1] == piece and 
-                    board[r-2][c+2] == piece and board[r-3][c+3] == piece):
-                    return True
-        
+                if board[r][c] != ' ' and board[r][c] == board[r-1][c+1] == board[r-2][c+2] == board[r-3][c+3]:
+                    return board[r][c]
+        return None
+
+    def _is_winning_move(self, board, col, disc):
+        for r in range(5, -1, -1):
+            if board[r][col] == ' ':
+                board[r][col] = disc
+                win = self._check_winner(board) == disc
+                board[r][col] = ' '
+                return win
         return False
-    
-    def evaluate_window(self, window):
-        """Score a window of 4 positions for strategic value."""
+
+    def _evaluate_board(self, board):
         score = 0
-        empty = ' '
-        empty_count = window.count(empty)
-        
-        # Aggressive scoring for agent threats
-        if (self.symbol == 'R' and window.count('R') == 3 and empty_count == 1) or \
-           (self.symbol == 'Y' and window.count('Y') == 3 and empty_count == 1):
-            score += 150
-        
-        if windows.count(self.symbol) == 2 and empty_count == 2:
-            score += 20
-        
-        # Critical opponent threat blocking
-        if opp_count == 3 and empty_count == 1:
-            score -= 200  # Prioritize blocking threats
-        
-        if opp_count == 2 and empty_count == 2:
-            score -= 30
-        
-        return score
-    
-    def evaluate_board(self, board):
-        score = 0
-        
-        # Center control bonus (most valuable column)
         center_col = [board[r][3] for r in range(6)]
-        score += center_col.count(self.symbol) * 5
-        
-        # Analyze all possible 4-in-a-row windows
-        # Horizontal
+        score += center_col.count(self.symbol) * 3
+        score -= center_col.count(self.opponent) * 3
+
         for r in range(6):
             row = board[r]
             for c in range(4):
                 window = row[c:c+4]
-                score += self.evaluate_window(window)
-        
-        # Vertical
+                score += self._score_window(window)
         for c in range(7):
-            col_array = [board[r][c] for r in range(6)]
+            col = [board[r][c] for r in range(6)]
             for r in range(3):
-                window = col_array[r:r+4]
-                score += self.evaluate_window(window)
-        
-        # Diagonal \
+                window = col[r:r+4]
+                score += self._score_window(window)
         for r in range(3):
             for c in range(4):
                 window = [board[r+i][c+i] for i in range(4)]
-                score += self.evaluate_window(window)
-        
-        # Diagonal /
+                score += self._score_window(window)
         for r in range(3, 6):
             for c in range(4):
                 window = [board[r-i][c+i] for i in range(4)]
-                score += self.evaluate_window(window)
-        
+                score += self._score_window(window)
         return score
-    
-    def minimax(self, board, depth, alpha, beta, is_maximizing):
-        """Alpha-beta minimax tree searcher."""
-        # Terminal checks
-        if self.is_winning_move(board, self.symbol):
-            return float('inf')
-        if self.is_winning_move(board, self.opp_symbol):
-            return float('-inf')
-        if all(board[0][c] != ' ' for c in range(7)):  # Draw
-            return 0
-        if depth == 0:
-            return self.evaluate_board(board)
-        
-        valid_moves = self.get_valid_moves(board)
-        moves = [m for m in self.move_order if m in valid_moves]
-        
-        if is_maximizing:
-            value = float('-inf')
-            for col in moves:
-                row = self.get_next_open_row(board, col)
-                board[row][col] = self.symbol
-                score = self.minimax(board, depth-1, alpha, beta, False)
-                board[row][col] = ' '
-                value = max(value, score)
-                alpha = max(alpha, value)
-                if alpha >= beta:
-                    break
-            return value
-        else:
-            value = float('inf')
-            for col in moves:
-                row = self.get_next_open_row(board, col)
-                board[row][col] = self.opp_symbol
-                score = self.minimax(board, depth-1, alpha, beta, True)
-                board[row][col] = ' '
-                value = min(value, score)
-                beta = min(beta, value)
-                if alpha >= beta:
-                    break
-            return value
-    
-    def make_move(self, board):
-        """Return optimal column choice with strategic checks."""
-        valid_moves = self.get_valid_moves(board)
-        if not valid_moves:
-            return self.move_order[0]  # Fallback
-        
-        # Order moves by strategic priority
-        moves = [m for m in self.move_order if m in valid_moves]
-        
-        # ➊ IMMEDIATE WIN CHECK: Check if we can win this turn
-        for col in moves:
-            row = self.get_next_open_row(board, col)
-            board[row][col] = self.symbol
-            if self.is_winning_move(board, self.symbol):
-                board[row][col] = ' '
-                return col
-            board[row][col] = ' '
-        
-        # ❼ OPPONENT WIN BLOCK: Check if any move blocks opponent's win
-        for col in moves:
-            row = self.get_next_open_row(board, col)
-            board[row][col] = self.opp_symbol
-            if self.is_winning_move(board, self.opp_symbol):
-                board[row][col] = ' '
-                return col
-            board[row][col] = ' '
-        
-        # ➌ DEPTH-ADAPTIVE SEARCH: Adjust depth based on game stage
-        pieces_on_board = sum(row.count('R') + row.count('Y') for row in board)
-        # Early game: depth=4 | Mid game: depth=5 | Late game: depth=6+
-        max_depth = 4 + min((pieces_on_board - 1) // 10, 3)  # Max depth 7
-        
-        # ➍ MINIMAX SEARCH with alpha-beta pruning
-        best_score = float('-inf')
-        best_col = moves[0]
-        alpha = float('-inf')
-        beta = float('inf')
-        
-        for col in moves:
-            row = self.get_next_open_row(board, col)
-            board[row][col] = self.symbol
-            score = self.minimax(board, max_depth - 1, alpha, beta, False)
-            board[row][col] = ' '
-            
-            if score > best_score:
-                best_score = score
-                best_col = col
-                alpha = max(alpha, best_score)
-            
-            # Alpha-beta pruned search
-            if alpha >= beta:
-                break
-        
-        return best_col
+
+    def _score_window(self, window):
+        my = window.count(self.symbol)
+        opp = window.count(self.opponent)
+        empty = window.count(' ')
+        score = 0
+        if my == 4:
+            score += 100000
+        elif my == 3 and empty == 1:
+            score += 50
+        elif my == 2 and empty == 2:
+            score += 10
+        elif my == 1 and empty == 3:
+            score += 1
+        if opp == 4:
+            score -= 100000
+        elif opp == 3 and empty == 1:
+            score -= 55
+        elif opp == 2 and empty == 2:
+            score -= 12
+        elif opp == 1 and empty == 3:
+            score -= 1
+        return score

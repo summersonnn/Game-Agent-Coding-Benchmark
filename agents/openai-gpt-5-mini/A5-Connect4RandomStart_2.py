@@ -2,141 +2,280 @@
 Agent Code: A5-Connect4RandomStart
 Model: openai/gpt-5-mini
 Run: 2
-Generated: 2026-02-12 14:50:42
+Generated: 2026-02-14 19:46:39
 """
 
-
-
-import random
+import time
 
 class Connect4Agent:
     def __init__(self, name, symbol):
         """
-        name: str - agent name (for logging if desired)
-        symbol: 'R' or 'Y' - the agent's disc
+        name: str
+        symbol: 'R' or 'Y'
         """
         self.name = name
         self.symbol = symbol
+        self.opp_symbol = 'Y' if symbol == 'R' else 'R'
+        self.ROWS = 6
+        self.COLS = 7
+        self.TIME_LIMIT = 0.95  # seconds per move budget
+        # Preferred move ordering (center first)
+        self.ORDER = [3, 2, 4, 1, 5, 0, 6]
+        self.CENTER = self.COLS // 2
 
     def make_move(self, board):
         """
-        Decide the next move based on the current board state.
-        Returns an int column index (0-6).
+        Decide next move (column index 0-6).
+        Uses iterative deepening alpha-beta search with a simple heuristic.
         """
-        ROWS = 6
-        COLS = 7
-        EMPTY = ' '
+        start_time = time.time()
+        self.start_time = start_time
 
-        def get_valid_cols(b):
-            return [c for c in range(COLS) if b[0][c] == EMPTY]
+        valid_cols = self.get_valid_columns(board)
+        if not valid_cols:
+            return 0
 
-        def simulate_drop(b, col, disc):
-            nb = [row[:] for row in b]
-            for r in range(ROWS - 1, -1, -1):
-                if nb[r][col] == EMPTY:
-                    nb[r][col] = disc
-                    return nb, r
-            return None, None
+        # Quick immediate win
+        for col in valid_cols:
+            row = self.get_next_open_row(board, col)
+            if row is None:
+                continue
+            board[row][col] = self.symbol
+            if self.check_win(board, self.symbol):
+                board[row][col] = ' '
+                return col
+            board[row][col] = ' '
 
-        def check_winner(b):
-            # Horizontal
-            for r in range(ROWS):
-                for c in range(COLS - 3):
-                    if b[r][c] != EMPTY and b[r][c] == b[r][c+1] == b[r][c+2] == b[r][c+3]:
-                        return b[r][c]
-            # Vertical
-            for r in range(ROWS - 3):
-                for c in range(COLS):
-                    if b[r][c] != EMPTY and b[r][c] == b[r+1][c] == b[r+2][c] == b[r+3][c]:
-                        return b[r][c]
-            # Diagonal /
-            for r in range(3, ROWS):
-                for c in range(COLS - 3):
-                    if b[r][c] != EMPTY and b[r][c] == b[r-1][c+1] == b[r-2][c+2] == b[r-3][c+3]:
-                        return b[r][c]
-            # Diagonal \
-            for r in range(ROWS - 3):
-                for c in range(COLS - 3):
-                    if b[r][c] != EMPTY and b[r][c] == b[r+1][c+1] == b[r+2][c+2] == b[r+3][c+3]:
-                        return b[r][c]
-            return None
+        # Block opponent immediate win
+        for col in valid_cols:
+            row = self.get_next_open_row(board, col)
+            if row is None:
+                continue
+            board[row][col] = self.opp_symbol
+            if self.check_win(board, self.opp_symbol):
+                board[row][col] = ' '
+                return col
+            board[row][col] = ' '
 
-        try:
-            me = self.symbol
-            opp = 'R' if me == 'Y' else 'Y'
-            valid = get_valid_cols(board)
-            if not valid:
-                # No valid moves; return a safe default
-                return 0
+        # If center open, prefer center
+        if self.CENTER in valid_cols:
+            return self.CENTER
 
-            # 1) Immediate winning move
-            winning = []
-            for c in valid:
-                nb, _ = simulate_drop(board, c, me)
-                if nb and check_winner(nb) == me:
-                    winning.append(c)
-            if winning:
-                return random.choice(winning)
+        # Choose max depth depending on remaining empties
+        empty_slots = sum(1 for r in range(self.ROWS) for c in range(self.COLS) if board[r][c] == ' ')
+        if empty_slots <= 10:
+            max_depth = 8
+        elif empty_slots <= 20:
+            max_depth = 6
+        else:
+            max_depth = 5
 
-            # 2) Block opponent immediate win(s)
-            opp_wins = []
-            for c in valid:
-                nb, _ = simulate_drop(board, c, opp)
-                if nb and check_winner(nb) == opp:
-                    opp_wins.append(c)
-            if len(opp_wins) == 1:
-                return opp_wins[0]
-            if len(opp_wins) > 1:
-                # Multiple immediate threats — cannot always block all;
-                # try to block one (randomly) to delay loss, or pick any valid.
-                return random.choice(opp_wins)
+        # Fallback random valid move
+        best_col = random.choice(valid_cols)
+        best_score = -10**9
 
-            # 3) Create a fork (move that gives >=2 immediate wins next turn)
-            forks = []
-            for c in valid:
-                nb, _ = simulate_drop(board, c, me)
-                if not nb:
+        # Iterative deepening
+        for depth in range(1, max_depth + 1):
+            # stop if out of time
+            if time.time() - self.start_time > self.TIME_LIMIT:
+                break
+            score, col, aborted = self._minimax_root(board, depth)
+            if aborted:
+                break
+            if col is not None:
+                best_col = col
+                best_score = score
+
+        # Ensure returned column is valid
+        if not isinstance(best_col, int) or best_col not in valid_cols:
+            best_col = random.choice(valid_cols)
+        return best_col
+
+    # Helper functions
+
+    def get_valid_columns(self, board):
+        return [c for c in range(self.COLS) if board[0][c] == ' ']
+
+    def get_next_open_row(self, board, col):
+        for r in range(self.ROWS - 1, -1, -1):
+            if board[r][col] == ' ':
+                return r
+        return None
+
+    def check_win(self, board, piece):
+        # Horizontal
+        for r in range(self.ROWS):
+            for c in range(self.COLS - 3):
+                if board[r][c] == piece and board[r][c + 1] == piece and board[r][c + 2] == piece and board[r][c + 3] == piece:
+                    return True
+        # Vertical
+        for r in range(self.ROWS - 3):
+            for c in range(self.COLS):
+                if board[r][c] == piece and board[r + 1][c] == piece and board[r + 2][c] == piece and board[r + 3][c] == piece:
+                    return True
+        # Diagonal /
+        for r in range(3, self.ROWS):
+            for c in range(self.COLS - 3):
+                if board[r][c] == piece and board[r - 1][c + 1] == piece and board[r - 2][c + 2] == piece and board[r - 3][c + 3] == piece:
+                    return True
+        # Diagonal \
+        for r in range(self.ROWS - 3):
+            for c in range(self.COLS - 3):
+                if board[r][c] == piece and board[r + 1][c + 1] == piece and board[r + 2][c + 2] == piece and board[r + 3][c + 3] == piece:
+                    return True
+        return False
+
+    def is_terminal_node(self, board):
+        return self.check_win(board, self.symbol) or self.check_win(board, self.opp_symbol) or not self.get_valid_columns(board)
+
+    def evaluate_window(self, window, piece):
+        opp = self.opp_symbol
+        score = 0
+        piece_count = window.count(piece)
+        opp_count = window.count(opp)
+        empty_count = window.count(' ')
+        if piece_count == 4:
+            score += 10000
+        elif piece_count == 3 and empty_count == 1:
+            score += 100
+        elif piece_count == 2 and empty_count == 2:
+            score += 10
+        if opp_count == 3 and empty_count == 1:
+            score -= 90
+        elif opp_count == 2 and empty_count == 2:
+            score -= 5
+        return score
+
+    def score_position(self, board, piece):
+        score = 0
+        # Center column preference
+        center_count = sum(1 for r in range(self.ROWS) if board[r][self.CENTER] == piece)
+        score += center_count * 3
+
+        # Horizontal windows
+        for r in range(self.ROWS):
+            row_array = board[r]
+            for c in range(self.COLS - 3):
+                window = row_array[c:c + 4]
+                score += self.evaluate_window(window, piece)
+
+        # Vertical windows
+        for c in range(self.COLS):
+            col_array = [board[r][c] for r in range(self.ROWS)]
+            for r in range(self.ROWS - 3):
+                window = col_array[r:r + 4]
+                score += self.evaluate_window(window, piece)
+
+        # Diagonal down-right (\)
+        for r in range(self.ROWS - 3):
+            for c in range(self.COLS - 3):
+                window = [board[r + i][c + i] for i in range(4)]
+                score += self.evaluate_window(window, piece)
+
+        # Diagonal up-right (/)
+        for r in range(3, self.ROWS):
+            for c in range(self.COLS - 3):
+                window = [board[r - i][c + i] for i in range(4)]
+                score += self.evaluate_window(window, piece)
+
+        return score
+
+    # Minimax with alpha-beta and time checks
+    def _minimax_root(self, board, depth):
+        alpha = -10**9
+        beta = 10**9
+        best_score = -10**9
+        best_col = None
+        aborted = False
+
+        for col in self.ORDER:
+            if time.time() - self.start_time > self.TIME_LIMIT:
+                aborted = True
+                break
+            if board[0][col] != ' ':
+                continue
+            row = self.get_next_open_row(board, col)
+            if row is None:
+                continue
+            board[row][col] = self.symbol
+            score, _, child_aborted = self._minimax(board, depth - 1, alpha, beta, False)
+            board[row][col] = ' '
+            if child_aborted:
+                aborted = True
+                break
+            if score is None:
+                continue
+            if score > best_score:
+                best_score = score
+                best_col = col
+            alpha = max(alpha, best_score)
+        return best_score, best_col, aborted
+
+    def _minimax(self, board, depth, alpha, beta, maximizingPlayer):
+        # Time check
+        if time.time() - self.start_time > self.TIME_LIMIT:
+            return None, None, True
+
+        valid_cols = self.get_valid_columns(board)
+        terminal = self.is_terminal_node(board)
+        if depth == 0 or terminal:
+            if terminal:
+                if self.check_win(board, self.symbol):
+                    return 10**7, None, False
+                elif self.check_win(board, self.opp_symbol):
+                    return -10**7, None, False
+                else:
+                    return 0, None, False
+            else:
+                return self.score_position(board, self.symbol), None, False
+
+        if maximizingPlayer:
+            value = -10**9
+            best_col = random.choice(valid_cols)
+            for col in self.ORDER:
+                if time.time() - self.start_time > self.TIME_LIMIT:
+                    return None, None, True
+                if col not in valid_cols:
                     continue
-                nb_valid = get_valid_cols(nb)
-                wins_after = 0
-                for c2 in nb_valid:
-                    nb2, _ = simulate_drop(nb, c2, me)
-                    if nb2 and check_winner(nb2) == me:
-                        wins_after += 1
-                if wins_after >= 2:
-                    forks.append(c)
-            if forks:
-                return random.choice(forks)
-
-            # 4) Prefer center columns while avoiding moves that let opponent win immediately
-            preference = [3, 2, 4, 1, 5, 0, 6]
-            safe_choices = []
-            for c in preference:
-                if c not in valid:
+                row = self.get_next_open_row(board, col)
+                if row is None:
                     continue
-                nb, _ = simulate_drop(board, c, me)
-                if not nb:
+                board[row][col] = self.symbol
+                new_score, _, aborted = self._minimax(board, depth - 1, alpha, beta, False)
+                board[row][col] = ' '
+                if aborted:
+                    return None, None, True
+                if new_score is None:
                     continue
-                # Does opponent have an immediate winning reply after this move?
-                opp_can_win = False
-                nb_valid = get_valid_cols(nb)
-                for c2 in nb_valid:
-                    nb2, _ = simulate_drop(nb, c2, opp)
-                    if nb2 and check_winner(nb2) == opp:
-                        opp_can_win = True
-                        break
-                if not opp_can_win:
-                    safe_choices.append(c)
-            if safe_choices:
-                return random.choice(safe_choices)
-
-            # 5) Fallback: pick a valid column (prefer center by order)
-            for c in preference:
-                if c in valid:
-                    return c
-            return random.choice(valid)
-
-        except Exception:
-            # On unexpected error, return a random valid move (engine will handle crashes/timeouts)
-            valid = [c for c in range(7) if board[0][c] == EMPTY]
-            return random.choice(valid) if valid else 0
+                if new_score > value:
+                    value = new_score
+                    best_col = col
+                alpha = max(alpha, value)
+                if alpha >= beta:
+                    break
+            return value, best_col, False
+        else:
+            value = 10**9
+            best_col = random.choice(valid_cols)
+            for col in self.ORDER:
+                if time.time() - self.start_time > self.TIME_LIMIT:
+                    return None, None, True
+                if col not in valid_cols:
+                    continue
+                row = self.get_next_open_row(board, col)
+                if row is None:
+                    continue
+                board[row][col] = self.opp_symbol
+                new_score, _, aborted = self._minimax(board, depth - 1, alpha, beta, True)
+                board[row][col] = ' '
+                if aborted:
+                    return None, None, True
+                if new_score is None:
+                    continue
+                if new_score < value:
+                    value = new_score
+                    best_col = col
+                beta = min(beta, value)
+                if alpha >= beta:
+                    break
+            return value, best_col, False

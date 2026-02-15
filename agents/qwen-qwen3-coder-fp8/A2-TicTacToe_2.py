@@ -36,16 +36,12 @@ class TicTacToeAgent:
             return block_move
             
         # Use minimax for deeper strategy
-        try:
-            move = self.minimax(board, 3, True, float('-inf'), float('inf'))[1]
-            if move is not None and board[move] == ' ':
-                return move
-        except:
-            pass
+        move = self.minimax(board, 3, True, float('-inf'), float('inf'))[1]
+        if move is not None and board[move] == ' ':
+            return move
+
             
-        # Fallback to available moves
-        available_moves = [i for i, spot in enumerate(board) if spot == ' ']
-        return random.choice(available_moves) if available_moves else None
+
 
     def find_winning_move(self, board, player):
         """Find a move that results in an immediate win for the player."""

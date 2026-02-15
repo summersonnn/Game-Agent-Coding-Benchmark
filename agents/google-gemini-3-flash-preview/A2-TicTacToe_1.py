@@ -13,9 +13,11 @@ class TicTacToeAgent:
         self.name = name
         self.symbol = symbol
         self.opponent = 'O' if symbol == 'X' else 'X'
+        self.grid_size = 5
         self.win_conditions = self._generate_win_conditions()
 
     def _generate_win_conditions(self):
+        """Pre-calculates all possible triplets that result in a win."""
         conditions = []
         # Rows
         for r in range(5):
@@ -40,6 +42,7 @@ class TicTacToeAgent:
         return conditions
 
     def make_move(self, board):
+        """Strategic move selection based on immediate win/loss and position weighting."""
         available_moves = [i for i, spot in enumerate(board) if spot == ' ']
         if not available_moves:
             return None
@@ -54,29 +57,39 @@ class TicTacToeAgent:
             if self._is_winning_move(board, move, self.opponent):
                 return move
 
-        # 3. Strategic positioning: Prefer the center 3x3 area
-        # These cells (6, 7, 8, 11, 12, 13, 16, 17, 18) are parts of more winning combos
-        center_indices = [12, 6, 8, 16, 18, 7, 11, 13, 17]
-        for idx in center_indices:
-            if idx in available_moves:
-                return idx
+        # 3. Positional Strategy: Weight cells by how many win conditions they belong to
+        # The center (12) and inner ring are generally stronger.
+        move_weights = {move: 0 for move in available_moves}
+        for combo in self.win_conditions:
+            # Count how many of our marks are already in this combo
+            our_marks = sum(1 for idx in combo if board[idx] == self.symbol)
+            opp_marks = sum(1 for idx in combo if board[idx] == self.opponent)
+            
+            # If the combo is still 'alive' (no opponent marks)
+            if opp_marks == 0:
+                for idx in combo:
+                    if idx in move_weights:
+                        move_weights[idx] += (1 + our_marks)
+            
+            # If we can block a future setup (opponent has 1, we have 0)
+            if our_marks == 0 and opp_marks == 1:
+                for idx in combo:
+                    if idx in move_weights:
+                        move_weights[idx] += 1
 
-        # 4. Fallback to random available move
+        # Pick the move with the highest weight
+        if move_weights:
+            best_move = max(move_weights, key=move_weights.get)
+            return best_move
+
         return random.choice(available_moves)
 
     def _is_winning_move(self, board, move, player_symbol):
-        """Simulates a move to see if it results in a win."""
-        # Temporary move
-        board[move] = player_symbol
-        is_win = False
-        
-        # We only check conditions that involve the move just made for efficiency
+        """Temporary simulation to see if a move completes any 3-in-a-row."""
         for combo in self.win_conditions:
             if move in combo:
-                if board[combo[0]] == board[combo[1]] == board[combo[2]] == player_symbol:
-                    is_win = True
-                    break
-        
-        # Undo move
-        board[move] = ' '
-        return is_win
+                # Check if the other two spots in this specific combo are held by the player
+                others = [board[idx] for idx in combo if idx != move]
+                if all(s == player_symbol for s in others):
+                    return True
+        return False

@@ -2,167 +2,152 @@
 Agent Code: A2-TicTacToe
 Model: stepfun/step-3.5-flash:free
 Run: 2
-Generated: 2026-02-13 15:25:40
+Generated: 2026-02-14 16:45:38
 """
 
 
 
-class TicTacToeAgent:
-    EMPTY = ' '
-    X_MARK = 'X'
-    O_MARK = 'O'
+import random
 
+class TicTacToeAgent:
+    WIN_LINES = [
+        # Rows
+        (0,1,2), (1,2,3), (2,3,4),
+        (5,6,7), (6,7,8), (7,8,9),
+        (10,11,12), (11,12,13), (12,13,14),
+        (15,16,17), (16,17,18), (17,18,19),
+        (20,21,22), (21,22,23), (22,23,24),
+        # Columns
+        (0,5,10), (5,10,15), (10,15,20),
+        (1,6,11), (6,11,16), (11,16,21),
+        (2,7,12), (7,12,17), (12,17,22),
+        (3,8,13), (8,13,18), (13,18,23),
+        (4,9,14), (9,14,19), (14,19,24),
+        # Diagonals (down-right)
+        (0,6,12), (1,7,13), (2,8,14),
+        (5,11,17), (6,12,18), (7,13,19),
+        (10,16,22), (11,17,23), (12,18,24),
+        # Diagonals (down-left)
+        (4,8,12), (3,7,11), (2,6,10),
+        (9,13,17), (8,12,16), (7,11,15),
+        (14,18,22), (13,17,21), (12,16,20)
+    ]
+    
     def __init__(self, name, symbol):
         self.name = name
-        self.symbol = symbol
-        self.winning_lines = self._generate_winning_lines()
-        self.cell_to_lines = [[] for _ in range(25)]
-        for i, line in enumerate(self.winning_lines):
-            for idx in line:
-                self.cell_to_lines[idx].append(i)
-
-    def _generate_winning_lines(self):
-        lines = []
-        # Rows
-        for r in range(5):
-            for c in range(3):
-                start = r * 5 + c
-                lines.append((start, start + 1, start + 2))
-        # Columns
-        for c in range(5):
-            for r in range(3):
-                start = r * 5 + c
-                lines.append((start, start + 5, start + 10))
-        # Diagonals (down-right)
-        for r in range(3):
-            for c in range(3):
-                start = r * 5 + c
-                lines.append((start, start + 6, start + 12))
-        # Diagonals (down-left)
-        for r in range(3):
-            for c in range(2, 5):
-                start = r * 5 + c
-                lines.append((start, start + 4, start + 8))
-        return lines
-
-    def _is_threat(self, board, move, player):
-        """Check if playing at move would complete a 3-in-a-row for player."""
-        for line_idx in self.cell_to_lines[move]:
-            a, b, c = self.winning_lines[line_idx]
-            cells = [board[a], board[b], board[c]]
-            # Count player marks and empty cells in this line
-            player_count = sum(1 for cell in cells if cell == player)
-            empty_count = sum(1 for cell in cells if cell == self.EMPTY)
-            if player_count == 2 and empty_count == 1:
-                return True
-        return False
-
+        self.symbol = symbol  # 'X' or 'O'
+    
+    def make_move(self, board):
+        available = [i for i in range(25) if board[i] == ' ']
+        if not available:
+            return None
+        
+        # Step 1: Check for immediate win
+        for move in available:
+            board[move] = self.symbol
+            if self._check_winner(board) == self.symbol:
+                board[move] = ' '
+                return move
+            board[move] = ' '
+        
+        # Step 2: Block opponent's immediate win
+        opp_symbol = 'O' if self.symbol == 'X' else 'X'
+        for move in available:
+            board[move] = opp_symbol
+            if self._check_winner(board) == opp_symbol:
+                board[move] = ' '
+                return move
+            board[move] = ' '
+        
+        # Step 3: Use minimax with adaptive depth
+        empty_count = len(available)
+        empty_after = empty_count - 1
+        if empty_after <= 5:
+            depth = 4
+        elif empty_after <= 10:
+            depth = 3
+        else:
+            depth = 2
+        
+        best_move = None
+        best_score = -float('inf')
+        for move in available:
+            board[move] = self.symbol
+            score = self._minimax(board, depth, False, -float('inf'), float('inf'), self.symbol, opp_symbol)
+            board[move] = ' '
+            if score > best_score:
+                best_score = score
+                best_move = move
+        return best_move
+    
     def _check_winner(self, board):
-        """Return winner symbol, 'DRAW', or None."""
-        for a, b, c in self.winning_lines:
-            if board[a] == board[b] == board[c] and board[a] != self.EMPTY:
+        for line in self.WIN_LINES:
+            a, b, c = line
+            if board[a] == board[b] == board[c] != ' ':
                 return board[a]
-        if self.EMPTY not in board:
+        if ' ' not in board:
             return 'DRAW'
         return None
-
-    def _evaluate(self, board, player):
-        """Heuristic evaluation from player's perspective."""
-        opp = self.O_MARK if player == self.X_MARK else self.X_MARK
-        our_2 = our_1 = opp_2 = opp_1 = 0
-        
-        for a, b, c in self.winning_lines:
-            line = [board[a], board[b], board[c]]
-            p = sum(1 for cell in line if cell == player)
-            o = sum(1 for cell in line if cell == opp)
-            e = sum(1 for cell in line if cell == self.EMPTY)
-            
-            if p > 0 and o == 0:
-                if p == 2:
-                    our_2 += 1
-                elif p == 1:
-                    our_1 += 1
-            elif o > 0 and p == 0:
-                if o == 2:
-                    opp_2 += 1
-                elif o == 1:
-                    opp_1 += 1
-        
-        return (our_2 * 100 + our_1 * 10) - (opp_2 * 100 + opp_1 * 10)
-
-    def _minimax(self, board, player, depth, alpha, beta, original_player, max_depth):
+    
+    def _evaluate(self, board, our_symbol, opp_symbol):
+        score = 0
+        for line in self.WIN_LINES:
+            our = 0
+            opp = 0
+            for idx in line:
+                if board[idx] == our_symbol:
+                    our += 1
+                elif board[idx] == opp_symbol:
+                    opp += 1
+            if opp == 0:
+                if our == 2:
+                    score += 10
+                elif our == 1:
+                    score += 1
+            elif our == 0:
+                if opp == 2:
+                    score -= 10
+                elif opp == 1:
+                    score -= 1
+        return score
+    
+    def _minimax(self, board, depth, maximizing, alpha, beta, our_symbol, opp_symbol):
         winner = self._check_winner(board)
-        if winner is not None:
-            if winner == original_player:
-                return 10000 - depth
-            elif winner == (self.O_MARK if original_player == self.X_MARK else self.X_MARK):
-                return -10000 + depth
-            else:
-                return 0
+        if winner == our_symbol:
+            return 1000000
+        if winner == opp_symbol:
+            return -1000000
+        if winner == 'DRAW':
+            return 0
         
-        if depth >= max_depth:
-            return self._evaluate(board, original_player)
+        if depth == 0:
+            return self._evaluate(board, our_symbol, opp_symbol)
         
-        available_moves = [i for i in range(25) if board[i] == self.EMPTY]
-        next_player = self.O_MARK if player == self.X_MARK else self.X_MARK
+        empty_cells = [i for i in range(25) if board[i] == ' ']
         
-        if player == original_player:
+        if maximizing:
             best = -float('inf')
-            for move in available_moves:
-                board[move] = player
-                score = self._minimax(board, next_player, depth + 1, alpha, beta, original_player, max_depth)
-                board[move] = self.EMPTY
-                best = max(best, score)
-                alpha = max(alpha, best)
+            for cell in empty_cells:
+                board[cell] = our_symbol
+                score = self._minimax(board, depth-1, False, alpha, beta, our_symbol, opp_symbol)
+                board[cell] = ' '
+                if score > best:
+                    best = score
+                if best > alpha:
+                    alpha = best
                 if beta <= alpha:
                     break
             return best
         else:
             best = float('inf')
-            for move in available_moves:
-                board[move] = player
-                score = self._minimax(board, original_player, depth + 1, alpha, beta, original_player, max_depth)
-                board[move] = self.EMPTY
-                best = min(best, score)
-                beta = min(beta, best)
+            for cell in empty_cells:
+                board[cell] = opp_symbol
+                score = self._minimax(board, depth-1, True, alpha, beta, our_symbol, opp_symbol)
+                board[cell] = ' '
+                if score < best:
+                    best = score
+                if best < beta:
+                    beta = best
                 if beta <= alpha:
                     break
             return best
-
-    def _find_best_move(self, board, player, original_player, max_depth):
-        available_moves = [i for i in range(25) if board[i] == self.EMPTY]
-        # Order moves by number of winning lines they participate in (more lines first)
-        available_moves.sort(key=lambda m: len(self.cell_to_lines[m]), reverse=True)
-        
-        best_move = None
-        best_score = -float('inf')
-        next_player = self.O_MARK if player == self.X_MARK else self.X_MARK
-        
-        for move in available_moves:
-            board[move] = player
-            score = self._minimax(board, next_player, 1, -float('inf'), float('inf'), original_player, max_depth)
-            board[move] = self.EMPTY
-            if score > best_score:
-                best_score = score
-                best_move = move
-        return best_move
-
-    def make_move(self, board):
-        available_moves = [i for i in range(25) if board[i] == self.EMPTY]
-        if not available_moves:
-            return 0  # Should not happen, but fallback
-        
-        # 1. Check for immediate winning move
-        for move in available_moves:
-            if self._is_threat(board, move, self.symbol):
-                return move
-        
-        # 2. Check for immediate block (opponent's winning move)
-        opponent = self.O_MARK if self.symbol == self.X_MARK else self.X_MARK
-        for move in available_moves:
-            if self._is_threat(board, move, opponent):
-                return move
-        
-        # 3. Use minimax with adaptive depth
-        max_depth = min(4, len(available_moves))
-        return self._find_best_move(board, self.symbol, self.symbol, max_depth)

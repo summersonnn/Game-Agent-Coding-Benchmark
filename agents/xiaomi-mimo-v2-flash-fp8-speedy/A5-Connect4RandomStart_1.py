@@ -201,47 +201,38 @@ class Connect4Agent:
         """
         Decide the next move based on the current board state.
         """
-        try:
-            start_time = time.time()
-            
-            # Check for immediate winning move
-            valid_cols = self.get_valid_columns(board)
-            for col in valid_cols:
-                new_board = self.drop_disc(board, col, self.symbol)
-                if new_board and self.check_winner(new_board) == self.symbol:
-                    return col
-            
-            # Check for immediate blocking move (opponent can win next turn)
-            for col in valid_cols:
-                new_board = self.drop_disc(board, col, self.opponent_symbol)
-                if new_board and self.check_winner(new_board) == self.opponent_symbol:
-                    return col
-            
-            # Use minimax to find best move
-            # Adjust depth based on remaining empty cells to stay within time limit
-            empty_cells = sum(row.count(' ') for row in board)
-            if empty_cells > 30:
-                depth = 4  # Early game: shallower search
-            elif empty_cells > 15:
-                depth = 5  # Mid game: medium search
-            else:
-                depth = 6  # End game: deeper search
-            
-            _, best_col = self.minimax(board, depth, -float('inf'), float('inf'), True, start_time)
-            
-            if best_col is not None:
-                return best_col
-            
-            # Fallback: choose a valid column
-            if valid_cols:
-                return random.choice(valid_cols)
-            else:
-                return 0  # Should never happen if game is not over
-                
-        except Exception as e:
-            # If anything goes wrong, return a random valid move
-            print(f"Error in make_move: {e}")
-            valid_cols = self.get_valid_columns(board)
-            if valid_cols:
-                return random.choice(valid_cols)
-            return 0
+        start_time = time.time()
+        
+        # Check for immediate winning move
+        valid_cols = self.get_valid_columns(board)
+        for col in valid_cols:
+            new_board = self.drop_disc(board, col, self.symbol)
+            if new_board and self.check_winner(new_board) == self.symbol:
+                return col
+        
+        # Check for immediate blocking move (opponent can win next turn)
+        for col in valid_cols:
+            new_board = self.drop_disc(board, col, self.opponent_symbol)
+            if new_board and self.check_winner(new_board) == self.opponent_symbol:
+                return col
+        
+        # Use minimax to find best move
+        # Adjust depth based on remaining empty cells to stay within time limit
+        empty_cells = sum(row.count(' ') for row in board)
+        if empty_cells > 30:
+            depth = 4  # Early game: shallower search
+        elif empty_cells > 15:
+            depth = 5  # Mid game: medium search
+        else:
+            depth = 6  # End game: deeper search
+        
+        _, best_col = self.minimax(board, depth, -float('inf'), float('inf'), True, start_time)
+        
+        if best_col is not None:
+            return best_col
+        
+        # Fallback: choose a valid column
+        if valid_cols:
+            return random.choice(valid_cols)
+        else:
+            return 0  # Should never happen if game is not over

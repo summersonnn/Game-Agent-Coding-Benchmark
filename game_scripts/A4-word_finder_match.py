@@ -33,9 +33,10 @@ load_dotenv()
 
 # Configuration
 try:
-    NUM_GAMES_PER_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
+    # A4 takes too long to finish. So, arrange less matches
+    NUM_GAMES_PER_MATCH = int(int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100")) / 10)
 except (ValueError, TypeError):
-    NUM_GAMES_PER_MATCH = 100
+    NUM_GAMES_PER_MATCH = 10
 
 try:
     MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
@@ -996,7 +997,7 @@ async def main_async():
             code1, code2, extra_imports,
             NUM_GAMES_PER_MATCH, MOVE_TIME_LIMIT,
             words_file_path=str(WORDS_FILE),
-            agent1_name=folder1, agent2_name=folder2,
+            agent1_name=f"{folder1}:{run1}", agent2_name=f"{folder2}:{run2}",
         )
 
         match_tasks.append(run_match_async(game_code, i + 1, (run1, run2)))

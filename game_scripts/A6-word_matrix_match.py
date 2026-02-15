@@ -1056,7 +1056,7 @@ async def main_async():
             code1, code2, extra_imports,
             NUM_GAMES_PER_MATCH, MOVE_TIME_LIMIT,
             str(WORDS_FILE),
-            agent1_name=folder1, agent2_name=folder2,
+            agent1_name=f"{folder1}:{run1}", agent2_name=f"{folder2}:{run2}",
         )
 
         match_tasks.append(run_match_async(game_code, i + 1, (run1, run2)))

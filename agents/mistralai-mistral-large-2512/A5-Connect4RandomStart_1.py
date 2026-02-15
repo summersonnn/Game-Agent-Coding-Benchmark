@@ -2,15 +2,13 @@
 Agent Code: A5-Connect4RandomStart
 Model: mistralai/mistral-large-2512
 Run: 1
-Generated: 2026-02-12 14:50:42
+Generated: 2026-02-14 19:46:39
 """
 
-import time
-from copy import deepcopy
+import math
 
 import random
-import time
-from copy import deepcopy
+import math
 
 class Connect4Agent:
     def __init__(self, name, symbol):
@@ -19,96 +17,75 @@ class Connect4Agent:
         self.opponent_symbol = 'Y' if symbol == 'R' else 'R'
         self.rows = 6
         self.cols = 7
-        self.max_depth = 5  # Initial depth, will adjust based on time
-        self.start_time = 0
+        self.max_depth = 5  # Adjust based on performance needs
 
     def make_move(self, board):
-        self.start_time = time.time()
+        valid_moves = self.get_valid_moves(board)
+        if not valid_moves:
+            return 0
 
-        # First check if we can win immediately
-        for col in range(self.cols):
-            if self.is_valid_move(board, col):
-                temp_board = deepcopy(board)
-                row = self.drop_disc(temp_board, col, self.symbol)
-                if self.check_winner(temp_board, row, col, self.symbol):
-                    return col
+        # Try to win immediately
+        for col in valid_moves:
+            temp_board = [row[:] for row in board]
+            row = self.drop_disc(temp_board, col, self.symbol)
+            if self.check_winner(temp_board):
+                return col
 
-        # Then check if opponent can win next move and block them
-        for col in range(self.cols):
-            if self.is_valid_move(board, col):
-                temp_board = deepcopy(board)
-                row = self.drop_disc(temp_board, col, self.opponent_symbol)
-                if self.check_winner(temp_board, row, col, self.opponent_symbol):
-                    return col
+        # Block opponent's immediate win
+        for col in valid_moves:
+            temp_board = [row[:] for row in board]
+            row = self.drop_disc(temp_board, col, self.opponent_symbol)
+            if self.check_winner(temp_board):
+                return col
 
-        # Use iterative deepening to find the best move within time limit
-        best_move = random.choice([c for c in range(self.cols) if self.is_valid_move(board, c)])
-        best_score = -float('inf')
+        # Use minimax to find best move
+        best_move = None
+        best_value = -math.inf
+        alpha = -math.inf
+        beta = math.inf
 
-        for depth in range(1, 6):  # Try increasing depths until time runs out
-            self.max_depth = depth
-            current_score, current_move = self.minimax(board, depth, -float('inf'), float('inf'), True)
+        for col in valid_moves:
+            temp_board = [row[:] for row in board]
+            row = self.drop_disc(temp_board, col, self.symbol)
+            move_value = self.minimax(temp_board, self.max_depth - 1, alpha, beta, False)
 
-            if time.time() - self.start_time > 0.9:  # Leave some buffer
-                break
+            if move_value > best_value:
+                best_value = move_value
+                best_move = col
+            alpha = max(alpha, best_value)
 
-            if current_score > best_score:
-                best_score = current_score
-                best_move = current_move
-
-        return best_move
+        return best_move if best_move is not None else random.choice(valid_moves)
 
     def minimax(self, board, depth, alpha, beta, maximizing_player):
-        # Check if we're out of time
-        if time.time() - self.start_time > 0.9:
-            return 0, None
-
-        # Check for terminal states
-        winner = self.check_winner_all(board)
+        winner = self.check_winner(board)
         if winner == self.symbol:
-            return 1000000, None  # Large positive score for winning
+            return 1000 + depth  # Prefer faster wins
         elif winner == self.opponent_symbol:
-            return -1000000, None  # Large negative score for losing
-        elif self.is_board_full(board):
-            return 0, None  # Draw
+            return -1000 - depth  # Prefer slower losses
+        elif depth == 0 or self.is_full(board):
+            return self.evaluate_board(board)
 
-        if depth == 0:
-            return self.evaluate_board(board), None
-
-        valid_moves = [c for c in range(self.cols) if self.is_valid_move(board, c)]
-
+        valid_moves = self.get_valid_moves(board)
         if maximizing_player:
-            value = -float('inf')
-            best_move = random.choice(valid_moves)
+            value = -math.inf
             for col in valid_moves:
-                temp_board = deepcopy(board)
-                row = self.drop_disc(temp_board, col, self.symbol)
-                score, _ = self.minimax(temp_board, depth-1, alpha, beta, False)
-
-                if score > value:
-                    value = score
-                    best_move = col
-
+                temp_board = [row[:] for row in board]
+                self.drop_disc(temp_board, col, self.symbol)
+                value = max(value, self.minimax(temp_board, depth - 1, alpha, beta, False))
                 alpha = max(alpha, value)
                 if alpha >= beta:
                     break
-            return value, best_move
+            return value
         else:
-            value = float('inf')
-            best_move = random.choice(valid_moves)
+            value = math.inf
             for col in valid_moves:
-                temp_board = deepcopy(board)
-                row = self.drop_disc(temp_board, col, self.opponent_symbol)
-                score, _ = self.minimax(temp_board, depth-1, alpha, beta, True)
-
-                if score < value:
-                    value = score
-                    best_move = col
-
+                temp_board = [row[:] for row in board]
+                self.drop_disc(temp_board, col, self.opponent_symbol)
+                value = min(value, self.minimax(temp_board, depth - 1, alpha, beta, True))
                 beta = min(beta, value)
                 if alpha >= beta:
                     break
-            return value, best_move
+            return value
 
     def evaluate_board(self, board):
         score = 0
@@ -162,64 +139,26 @@ class Connect4Agent:
         empty = window.count(' ')
 
         if count == 4:
-            return 100  # Win
+            return 100
         elif count == 3 and empty == 1:
-            return 5    # Three in a row with open space
+            return 5
         elif count == 2 and empty == 2:
-            return 2    # Two in a row with two open spaces
+            return 2
         elif window.count(opponent_symbol) == 3 and empty == 1:
-            return -4   # Block opponent's three in a row
-        else:
-            return 0
+            return -4  # Block opponent's 3 in a row
+        return 0
 
-    def is_valid_move(self, board, col):
-        return 0 <= col < self.cols and board[0][col] == ' '
+    def get_valid_moves(self, board):
+        return [c for c in range(self.cols) if board[0][c] == ' ']
 
     def drop_disc(self, board, col, symbol):
-        for r in range(self.rows-1, -1, -1):
+        for r in range(self.rows - 1, -1, -1):
             if board[r][col] == ' ':
                 board[r][col] = symbol
                 return r
         return -1
 
-    def check_winner(self, board, row, col, symbol):
-        # Check horizontal
-        for c in range(max(0, col-3), min(self.cols-3, col+1)):
-            if (board[row][c] == symbol and
-                board[row][c+1] == symbol and
-                board[row][c+2] == symbol and
-                board[row][c+3] == symbol):
-                return True
-
-        # Check vertical
-        for r in range(max(0, row-3), min(self.rows-3, row+1)):
-            if (board[r][col] == symbol and
-                board[r+1][col] == symbol and
-                board[r+2][col] == symbol and
-                board[r+3][col] == symbol):
-                return True
-
-        # Check diagonal (positive slope)
-        for r, c in zip(range(row, max(-1, row-4), -1), range(col, max(-1, col-4), -1)):
-            if (r-3 >= 0 and c-3 >= 0 and
-                board[r][c] == symbol and
-                board[r-1][c-1] == symbol and
-                board[r-2][c-2] == symbol and
-                board[r-3][c-3] == symbol):
-                return True
-
-        # Check diagonal (negative slope)
-        for r, c in zip(range(row, min(self.rows, row+4)), range(col, max(-1, col-4), -1)):
-            if (r+3 < self.rows and c-3 >= 0 and
-                board[r][c] == symbol and
-                board[r+1][c-1] == symbol and
-                board[r+2][c-2] == symbol and
-                board[r+3][c-3] == symbol):
-                return True
-
-        return False
-
-    def check_winner_all(self, board):
+    def check_winner(self, board):
         # Check horizontal
         for r in range(self.rows):
             for c in range(self.cols - 3):
@@ -233,18 +172,18 @@ class Connect4Agent:
                     return board[r][c]
 
         # Check diagonal (positive slope)
-        for r in range(3, self.rows):
-            for c in range(self.cols - 3):
-                if board[r][c] != ' ' and board[r][c] == board[r-1][c+1] == board[r-2][c+2] == board[r-3][c+3]:
-                    return board[r][c]
-
-        # Check diagonal (negative slope)
         for r in range(self.rows - 3):
             for c in range(self.cols - 3):
                 if board[r][c] != ' ' and board[r][c] == board[r+1][c+1] == board[r+2][c+2] == board[r+3][c+3]:
                     return board[r][c]
 
+        # Check diagonal (negative slope)
+        for r in range(3, self.rows):
+            for c in range(self.cols - 3):
+                if board[r][c] != ' ' and board[r][c] == board[r-1][c+1] == board[r-2][c+2] == board[r-3][c+3]:
+                    return board[r][c]
+
         return None
 
-    def is_board_full(self, board):
+    def is_full(self, board):
         return all(board[0][c] != ' ' for c in range(self.cols))

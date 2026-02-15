@@ -5,152 +5,132 @@ Run: 2
 Generated: 2026-02-12 09:24:15
 """
 
-from collections import defaultdict
-
-from collections import defaultdict
 import random
 
 class WordFinderAgent:
     """
-    Agent that plays WordFinder by finding the highest scoring valid word.
-    It uses pre-computed lookups for efficient filtering of the dictionary
-    to satisfy letter and position constraints.
+    A strategic agent for WordFinder that maximizes points through consecutive 
+    letter bonuses, avoids hyphen penalties, and plays defensively by evaluating 
+    the opponent's future move options.
     """
     def __init__(self, name):
-        """
-        Initialize the agent and pre-process the dictionary.
-        """
         self.name = name
-        self.dictionary = load_words()  # Load the full word dictionary
+        self.dictionary = load_words()
         
-        # Pre-compute a lookup table: char -> set of words containing that char in the MIDDLE.
-        # This allows O(1) retrieval of candidate words for specific letter requirements.
-        self.middle_char_map = defaultdict(set)
-        
+        # Pre-compute internal characters for rapid set intersections during gameplay
+        self.char_to_words = {}
         for w in self.dictionary:
-            # Words with length < 3 cannot contain letters that are NOT start/end.
-            # e.g., "it" (len 2): 'i' is start, 't' is end. Middle is empty.
-            if len(w) < 3:
-                continue
-                
-            # Identify characters present in the "valid zone" (between first and last char)
-            # w[1:-1] extracts the middle substring
-            middle_chars = set(w[1:-1])
-            
-            for char in middle_chars:
-                self.middle_char_map[char].add(w)
+            if len(w) >= 3:
+                # We only care about internal characters
+                internal_chars = set(w[1:-1])
+                for c in internal_chars:
+                    if c not in self.char_to_words:
+                        self.char_to_words[c] = set()
+                    self.char_to_words[c].add(w)
+        
+        # Pre-compute an approximation of how many options a pair of letters yields.
+        # This is used as a defensive tie-breaker to leave the opponent with difficult letters.
+        self.pair_abundance = {}
+        chars = [chr(i) for i in range(97, 123)]
+        chars.append('-')
+        for c1 in chars:
+            for c2 in chars:
+                s1 = self.char_to_words.get(c1, set())
+                s2 = self.char_to_words.get(c2, set())
+                # For defensive play, fewer intersecting words = harder for opponent
+                self.pair_abundance[(c1, c2)] = len(s1 & s2)
 
     def make_move(self, current_word, word_history):
-        """
-        Determine the best word to play based on constraints and scoring rules.
-        """
-        # 1. Identify Required Letters
+        # Fallback for the very first turn if we start
         if not current_word:
-            # Fallback for game start (though game engine usually handles this)
-            req1, req2 = 'a', 'e'
-            prev_len = 0
-        else:
-            req1 = current_word[0].lower()
-            req2 = current_word[-1].lower()
-            prev_len = len(current_word)
-
-        # 2. Find Full Match Candidates
-        # We need words that contain BOTH req1 and req2 in the middle.
-        # Intersection of the pre-computed sets gives us these candidates efficiently.
-        if req1 and req2:
-            candidates = self.middle_char_map[req1].intersection(self.middle_char_map[req2])
-        else:
-            candidates = set()
-
-        valid_moves = []
+            available = list(self.dictionary - word_history)
+            return random.choice(available) if available else "example"
+            
+        c1 = current_word[0].lower()
+        c2 = current_word[-1].lower()
         
-        # Prepare for consecutive bonus check
-        bonus_seq_1 = req1 + req2
-        bonus_seq_2 = req2 + req1
-        same_req_chars = (req1 == req2)
-
+        s1 = self.char_to_words.get(c1, set())
+        s2 = self.char_to_words.get(c2, set())
+        
+        # O(1) intersection finds all words containing both letters internally
+        candidates = s1 & s2
+        
+        valid_candidates = []
         for w in candidates:
-            # Constraint: Uniqueness
             if w in word_history:
                 continue
-            
-            # Constraint: Length
-            w_len = len(w)
-            if w_len == prev_len:
+            if len(w) == len(current_word):
                 continue
-            
-            # Constraint: Position
-            # The required letters cannot be the first or last letters of the NEW word.
-            if w.startswith(req1) or w.startswith(req2):
+            if w[0] in (c1, c2) or w[-1] in (c1, c2):
                 continue
-            if w.endswith(req1) or w.endswith(req2):
+            # If the required letters are the same (e.g., 'stats'), we need >= 2 instances internally
+            if c1 == c2 and w[1:-1].count(c1) < 2:
                 continue
+            valid_candidates.append(w)
             
-            # Constraint: Same Letter Count
-            # If req1 == req2 (e.g. 'e', 'e'), the word must contain at least two 'e's in the middle.
-            # The set intersection only guarantees existence of at least one.
-            if same_req_chars and w[1:-1].count(req1) < 2:
-                continue
-
-            # Scoring Calculation
-            # 1. Base Points (Length)
-            # 2. Hyphen Penalty
-            if '-' in w:
-                base_points = w_len / 2
-            else:
-                base_points = w_len
+        if valid_candidates:
+            best_word = None
+            best_score = -float('inf')
             
-            # 3. Consecutive Bonus (2x)
-            # Applied after hyphen penalty.
-            # Letters must appear consecutively (e.g., "PH" or "HP").
-            if (bonus_seq_1 in w) or (bonus_seq_2 in w):
-                final_score = base_points * 2
-            else:
-                final_score = base_points
-            
-            valid_moves.append((final_score, w))
-
-        # 3. Select Best Full Move
-        if valid_moves:
-            # Sort valid moves by score descending
-            valid_moves.sort(key=lambda x: x[0], reverse=True)
-            return valid_moves[0][1]
-
-        # 4. Partial Move (Last Resort)
-        # If no valid word exists, play a word containing ONE required letter.
-        # Strategy: Minimize penalty (penalty based on length -> choose shortest word).
-        partial_candidates = set()
-        partial_candidates.update(self.middle_char_map[req1])
-        partial_candidates.update(self.middle_char_map[req2])
+            for w in valid_candidates:
+                # 1. Base Score calculation
+                base = len(w)
+                
+                # 2. Hyphen Penalty
+                if '-' in w:
+                    base = base / 2.0
+                    
+                # 3. Consecutive Letter Bonus
+                if c1 + c2 in w or c2 + c1 in w:
+                    base *= 2
+                    
+                # 4. Defensive tie-breaker (leaving fewer options for the opponent)
+                nc1, nc2 = w[0].lower(), w[-1].lower()
+                options = self.pair_abundance.get((nc1, nc2), 0)
+                
+                # Subtract a tiny fraction so length dominates, but defensively breaks ties
+                final_score = base - (options / 1000000.0)
+                
+                if final_score > best_score:
+                    best_score = final_score
+                    best_word = w
+                    
+            return best_word
         
-        best_partial = None
-        min_partial_len = float('inf')
+        else:
+            # FALLBACK: Partial Move
+            # No valid word with both letters exists, try words with AT LEAST ONE letter
+            partial_cands = s1 | s2
+            valid_partials = []
+            
+            for w in partial_cands:
+                if w in word_history:
+                    continue
+                if len(w) == len(current_word):
+                    continue
+                if w[0] in (c1, c2) or w[-1] in (c1, c2):
+                    continue
+                valid_partials.append(w)
+                
+            if valid_partials:
+                best_partial = None
+                best_p_score = float('inf') # We want to MINIMIZE the penalty (length)
+                
+                for w in valid_partials:
+                    base_penalty = len(w)
+                    
+                    nc1, nc2 = w[0].lower(), w[-1].lower()
+                    options = self.pair_abundance.get((nc1, nc2), 0)
+                    
+                    # Tie-breaker: Add fraction to penalty, so smaller options win ties
+                    score = base_penalty + (options / 1000000.0)
+                    
+                    if score < best_p_score:
+                        best_p_score = score
+                        best_partial = w
+                        
+                return best_partial
         
-        for w in partial_candidates:
-            if w in word_history: continue
-            if len(w) == prev_len: continue # Respect length constraint even for partials
-            
-            # Verify position constraints for the letters present
-            # If the word contains req1, req1 must not be at start/end
-            if req1 in w[1:-1]:
-                if w.startswith(req1) or w.endswith(req1): continue
-            
-            # If the word contains req2, req2 must not be at start/end
-            if req2 in w[1:-1]:
-                if w.startswith(req2) or w.endswith(req2): continue
-                
-            # If we reached here, it's a valid partial move
-            if len(w) < min_partial_len:
-                min_partial_len = len(w)
-                best_partial = w
-                
-        if best_partial:
-            return best_partial
-
-        # 5. Absolute Fallback
-        # Return any unused word to avoid crashing (accepting invalid move penalty)
-        for w in self.dictionary:
-            if w not in word_history:
-                return w
-                
-        return "giveup"
+        # Absolute last resort to avoid crash/forfeit
+        available = list(self.dictionary - word_history)
+        return available[0] if available else "example"

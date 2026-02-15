@@ -2,351 +2,373 @@
 Agent Code: A1-Battleship
 Model: openai/gpt-5-mini
 Run: 1
-Generated: 2026-02-11 19:24:56
+Generated: 2026-02-14 16:35:39
 """
 
 
 
 class BattleshipAgent:
+    """
+    Battleship agent with:
+    - heuristic placement (spreads ships apart)
+    - probability-based hunting
+    - focused targeting to finish ships after hits
+    """
     def __init__(self, name, board_size, ships):
         self.name = name
         self.board_size = board_size
-        self.ships = list(ships)
-        # remaining ships (lengths) we believe are still afloat on opponent
-        self.remaining_ships = list(ships)
-        # opponent knowledge grid: 0=unknown, 1=miss, 2=hit
-        self.opp_state = [[0 for _ in range(board_size)] for _ in range(board_size)]
-        # random generator
-        self.rng = random.Random()
-        self.rng.seed(time.time_ns() & 0xFFFFFFFF)
+        self.ships_initial = list(ships)[:]  # e.g. [5,4,3]
+        # dynamic view of opponent ships (deduced)
+        self.remaining_ships = list(self.ships_initial)
+        # random generator (uses global random)
+        self.rng = __import__('random')
+        # Memory of last shot_history length to detect new information (not strictly required)
+        self._last_history_len = 0
 
-    # Utility
-    def _in_bounds(self, r, c):
-        return 0 <= r < self.board_size and 0 <= c < self.board_size
-
-    def _neighbors4(self, r, c):
-        for dr, dc in ((-1,0),(1,0),(0,-1),(0,1)):
-            rr, cc = r+dr, c+dc
-            if self._in_bounds(rr, cc):
-                yield (rr, cc)
-
-    # Placement: pick a random valid placement among candidates, bias to spread ships
-    def _place_ship(self, state):
-        ship_length = state['ships_to_place'][0]
-        my_board = state['my_board']
-        candidates = []
-        # horizontal placements
-        for r in range(self.board_size):
-            for c in range(self.board_size - ship_length + 1):
+    # ---------------- Placement helpers ----------------
+    def _valid_placements_for_length(self, my_board, length):
+        N = self.board_size
+        placements = []
+        for r in range(N):
+            for c in range(N - length + 1):
                 ok = True
-                for i in range(ship_length):
-                    if my_board[r][c+i] == 'S':
+                for k in range(length):
+                    if my_board[r][c + k] != 'O':
                         ok = False
                         break
                 if ok:
-                    candidates.append((r, c, 'horizontal'))
-        # vertical placements
-        for r in range(self.board_size - ship_length + 1):
-            for c in range(self.board_size):
+                    placements.append(((r, c), 'horizontal'))
+        for r in range(N - length + 1):
+            for c in range(N):
                 ok = True
-                for i in range(ship_length):
-                    if my_board[r+i][c] == 'S':
+                for k in range(length):
+                    if my_board[r + k][c] != 'O':
                         ok = False
                         break
                 if ok:
-                    candidates.append((r, c, 'vertical'))
+                    placements.append(((r, c), 'vertical'))
+        return placements
 
+    def _distance_to_existing_ships(self, cells, existing_cells):
+        # return minimal Manhattan distance from any cell in 'cells' to any existing ship cell
+        if not existing_cells:
+            return None
+        best = None
+        for (r1, c1) in cells:
+            for (r2, c2) in existing_cells:
+                d = abs(r1 - r2) + abs(c1 - c2)
+                if best is None or d < best:
+                    best = d
+        return best
+
+    def _choose_placement(self, my_board, ship_length):
+        N = self.board_size
+        existing = [(r, c) for r in range(N) for c in range(N) if my_board[r][c] == 'S']
+        candidates = self._valid_placements_for_length(my_board, ship_length)
         if not candidates:
-            # fallback: should be rare, choose a random fit ignoring current board (penalty might occur if invalid)
+            # fallback: choose any valid spot by brute force (shouldn't happen)
             orientation = self.rng.choice(['horizontal', 'vertical'])
             if orientation == 'horizontal':
-                r = self.rng.randint(0, self.board_size - 1)
-                c = self.rng.randint(0, self.board_size - ship_length)
+                row = self.rng.randint(0, N - 1)
+                col = self.rng.randint(0, N - ship_length)
             else:
-                r = self.rng.randint(0, self.board_size - ship_length)
-                c = self.rng.randint(0, self.board_size - 1)
-            return {'ship_length': ship_length, 'start': (r, c), 'orientation': orientation}
+                row = self.rng.randint(0, N - ship_length)
+                col = self.rng.randint(0, N - 1)
+            return (row, col), orientation
 
-        # gather existing ship cells to try to spread ships
-        existing = [(r, c) for r in range(self.board_size) for c in range(self.board_size) if my_board[r][c] == 'S']
-
-        if existing:
-            # score candidates by their minimal Manhattan distance to any existing ship cell (prefer larger)
-            best_score = -1
-            best_cands = []
-            for (r, c, orient) in candidates:
-                # compute candidate cells
-                cells = []
-                if orient == 'horizontal':
-                    cells = [(r, c+i) for i in range(ship_length)]
-                else:
-                    cells = [(r+i, c) for i in range(ship_length)]
-                # minimal distance from any candidate cell to any existing ship cell
-                min_dist = min(abs(cr - er) + abs(cc - ec) for (cr,cc) in cells for (er,ec) in existing)
-                if min_dist > best_score:
-                    best_score = min_dist
-                    best_cands = [(r, c, orient)]
-                elif min_dist == best_score:
-                    best_cands.append((r, c, orient))
-            choice = self.rng.choice(best_cands)
-        else:
-            # no existing ships placed yet -> random candidate but bias away from edges slightly
-            # randomly choose among candidates but prefer center positions
-            def center_score(r, c, orient):
-                if orient == 'horizontal':
-                    cells = [(r, c+i) for i in range(ship_length)]
-                else:
-                    cells = [(r+i, c) for i in range(ship_length)]
-                cx = (self.board_size - 1) / 2.0
-                cy = (self.board_size - 1) / 2.0
-                return -sum((cr - cx)**2 + (cc - cy)**2 for cr,cc in cells)  # prefer less distance -> higher score
-            best_score = None
-            best_cands = []
-            for cand in candidates:
-                s = center_score(*cand)
-                if best_score is None or s > best_score:
-                    best_score = s
-                    best_cands = [cand]
-                elif s == best_score:
-                    best_cands.append(cand)
-            choice = self.rng.choice(best_cands)
-
-        r, c, orient = choice
-        return {'ship_length': ship_length, 'start': (r, c), 'orientation': orient}
-
-    # Build opponent state from shot_history
-    def _rebuild_opp_state(self, shot_history):
-        # reset
-        self.opp_state = [[0 for _ in range(self.board_size)] for _ in range(self.board_size)]
-        for shot in shot_history:
-            r, c = shot['coord']
-            if shot['result'] == 'HIT':
-                self.opp_state[r][c] = 2
+        scored = []
+        center_r = (N - 1) / 2.0
+        center_c = (N - 1) / 2.0
+        for start, orient in candidates:
+            r0, c0 = start
+            cells = []
+            if orient == 'horizontal':
+                cells = [(r0, c0 + k) for k in range(ship_length)]
             else:
-                # MISS (or any other reported miss-like)
-                self.opp_state[r][c] = 1
+                cells = [(r0 + k, c0) for k in range(ship_length)]
+            dist = self._distance_to_existing_ships(cells, existing)
+            if dist is None:
+                # no existing ships: score by distance from center (we want spread, so prefer away from center)
+                avg_r = sum(r for r, _ in cells) / len(cells)
+                avg_c = sum(c for _, c in cells) / len(cells)
+                # prefer edges slightly by using distance from center
+                score = abs(avg_r - center_r) + abs(avg_c - center_c)
+            else:
+                score = dist
+            # small randomness to break ties
+            score += self.rng.random() * 0.1
+            scored.append((score, start, orient))
+        scored.sort(key=lambda x: -x[0])
+        top_score = scored[0][0]
+        top_choices = [s for s in scored if abs(s[0] - top_score) < 1e-6 or s[0] >= top_score - 0.05]
+        _, start, orient = self.rng.choice(top_choices)
+        return start, orient
 
-    # get connected components of hits (orthogonally)
-    def _get_hit_clusters(self):
-        visited = [[False]*self.board_size for _ in range(self.board_size)]
+    # ---------------- Bombing helpers ----------------
+    def _reconstruct_board_from_history(self, shot_history):
+        N = self.board_size
+        board = [['U' for _ in range(N)] for _ in range(N)]
+        for entry in shot_history:
+            (r, c) = entry['coord']
+            if entry['result'] == 'HIT':
+                board[r][c] = 'H'
+            else:
+                board[r][c] = 'M'
+        return board
+
+    def _deduce_sunk_ships(self, board, ships_list):
+        """
+        From current board 'H' and 'M' marks, attempt to deduce which ships are sunk.
+        Returns (remaining_ships_list, sunk_cells_set)
+        """
+        N = self.board_size
+        ships_remaining = list(ships_list[:])
+        hits = {(r, c) for r in range(N) for c in range(N) if board[r][c] == 'H'}
+        visited = set()
+        sunk_cells = set()
+
+        for (r, c) in sorted(hits):
+            if (r, c) in visited:
+                continue
+            # find horizontal run
+            left = c
+            while left - 1 >= 0 and board[r][left - 1] == 'H':
+                left -= 1
+            right = c
+            while right + 1 < N and board[r][right + 1] == 'H':
+                right += 1
+            horiz_len = right - left + 1
+            horiz_cells = [(r, cc) for cc in range(left, right + 1)]
+
+            # find vertical run
+            up = r
+            while up - 1 >= 0 and board[up - 1][c] == 'H':
+                up -= 1
+            down = r
+            while down + 1 < N and board[down + 1][c] == 'H':
+                down += 1
+            vert_len = down - up + 1
+            vert_cells = [(rr, c) for rr in range(up, down + 1)]
+
+            # choose longer orientation (prefer horizontal on ties)
+            if horiz_len >= vert_len:
+                seg_cells = horiz_cells
+                seg_len = horiz_len
+                nei1 = (r, left - 1)
+                nei2 = (r, right + 1)
+            else:
+                seg_cells = vert_cells
+                seg_len = vert_len
+                nei1 = (up - 1, c)
+                nei2 = (down + 1, c)
+
+            for cell in seg_cells:
+                visited.add(cell)
+
+            def blocked(nei):
+                rr, cc = nei
+                if rr < 0 or rr >= N or cc < 0 or cc >= N:
+                    return True
+                val = board[rr][cc]
+                # treat misses or already-sunk inferred cells as blocking
+                return val == 'M' or val == 'S'
+
+            if blocked(nei1) and blocked(nei2):
+                # cannot extend in this orientation -> if length matches a remaining ship, mark it sunk
+                if seg_len in ships_remaining:
+                    # remove one instance
+                    ships_remaining.remove(seg_len)
+                    for cell in seg_cells:
+                        sunk_cells.add(cell)
+        return ships_remaining, sunk_cells
+
+    def _compute_probability_map(self, board, ships_remaining):
+        N = self.board_size
+        prob = [[0 for _ in range(N)] for _ in range(N)]
+        # For each ship, simulate all placements that don't conflict with misses or known sunk cells.
+        for length in ships_remaining:
+            # horizontal placements
+            for r in range(N):
+                for c in range(0, N - length + 1):
+                    valid = True
+                    for k in range(length):
+                        v = board[r][c + k]
+                        if v == 'M' or v == 'S':
+                            valid = False
+                            break
+                    if not valid:
+                        continue
+                    # This placement is possible; add weight
+                    for k in range(length):
+                        prob[r][c + k] += 1
+            # vertical placements
+            for c in range(N):
+                for r in range(0, N - length + 1):
+                    valid = True
+                    for k in range(length):
+                        v = board[r + k][c]
+                        if v == 'M' or v == 'S':
+                            valid = False
+                            break
+                    if not valid:
+                        continue
+                    for k in range(length):
+                        prob[r + k][c] += 1
+        return prob
+
+    def _find_hit_clusters(self, board):
+        N = self.board_size
+        hits = {(r, c) for r in range(N) for c in range(N) if board[r][c] == 'H'}
+        visited = set()
         clusters = []
-        for r in range(self.board_size):
-            for c in range(self.board_size):
-                if self.opp_state[r][c] == 2 and not visited[r][c]:
-                    # BFS/DFS
-                    stack = [(r, c)]
-                    visited[r][c] = True
-                    comp = []
-                    while stack:
-                        cr, cc = stack.pop()
-                        comp.append((cr, cc))
-                        for nr, nc in self._neighbors4(cr, cc):
-                            if self.opp_state[nr][nc] == 2 and not visited[nr][nc]:
-                                visited[nr][nc] = True
-                                stack.append((nr, nc))
-                    clusters.append(comp)
+        for cell in hits:
+            if cell in visited:
+                continue
+            comp = set()
+            stack = [cell]
+            while stack:
+                cur = stack.pop()
+                if cur in visited:
+                    continue
+                visited.add(cur)
+                comp.add(cur)
+                r, c = cur
+                for nr, nc in ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)):
+                    if 0 <= nr < N and 0 <= nc < N and (nr, nc) in hits and (nr, nc) not in visited:
+                        stack.append((nr, nc))
+            clusters.append(comp)
         return clusters
 
-    # deduce sunk ships and update remaining_ships list
-    def _update_remaining_ships(self):
-        clusters = self._get_hit_clusters()
-        # try to deduce sunk ships: if a cluster cannot be extended (both ends blocked by misses or out of bounds)
-        removed = []
-        for comp in clusters:
-            length = len(comp)
-            rows = {r for r, _ in comp}
-            cols = {c for _, c in comp}
-            # determine orientation if possible
-            if len(rows) == 1:  # horizontal
-                row = next(iter(rows))
-                cols_list = sorted(c for _, c in comp)
-                left = (row, cols_list[0] - 1)
-                right = (row, cols_list[-1] + 1)
-                left_blocked = (not self._in_bounds(*left)) or (self.opp_state[left[0]][left[1]] == 1)
-                right_blocked = (not self._in_bounds(*right)) or (self.opp_state[right[0]][right[1]] == 1)
-                if left_blocked and right_blocked:
-                    # cluster cannot be extended
-                    if length in self.remaining_ships and length not in removed:
-                        removed.append(length)
-            elif len(cols) == 1:  # vertical
-                col = next(iter(cols))
-                rows_list = sorted(r for r, _ in comp)
-                up = (rows_list[0] - 1, col)
-                down = (rows_list[-1] + 1, col)
-                up_blocked = (not self._in_bounds(*up)) or (self.opp_state[up[0]][up[1]] == 1)
-                down_blocked = (not self._in_bounds(*down)) or (self.opp_state[down[0]][down[1]] == 1)
-                if up_blocked and down_blocked:
-                    if length in self.remaining_ships and length not in removed:
-                        removed.append(length)
-            else:
-                # single cell or weird shape: if all four neighbors are blocked, it must be a sunk length-1 (not in our game)
-                r0, c0 = comp[0]
-                blocked_all = True
-                for nr, nc in self._neighbors4(r0, c0):
-                    if self.opp_state[nr][nc] != 1:  # if any neighbor isn't a MISS it's not blocked
-                        blocked_all = False
-                        break
-                if blocked_all:
-                    if length in self.remaining_ships and length not in removed:
-                        removed.append(length)
-        # remove deduced sunk ships (only once each)
-        for L in removed:
-            try:
-                self.remaining_ships.remove(L)
-            except ValueError:
-                pass
+    def _candidates_from_cluster(self, board, cluster):
+        N = self.board_size
+        candidates = []
+        rows = {r for r, _ in cluster}
+        cols = {c for _, c in cluster}
+        # Determine orientation if possible
+        if len(rows) == 1:
+            # horizontal cluster
+            r = next(iter(rows))
+            minc = min(c for _, c in cluster)
+            maxc = max(c for _, c in cluster)
+            left = (r, minc - 1)
+            right = (r, maxc + 1)
+            for nr, nc in (left, right):
+                if 0 <= nr < N and 0 <= nc < N and board[nr][nc] == 'U':
+                    candidates.append((nr, nc))
+            return candidates
+        if len(cols) == 1:
+            # vertical
+            c = next(iter(cols))
+            minr = min(r for r, _ in cluster)
+            maxr = max(r for r, _ in cluster)
+            up = (minr - 1, c)
+            down = (maxr + 1, c)
+            for nr, nc in (up, down):
+                if 0 <= nr < N and 0 <= nc < N and board[nr][nc] == 'U':
+                    candidates.append((nr, nc))
+            return candidates
+        # ambiguous cluster (hits touching but not in a line) -> target unknown neighbors around cells
+        for (r, c) in cluster:
+            for nr, nc in ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)):
+                if 0 <= nr < N and 0 <= nc < N and board[nr][nc] == 'U':
+                    candidates.append((nr, nc))
+        # remove duplicates while preserving order-ish
+        uniq = []
+        seen = set()
+        for x in candidates:
+            if x not in seen:
+                uniq.append(x)
+                seen.add(x)
+        return uniq
 
-    # compute heatmap probabilities based on remaining ship placements
-    def _compute_heatmap(self):
-        size = self.board_size
-        scores = [[0.0 for _ in range(size)] for _ in range(size)]
-        # If no ships remaining, return zeroed map
-        if not self.remaining_ships:
-            return scores
-        for L in self.remaining_ships:
-            # horizontal placements
-            for r in range(size):
-                for c in range(size - L + 1):
-                    valid = True
-                    hits_covered = 0
-                    for i in range(L):
-                        cell = self.opp_state[r][c+i]
-                        if cell == 1:  # MISS -> can't place here
-                            valid = False
-                            break
-                        if cell == 2:
-                            hits_covered += 1
-                    if not valid:
-                        continue
-                    # weight placements that include known hits higher (to finish ships faster)
-                    weight = 1.0 + 8.0 * hits_covered
-                    for i in range(L):
-                        if self.opp_state[r][c+i] == 0:
-                            scores[r][c+i] += weight
-            # vertical placements
-            for r in range(size - L + 1):
-                for c in range(size):
-                    valid = True
-                    hits_covered = 0
-                    for i in range(L):
-                        cell = self.opp_state[r+i][c]
-                        if cell == 1:
-                            valid = False
-                            break
-                        if cell == 2:
-                            hits_covered += 1
-                    if not valid:
-                        continue
-                    weight = 1.0 + 8.0 * hits_covered
-                    for i in range(L):
-                        if self.opp_state[r+i][c] == 0:
-                            scores[r+i][c] += weight
-        return scores
-
-    # pick a target based on heatmap and hit clusters (target mode)
-    def _select_target(self, state):
-        shot_history = state.get('shot_history', [])
-        self._rebuild_opp_state(shot_history)
-        # update remaining ship deductions (sunk)
-        self._update_remaining_ships()
-        scores = self._compute_heatmap()
-
-        # identify hit clusters
-        clusters = self._get_hit_clusters()
-
-        # try to pick a target adjacent to an active hit cluster (to finish ships)
-        candidate_targets = []
-        last_coord = state.get('last_shot_coord')
-        # prefer cluster containing last shot coord if there's a hit
-        prioritized_cluster = None
-        if last_coord is not None:
-            lr, lc = last_coord
-            if self._in_bounds(lr, lc) and self.opp_state[lr][lc] == 2:
-                for comp in clusters:
-                    if (lr, lc) in comp:
-                        prioritized_cluster = comp
-                        break
-        if prioritized_cluster is None and clusters:
-            # choose the largest cluster (most promising)
-            prioritized_cluster = max(clusters, key=lambda c: len(c))
-
-        if prioritized_cluster:
-            comp = prioritized_cluster
-            rows = {r for r, _ in comp}
-            cols = {c for _, c in comp}
-            if len(rows) == 1:
-                # horizontal cluster: only extend left/right
-                row = next(iter(rows))
-                minc = min(c for _, c in comp)
-                maxc = max(c for _, c in comp)
-                ends = [(row, minc-1), (row, maxc+1)]
-                for (rr, cc) in ends:
-                    if self._in_bounds(rr, cc) and self.opp_state[rr][cc] == 0:
-                        candidate_targets.append((rr, cc))
-            elif len(cols) == 1:
-                # vertical cluster: only extend up/down
-                col = next(iter(cols))
-                minr = min(r for r, _ in comp)
-                maxr = max(r for r, _ in comp)
-                ends = [(minr-1, col), (maxr+1, col)]
-                for (rr, cc) in ends:
-                    if self._in_bounds(rr, cc) and self.opp_state[rr][cc] == 0:
-                        candidate_targets.append((rr, cc))
-            else:
-                # single hit or unusual shape: probe all neighbors
-                for (rr, cc) in comp:
-                    for nr, nc in self._neighbors4(rr, cc):
-                        if self.opp_state[nr][nc] == 0:
-                            candidate_targets.append((nr, nc))
-
-            # remove duplicates
-            candidate_targets = list({(r, c) for (r, c) in candidate_targets})
-
-        # If no adjacent candidate (no hits or can't extend), use global heatmap
-        if not candidate_targets:
-            # pick highest score among unknown cells
-            best_score = -1.0
-            best_cells = []
-            for r in range(self.board_size):
-                for c in range(self.board_size):
-                    if self.opp_state[r][c] != 0:
-                        continue
-                    sc = scores[r][c]
-                    if sc > best_score:
-                        best_score = sc
-                        best_cells = [(r, c)]
-                    elif sc == best_score:
-                        best_cells.append((r, c))
-            if best_cells:
-                choice = self.rng.choice(best_cells)
-                return {'target': choice}
-            else:
-                # No scored cells (rare) -> pick any unknown cell (random)
-                unknowns = [(r, c) for r in range(self.board_size) for c in range(self.board_size) if self.opp_state[r][c] == 0]
-                if not unknowns:
-                    # everything has been shot at (shouldn't happen) -> pick random cell
-                    return {'target': (self.rng.randint(0, self.board_size-1), self.rng.randint(0, self.board_size-1))}
-                return {'target': self.rng.choice(unknowns)}
-        else:
-            # we have adjacent candidates -> pick the one with highest heatmap score (tie-break random)
-            best_score = -1.0
-            best_cells = []
-            for (r, c) in candidate_targets:
-                sc = scores[r][c]
-                if sc > best_score:
-                    best_score = sc
+    def _choose_target_from_probability(self, board, prob):
+        # choose unknown cell with highest probability. Break ties randomly.
+        N = self.board_size
+        best_score = -1
+        best_cells = []
+        for r in range(N):
+            for c in range(N):
+                if board[r][c] != 'U':
+                    continue
+                score = prob[r][c]
+                if score > best_score:
+                    best_score = score
                     best_cells = [(r, c)]
-                elif sc == best_score:
+                elif score == best_score:
                     best_cells.append((r, c))
-            if best_cells:
-                return {'target': self.rng.choice(best_cells)}
+        if not best_cells:
+            # fallback to any unknown
+            unknowns = [(r, c) for r in range(N) for c in range(N) if board[r][c] == 'U']
+            if unknowns:
+                return self.rng.choice(unknowns)
             else:
-                # fallback: choose any candidate
-                return {'target': self.rng.choice(candidate_targets)}
+                return (0, 0)
+        return self.rng.choice(best_cells)
 
-    # Main entry
+    # ---------------- Main move function ----------------
     def make_move(self, state, feedback):
         if state['phase'] == 'placement':
-            return self._place_ship(state)
-        else:
-            return self._select_target(state)
+            ship_length = state['ships_to_place'][0]
+            my_board = state.get('my_board')
+            # Pick a spread-out placement
+            start, orient = self._choose_placement(my_board, ship_length)
+            orientation = 'horizontal' if orient == 'horizontal' else 'vertical'
+            return {
+                'ship_length': ship_length,
+                'start': start,
+                'orientation': orientation
+            }
+
+        # Bombing phase
+        shot_history = state.get('shot_history', [])
+        board = self._reconstruct_board_from_history(shot_history)
+
+        # Deduce sunk ships and mark sunk cells as 'S' to block them from future placement calculations
+        remaining, sunk_cells = self._deduce_sunk_ships(board, self.ships_initial)
+        self.remaining_ships = remaining
+        for (r, c) in sunk_cells:
+            board[r][c] = 'S'
+
+        # Build probability map
+        prob = self._compute_probability_map(board, self.remaining_ships)
+
+        # If there are active hits (not sunk), form target candidates
+        clusters = self._find_hit_clusters(board)
+        # Exclude clusters that are already fully marked as sunk via sunk_cells
+        active_clusters = []
+        for cluster in clusters:
+            if not cluster.issubset(sunk_cells):
+                # cluster has at least one active hit
+                active_clusters.append(cluster)
+
+        candidate_targets = []
+        # prioritize the most recently created or largest cluster: pick cluster with most hits
+        if active_clusters:
+            # sort by size desc, then by recency isn't directly available, so just largest
+            active_clusters.sort(key=lambda c: -len(c))
+            # consider top two clusters as potential targets
+            for cluster in active_clusters[:2]:
+                candidate_targets.extend(self._candidates_from_cluster(board, cluster))
+
+        # Score candidate targets by probability map and pick best if any
+        chosen = None
+        if candidate_targets:
+            best_score = -1
+            best_cells = []
+            for (r, c) in candidate_targets:
+                if board[r][c] != 'U':
+                    continue
+                score = prob[r][c]
+                if score > best_score:
+                    best_score = score
+                    best_cells = [(r, c)]
+                elif score == best_score:
+                    best_cells.append((r, c))
+            if best_cells:
+                chosen = self.rng.choice(best_cells)
+
+        # Fall back to highest-probability unknown cell
+        if chosen is None:
+            chosen = self._choose_target_from_probability(board, prob)
+
+        return {'target': chosen}

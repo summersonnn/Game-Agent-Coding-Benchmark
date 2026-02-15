@@ -76,38 +76,32 @@ class TicTacToeAgent:
     
     def make_move(self, board):
         """Main move decision method with fallback to random move."""
-        try:
-            self.start_time = time.time()
-            empty_cells = [i for i, cell in enumerate(board) if cell == ' ']
+        self.start_time = time.time()
+        empty_cells = [i for i, cell in enumerate(board) if cell == ' ']
+        
+        if not empty_cells:
+            return None
+        
+        # Early game: use opening book for first few moves
+        move_count = 25 - len(empty_cells)
+        if move_count <= 4:
+            opening_move = self._try_opening_book(board)
+            if opening_move is not None:
+                return opening_move
+        
+        # Always check for immediate win or block
+        immediate_move = self._find_immediate_win_or_block(board)
+        if immediate_move is not None:
+            return immediate_move
+        
+        # Use minimax for deeper search
+        best_move = self._minimax_decision(board, empty_cells)
+        if best_move is not None:
+            return best_move
+        
+        # Fallback: strategic move based on heuristics
+        return self._strategic_move(board, empty_cells)
             
-            if not empty_cells:
-                return None
-            
-            # Early game: use opening book for first few moves
-            move_count = 25 - len(empty_cells)
-            if move_count <= 4:
-                opening_move = self._try_opening_book(board)
-                if opening_move is not None:
-                    return opening_move
-            
-            # Always check for immediate win or block
-            immediate_move = self._find_immediate_win_or_block(board)
-            if immediate_move is not None:
-                return immediate_move
-            
-            # Use minimax for deeper search
-            best_move = self._minimax_decision(board, empty_cells)
-            if best_move is not None:
-                return best_move
-            
-            # Fallback: strategic move based on heuristics
-            return self._strategic_move(board, empty_cells)
-            
-        except Exception:
-            # Fallback to random move on any error
-            empty_cells = [i for i, cell in enumerate(board) if cell == ' ']
-            return random.choice(empty_cells) if empty_cells else None
-    
     def _try_opening_book(self, board):
         """Try to find a good opening move from precomputed patterns."""
         empty_cells = [i for i, cell in enumerate(board) if cell == ' ']

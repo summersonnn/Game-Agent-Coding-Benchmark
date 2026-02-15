@@ -2,437 +2,485 @@
 Agent Code: A2-TicTacToe
 Model: openai/gpt-5.2
 Run: 2
-Generated: 2026-02-13 14:53:21
+Generated: 2026-02-14 16:45:38
 """
 
 import time
 
 class TicTacToeAgent:
-    __slots__ = ("name", "symbol", "opp", "tt")
+    EMPTY = " "
+    BOARD_N = 5
+    WIN_SCORE = 1_000_000
+    INF = 10**12
 
-    # --- Class-wide, shared precomputation (initialized lazily) ---
-    _READY = False
-    _EMPTY = " "
-    _LINES = None              # list[tuple[int,int,int]]
-    _CELL_TO_LINES = None      # list[list[int]]
-    _CELL_IMPORTANCE = None    # list[int]
-    _POS_WEIGHT = None         # list[int]
-    _ZOBRIST = None            # list[tuple[int,int]]  (per cell: (X, O))
+    # --- Precompute all 3-in-a-row lines on 5x5 (48 lines) ---
+    WIN_LINES = []
+    # Rows
+    for _r in range(5):
+        for _c in range(3):
+            _s = _r * 5 + _c
+            WIN_LINES.append((_s, _s + 1, _s + 2))
+    # Cols
+    for _c in range(5):
+        for _r in range(3):
+            _s = _r * 5 + _c
+            WIN_LINES.append((_s, _s + 5, _s + 10))
+    # Diagonals (down-right)
+    for _r in range(3):
+        for _c in range(3):
+            _s = _r * 5 + _c
+            WIN_LINES.append((_s, _s + 6, _s + 12))
+    # Diagonals (down-left)
+    for _r in range(3):
+        for _c in range(2, 5):
+            _s = _r * 5 + _c
+            WIN_LINES.append((_s, _s + 4, _s + 8))
 
-    # Transposition-table flags
-    _EXACT = 0
-    _LOWER = 1
-    _UPPER = -1
+    LINES_BY_CELL = [[] for _ in range(25)]
+    for _line in WIN_LINES:
+        for _idx in _line:
+            LINES_BY_CELL[_idx].append(_line)
 
-    _WIN_BASE = 100_000
-    _INF = 10**18
+    # Positional weights: prefer center and near-center
+    POS_W = [0] * 25
+    _cr, _cc = 2, 2
+    for _i in range(25):
+        _r, _c = divmod(_i, 5)
+        _md = abs(_r - _cr) + abs(_c - _cc)
+        # Higher is better
+        POS_W[_i] = 20 - 4 * _md
 
     def __init__(self, name: str, symbol: str):
-        if not TicTacToeAgent._READY:
-            TicTacToeAgent._init_tables()
-
         self.name = name
-        self.symbol = (symbol or "X").upper()
-        self.symbol = "X" if self.symbol != "O" else "O"
-        self.opp = "O" if self.symbol == "X" else "X"
+        self.symbol = symbol
+        self.opp = "O" if symbol == "X" else "X"
 
-        # Transposition table: key=(hash, player_to_move) -> (depth, value, flag, best_move)
-        self.tt = {}
+        # Time management
+        self._deadline = 0.0
+        self._time_up = False
 
-    @classmethod
-    def _init_tables(cls):
-        # Winning lines (3-in-a-row on a 5x5)
-        lines = []
-        # Rows
-        for r in range(5):
-            for c in range(3):
-                s = r * 5 + c
-                lines.append((s, s + 1, s + 2))
-        # Cols
-        for c in range(5):
-            for r in range(3):
-                s = r * 5 + c
-                lines.append((s, s + 5, s + 10))
-        # Diagonals down-right
-        for r in range(3):
-            for c in range(3):
-                s = r * 5 + c
-                lines.append((s, s + 6, s + 12))
-        # Diagonals down-left
-        for r in range(3):
-            for c in range(2, 5):
-                s = r * 5 + c
-                lines.append((s, s + 4, s + 8))
+        # Transposition table
+        self._tt = {}
 
-        cell_to_lines = [[] for _ in range(25)]
-        for li, (a, b, c) in enumerate(lines):
-            cell_to_lines[a].append(li)
-            cell_to_lines[b].append(li)
-            cell_to_lines[c].append(li)
+        # Zobrist hashing (self-contained PRNG: splitmix64)
+        self._mask64 = (1 << 64) - 1
+        self._seed = (hash((name, symbol)) & self._mask64) or 0x9E3779B97F4A7C15
 
-        cell_importance = [len(cell_to_lines[i]) for i in range(25)]
-
-        # Mild positional preference (center > edges > corners)
-        pos_weight = []
+        self._z_piece = [[0, 0] for _ in range(25)]  # [cell][0:X,1:O]
         for i in range(25):
-            r, c = divmod(i, 5)
-            manh = abs(r - 2) + abs(c - 2)
-            pos_weight.append(max(0, 4 - manh))
+            self._z_piece[i][0] = self._rand64()
+            self._z_piece[i][1] = self._rand64()
+        self._z_side = self._rand64()  # toggled each ply; included when X-to-move
 
-        # Zobrist table: per cell, random 64-bit for X and O
-        zob = []
-        for _ in range(25):
-            zob.append((random.getrandbits(64), random.getrandbits(64)))
+        # Root move ordering memory
+        self._root_hint_move = None
 
-        cls._LINES = lines
-        cls._CELL_TO_LINES = cell_to_lines
-        cls._CELL_IMPORTANCE = cell_importance
-        cls._POS_WEIGHT = pos_weight
-        cls._ZOBRIST = zob
-        cls._READY = True
-
-    # ---------------- Core API ----------------
+    # ---------- Public API ----------
     def make_move(self, board: list[str]) -> int:
-        b = list(board)  # safety copy
-        empty = self._EMPTY
+        b = list(board)  # do not mutate engine-provided board
 
-        legal = [i for i, v in enumerate(b) if v == empty]
-        if not legal:
-            return 0  # shouldn't happen; engine will randomize if invalid
-
-        # If game is already ended (shouldn't happen), just return a legal move.
-        if self._check_winner_full(b) is not None:
-            return legal[0]
-
-        me, opp = self.symbol, self.opp
+        empties = [i for i, v in enumerate(b) if v == self.EMPTY]
+        if not empties:
+            return 0
 
         # 1) Immediate win
-        my_wins = self._winning_moves(b, me)
-        if my_wins:
-            return self._pick_best_static(b, my_wins, me, opp)
+        m = self._find_winning_move(b, self.symbol)
+        if m is not None:
+            return m
 
         # 2) Immediate block
-        opp_wins = self._winning_moves(b, opp)
-        if opp_wins:
-            return self._pick_best_static(b, opp_wins, me, opp)
+        m = self._find_winning_move(b, self.opp)
+        if m is not None:
+            return m
 
-        # 3) Quick fork creation (2+ threats next turn)
-        forks = [m for m in legal if self._fork_potential(b, m, me, opp) >= 2]
-        if forks:
-            return self._pick_best_static(b, forks, me, opp)
+        # 3) Search (iterative deepening negamax with alpha-beta + TT)
+        self._deadline = time.perf_counter() + 0.93
+        self._time_up = False
+        self._tt.clear()
 
-        # 4) Block opponent forks if present
-        opp_forks = [m for m in legal if self._fork_potential(b, m, opp, me) >= 2]
-        if opp_forks:
-            return self._pick_best_static(b, opp_forks, me, opp)
+        h0 = self._hash_pieces(b)
+        # include side-to-move: we use XOR _z_side when X is to move
+        if self.symbol == "X":
+            h0 ^= self._z_side
 
-        # 5) Search (iterative deepening alpha-beta with TT)
-        if len(self.tt) > 250_000:
-            self.tt.clear()
+        # Choose max depth based on remaining empties (iterative deepening will stop by time)
+        e = len(empties)
+        if e > 18:
+            max_depth = 4
+        elif e > 13:
+            max_depth = 5
+        elif e > 9:
+            max_depth = 6
+        else:
+            max_depth = 7
 
-        empties = len(legal)
-        max_depth = self._select_max_depth(empties)
-        # Keep a little margin under 1s timeout.
-        end_time = time.perf_counter() + 0.92
-
-        h = self._hash_board(b)
         best_move = None
+        best_score = -self.INF
 
-        # Iterative deepening: always keep the last fully-computed best move.
         for depth in range(1, max_depth + 1):
-            try:
-                val, move = self._negamax(
-                    b, h, me, opp, depth, -self._INF, self._INF, empties, end_time, extended=False
-                )
-            except TimeoutError:
+            if time.perf_counter() >= self._deadline:
+                break
+            score, move = self._negamax_root(b, h0, depth, self.symbol)
+            if self._time_up:
                 break
             if move is not None:
-                best_move = move
-            # If we found a forced win/loss, no need to go deeper.
-            if abs(val) >= self._WIN_BASE - 1000:
-                break
+                best_move, best_score = move, score
+                self._root_hint_move = move  # hint next depth
 
-        if best_move is None or b[best_move] != empty:
-            # Fallback: choose most "central/important" legal move.
-            best_move = max(legal, key=lambda m: (self._CELL_IMPORTANCE[m], self._POS_WEIGHT[m]))
+        if best_move is None or b[best_move] != self.EMPTY:
+            # Deterministic fallback: pick the best heuristic move among candidates.
+            best_move = self._fallback_move(b)
 
         return best_move
 
-    # ---------------- Search ----------------
-    def _negamax(
-        self,
-        b: list[str],
-        h: int,
-        player: str,
-        other: str,
-        depth: int,
-        alpha: int,
-        beta: int,
-        empties: int,
-        end_time: float,
-        extended: bool,
-    ):
-        if time.perf_counter() >= end_time:
-            raise TimeoutError
+    # ---------- SplitMix64 PRNG ----------
+    def _rand64(self) -> int:
+        self._seed = (self._seed + 0x9E3779B97F4A7C15) & self._mask64
+        z = self._seed
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9 & self._mask64
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EB & self._mask64
+        z = (z ^ (z >> 31)) & self._mask64
+        return z
 
-        key = (h, player)
-        alpha0 = alpha
+    # ---------- Utility ----------
+    @staticmethod
+    def _other(sym: str) -> str:
+        return "O" if sym == "X" else "X"
 
-        entry = self.tt.get(key)
-        if entry is not None:
-            e_depth, e_val, e_flag, e_best = entry
-            if e_depth >= depth:
-                if e_flag == self._EXACT:
-                    return e_val, e_best
-                if e_flag == self._LOWER:
-                    alpha = max(alpha, e_val)
-                elif e_flag == self._UPPER:
-                    beta = min(beta, e_val)
-                if alpha >= beta:
-                    return e_val, e_best
+    def _hash_pieces(self, b: list[str]) -> int:
+        h = 0
+        zp = self._z_piece
+        for i, v in enumerate(b):
+            if v == "X":
+                h ^= zp[i][0]
+            elif v == "O":
+                h ^= zp[i][1]
+        return h
 
-        # Quiescence-like single extension if there are immediate tactics around depth 0.
-        if depth == 0:
-            if (not extended) and (self._has_immediate_win(b, player) or self._has_immediate_win(b, other)):
-                depth = 1
-                extended = True
+    def _is_win_after(self, b: list[str], last_move: int, last_player: str) -> bool:
+        bb = b
+        for a, c, d in self.LINES_BY_CELL[last_move]:
+            # (a,c,d) are just names; tuple is 3 indices
+            if bb[a] == bb[c] == bb[d] == last_player:
+                return True
+        return False
+
+    def _find_winning_move(self, b: list[str], sym: str):
+        bb = b
+        for a, c, d in self.WIN_LINES:
+            va, vc, vd = bb[a], bb[c], bb[d]
+            if va == sym and vc == sym and vd == self.EMPTY:
+                return d
+            if va == sym and vd == sym and vc == self.EMPTY:
+                return c
+            if vc == sym and vd == sym and va == self.EMPTY:
+                return a
+        return None
+
+    # ---------- Move generation / ordering ----------
+    def _candidate_moves(self, b: list[str]) -> list[int]:
+        bb = b
+        empties = []
+        occupied = []
+        for i, v in enumerate(bb):
+            if v == self.EMPTY:
+                empties.append(i)
             else:
-                return self._evaluate(b, player, other), None
+                occupied.append(i)
 
-        moves = [i for i, v in enumerate(b) if v == self._EMPTY]
-        if not moves:
-            return 0, None
+        if not empties:
+            return []
 
-        # Move ordering (helps alpha-beta)
-        tt_best = entry[3] if entry is not None else None
-        ordered = self._order_moves(b, moves, player, other, tt_best)
+        # If very early, allow all moves (but will be ordered).
+        if len(occupied) <= 1:
+            return empties
 
-        best_val = -self._INF
-        best_move = None
+        # Otherwise, focus near existing marks (Chebyshev adjacency), plus some strategic additions.
+        adj = set()
+        for idx in occupied:
+            r, c = divmod(idx, 5)
+            r0 = r - 1 if r > 0 else 0
+            r1 = r + 1 if r < 4 else 4
+            c0 = c - 1 if c > 0 else 0
+            c1 = c + 1 if c < 4 else 4
+            for rr in range(r0, r1 + 1):
+                base = rr * 5
+                for cc in range(c0, c1 + 1):
+                    j = base + cc
+                    if bb[j] == self.EMPTY:
+                        adj.add(j)
 
-        z_idx = 0 if player == "X" else 1
+        # Ensure center is considered
+        if bb[12] == self.EMPTY:
+            adj.add(12)
 
-        for m in ordered:
-            if time.perf_counter() >= end_time:
-                raise TimeoutError
+        cand = list(adj)
 
-            b[m] = player
-            h2 = h ^ self._ZOBRIST[m][z_idx]
-            new_empties = empties - 1
+        # If too few, add empties from any "unblocked" line that still matters.
+        if len(cand) < 8:
+            me, opp = self.symbol, self.opp
+            extra = set(cand)
+            for a, c, d in self.WIN_LINES:
+                va, vc, vd = bb[a], bb[c], bb[d]
+                has_me = (va == me) or (vc == me) or (vd == me)
+                has_opp = (va == opp) or (vc == opp) or (vd == opp)
+                if has_me and has_opp:
+                    continue
+                if va == self.EMPTY:
+                    extra.add(a)
+                if vc == self.EMPTY:
+                    extra.add(c)
+                if vd == self.EMPTY:
+                    extra.add(d)
+            cand = [m for m in extra if bb[m] == self.EMPTY]
 
-            if self._is_win_from_move(b, m, player):
-                val = self._WIN_BASE + new_empties
-            elif new_empties == 0:
-                val = 0
-            else:
-                child_val, _ = self._negamax(
-                    b, h2, other, player, depth - 1, -beta, -alpha, new_empties, end_time, extended=extended
-                )
-                val = -child_val
+        # If still too few (rare), just return all empties.
+        if len(cand) < 6:
+            return empties
 
-            b[m] = self._EMPTY
+        return cand
 
-            if val > best_val:
-                best_val, best_move = val, m
+    def _move_order_key(self, b: list[str], move: int, player: str) -> int:
+        # Larger is better.
+        bb = b
+        opp = "O" if player == "X" else "X"
 
-            alpha = max(alpha, val)
-            if alpha >= beta:
-                break
+        # Threat estimate from local lines
+        threat = 0
+        for a, c, d in self.LINES_BY_CELL[move]:
+            va, vc, vd = bb[a], bb[c], bb[d]
 
-        # Store TT entry
-        if best_val <= alpha0:
-            flag = self._UPPER
-        elif best_val >= beta:
-            flag = self._LOWER
-        else:
-            flag = self._EXACT
-        self.tt[key] = (depth, best_val, flag, best_move)
-
-        return best_val, best_move
-
-    def _select_max_depth(self, empties: int) -> int:
-        # Conservative early (branching huge), deeper late.
-        if empties >= 20:
-            return 3
-        if empties >= 16:
-            return 4
-        if empties >= 12:
-            return 5
-        if empties >= 9:
-            return 7
-        return min(empties, 12)
-
-    # ---------------- Tactics / Heuristics ----------------
-    def _pick_best_static(self, b: list[str], candidates, me: str, opp: str) -> int:
-        # Pick the candidate that looks best after the move (fast, no search).
-        best = None
-        best_score = -self._INF
-        for m in candidates:
-            if b[m] != self._EMPTY:
+            # counts before placing at 'move' (which is empty)
+            n_opp = (va == opp) + (vc == opp) + (vd == opp)
+            if n_opp:
+                # Still may be a block if opponent has 2-in-line and we occupy the empty.
+                n_player = (va == player) + (vc == player) + (vd == player)
+                if n_opp == 2 and n_player == 0:
+                    threat += 5000  # urgent block square
                 continue
-            b[m] = me
-            score = self._evaluate(b, me, opp)
-            # Prefer moves that also reduce opponent immediate wins / create threats.
-            score += 250 * len(self._winning_moves(b, me))
-            score -= 300 * len(self._winning_moves(b, opp))
-            b[m] = self._EMPTY
-            # Tie-break: central/important
-            score = (score, self._CELL_IMPORTANCE[m], self._POS_WEIGHT[m])
-            if best is None or score > best_score:
-                best = m
-                best_score = score
-        return best if best is not None else next(iter(candidates))
 
-    def _evaluate(self, b: list[str], player: str, other: str) -> int:
-        # Heuristic score from "player" perspective.
+            n_player = (va == player) + (vc == player) + (vd == player)
+            if n_player == 2:
+                threat += 20000  # winning completion
+            elif n_player == 1:
+                threat += 600  # creates 2-in-a-row threat
+            else:
+                threat += 40  # participates in a fresh line
+
+        return threat + self.POS_W[move]
+
+    def _ordered_moves(self, b: list[str], player: str, tt_best=None) -> list[int]:
+        cand = self._candidate_moves(b)
+        if not cand:
+            return []
+
+        bb = b
+        # Ensure all are empty
+        cand = [m for m in cand if bb[m] == self.EMPTY]
+        if not cand:
+            return []
+
+        # Put tt_best / root hint first if present
+        if tt_best is not None and tt_best in cand:
+            cand.remove(tt_best)
+            first = [tt_best]
+        elif self._root_hint_move is not None and self._root_hint_move in cand:
+            cand.remove(self._root_hint_move)
+            first = [self._root_hint_move]
+        else:
+            first = []
+
+        # Sort remaining by heuristic key descending
+        cand.sort(key=lambda m: self._move_order_key(bb, m, player), reverse=True)
+        return first + cand
+
+    def _fallback_move(self, b: list[str]) -> int:
+        bb = b
+        cand = self._candidate_moves(bb)
+        if not cand:
+            # pick any empty
+            for i, v in enumerate(bb):
+                if v == self.EMPTY:
+                    return i
+            return 0
+
+        best = None
+        bestk = -self.INF
+        for m in cand:
+            if bb[m] != self.EMPTY:
+                continue
+            k = self._move_order_key(bb, m, self.symbol)
+            if k > bestk:
+                bestk = k
+                best = m
+        if best is not None:
+            return best
+
+        # last resort: first empty
+        for i, v in enumerate(bb):
+            if v == self.EMPTY:
+                return i
+        return 0
+
+    # ---------- Evaluation ----------
+    def _eval(self, b: list[str], player: str) -> int:
+        # Evaluation from the perspective of 'player' to move (higher is better for player).
+        bb = b
+        opp = "O" if player == "X" else "X"
+
         score = 0
 
-        # Positional: center + intersection cells
-        for i, v in enumerate(b):
-            if v == player:
-                score += 3 * self._CELL_IMPORTANCE[i] + 2 * self._POS_WEIGHT[i]
-            elif v == other:
-                score -= 3 * self._CELL_IMPORTANCE[i] + 2 * self._POS_WEIGHT[i]
+        # Line-based features
+        for a, c, d in self.WIN_LINES:
+            va, vc, vd = bb[a], bb[c], bb[d]
+            n_p = (va == player) + (vc == player) + (vd == player)
+            n_o = (va == opp) + (vc == opp) + (vd == opp)
 
-        # Line potential
-        p2 = 0
-        o2 = 0
-        for a, c, d in self._LINES:
-            va, vc, vd = b[a], b[c], b[d]
-            p = (va == player) + (vc == player) + (vd == player)
-            o = (va == other) + (vc == other) + (vd == other)
-            if p and o:
+            if n_p and n_o:
                 continue  # blocked
-            if p:
-                if p == 2:
-                    score += 450
-                    p2 += 1
-                elif p == 1:
-                    score += 18
-            elif o:
-                if o == 2:
-                    score -= 520
-                    o2 += 1
-                elif o == 1:
-                    score -= 20
+            if n_p == 3:
+                score += 200000
+            elif n_o == 3:
+                score -= 200000
+            elif n_p == 2 and n_o == 0:
+                score += 3000
+            elif n_o == 2 and n_p == 0:
+                score -= 3300
+            elif n_p == 1 and n_o == 0:
+                score += 90
+            elif n_o == 1 and n_p == 0:
+                score -= 100
 
-        # Extra emphasis on multiple simultaneous threats ("fork pressure")
-        score += 140 * (p2 - o2)
+        # Positional bias (mild)
+        for i, v in enumerate(bb):
+            if v == player:
+                score += self.POS_W[i] // 2
+            elif v == opp:
+                score -= self.POS_W[i] // 2
 
         return score
 
-    def _order_moves(self, b: list[str], moves: list[int], player: str, other: str, tt_best: int | None):
-        # Highest first.
-        def mscore(m: int) -> int:
-            s = 10 * self._CELL_IMPORTANCE[m] + 6 * self._POS_WEIGHT[m]
+    # ---------- Negamax search with alpha-beta and TT ----------
+    def _negamax_root(self, b: list[str], h: int, depth: int, player: str):
+        alpha = -self.INF
+        beta = self.INF
+        best_score = -self.INF
+        best_move = None
 
-            # Prefer TT best move first if present.
-            if tt_best is not None and m == tt_best:
-                s += 50_000
+        # Probe TT for best move hint
+        tt_entry = self._tt.get(h)
+        tt_best = tt_entry[4] if tt_entry is not None else None
 
-            # Immediate win / block cues (fast local checks)
-            if self._is_win_if_play(b, m, player):
-                s += 100_000
-            if self._is_win_if_play(b, m, other):
-                s += 80_000
+        moves = self._ordered_moves(b, player, tt_best=tt_best)
+        if not moves:
+            return 0, None
 
-            # Fork potential
-            s += 4_000 * self._fork_potential(b, m, player, other)
+        opp = "O" if player == "X" else "X"
+        for m in moves:
+            if time.perf_counter() >= self._deadline:
+                self._time_up = True
+                break
 
-            return s
+            b[m] = player
+            h2 = h ^ self._z_piece[m][0 if player == "X" else 1] ^ self._z_side
+            score = -self._negamax(b, h2, depth - 1, -beta, -alpha, opp, ply=1, last_move=m, last_player=player)
+            b[m] = self.EMPTY
 
-        return sorted(moves, key=mscore, reverse=True)
+            if self._time_up:
+                break
 
-    def _fork_potential(self, b: list[str], move: int, player: str, other: str) -> int:
-        # Count how many lines would become "two-in-a-row with one empty" after playing at move.
-        if b[move] != self._EMPTY:
+            if score > best_score:
+                best_score = score
+                best_move = m
+            if score > alpha:
+                alpha = score
+            if alpha >= beta:
+                break
+
+        return best_score, best_move
+
+    def _negamax(self, b: list[str], h: int, depth: int, alpha: int, beta: int,
+                 player: str, ply: int, last_move: int, last_player: str) -> int:
+        if time.perf_counter() >= self._deadline:
+            self._time_up = True
+            return self._eval(b, player)
+
+        # If previous player just won, current player loses.
+        if last_move is not None and self._is_win_after(b, last_move, last_player):
+            return -self.WIN_SCORE + ply
+
+        # Draw check
+        # (also a cutoff if no legal moves)
+        has_empty = False
+        for v in b:
+            if v == self.EMPTY:
+                has_empty = True
+                break
+        if not has_empty:
             return 0
-        cnt = 0
-        for li in self._CELL_TO_LINES[move]:
-            a, c, d = self._LINES[li]
-            if move == a:
-                p, q = c, d
-            elif move == c:
-                p, q = a, d
+
+        if depth <= 0:
+            return self._eval(b, player)
+
+        # Transposition table lookup
+        entry = self._tt.get(h)
+        if entry is not None:
+            e_depth, e_score, e_flag, e_alpha, e_best = entry
+            if e_depth >= depth:
+                if e_flag == 0:  # EXACT
+                    return e_score
+                if e_flag == 1:  # LOWERBOUND
+                    if e_score > alpha:
+                        alpha = e_score
+                else:  # UPPERBOUND
+                    if e_score < beta:
+                        beta = e_score
+                if alpha >= beta:
+                    return e_score
+
+        opp = "O" if player == "X" else "X"
+
+        tt_best = entry[4] if entry is not None else None
+        moves = self._ordered_moves(b, player, tt_best=tt_best)
+        if not moves:
+            return 0
+
+        orig_alpha = alpha
+        best_score = -self.INF
+        best_move = None
+
+        for m in moves:
+            if time.perf_counter() >= self._deadline:
+                self._time_up = True
+                break
+
+            b[m] = player
+            h2 = h ^ self._z_piece[m][0 if player == "X" else 1] ^ self._z_side
+            score = -self._negamax(b, h2, depth - 1, -beta, -alpha, opp, ply + 1, last_move=m, last_player=player)
+            b[m] = self.EMPTY
+
+            if self._time_up:
+                break
+
+            if score > best_score:
+                best_score = score
+                best_move = m
+            if score > alpha:
+                alpha = score
+            if alpha >= beta:
+                break
+
+        # Store TT
+        if not self._time_up:
+            if best_score <= orig_alpha:
+                flag = 2  # UPPERBOUND
+            elif best_score >= beta:
+                flag = 1  # LOWERBOUND
             else:
-                p, q = a, c
+                flag = 0  # EXACT
 
-            vp, vq = b[p], b[q]
-            if vp == other or vq == other:
-                continue
-            # After playing move, line has player at move; we want exactly one more player mark among p/q.
-            if (vp == player and vq == self._EMPTY) or (vq == player and vp == self._EMPTY):
-                cnt += 1
-        return cnt
+            # Entry: (depth, score, flag, alpha_at_store, best_move)
+            # (alpha_at_store is not used except for debugging; kept compact)
+            self._tt[h] = (depth, best_score, flag, orig_alpha, best_move)
 
-    def _winning_moves(self, b: list[str], player: str):
-        # Return set of indices that win immediately for player.
-        wins = set()
-        e = self._EMPTY
-        for a, c, d in self._LINES:
-            va, vc, vd = b[a], b[c], b[d]
-            # Exactly two player's marks and one empty
-            p = (va == player) + (vc == player) + (vd == player)
-            if p != 2:
-                continue
-            if va == e and vc == player and vd == player:
-                wins.add(a)
-            elif vc == e and va == player and vd == player:
-                wins.add(c)
-            elif vd == e and va == player and vc == player:
-                wins.add(d)
-        return wins
-
-    def _has_immediate_win(self, b: list[str], player: str) -> bool:
-        e = self._EMPTY
-        for a, c, d in self._LINES:
-            va, vc, vd = b[a], b[c], b[d]
-            p = (va == player) + (vc == player) + (vd == player)
-            if p == 2 and (va == e or vc == e or vd == e):
-                return True
-        return False
-
-    # ---------------- Win checks / hashing ----------------
-    def _is_win_if_play(self, b: list[str], move: int, player: str) -> bool:
-        # Check if putting player at move completes a 3-in-row.
-        if b[move] != self._EMPTY:
-            return False
-        for li in self._CELL_TO_LINES[move]:
-            a, c, d = self._LINES[li]
-            if move == a:
-                if b[c] == player and b[d] == player:
-                    return True
-            elif move == c:
-                if b[a] == player and b[d] == player:
-                    return True
-            else:
-                if b[a] == player and b[c] == player:
-                    return True
-        return False
-
-    def _is_win_from_move(self, b: list[str], move: int, player: str) -> bool:
-        # Assumes b[move] == player; checks only affected lines.
-        for li in self._CELL_TO_LINES[move]:
-            a, c, d = self._LINES[li]
-            if b[a] == b[c] == b[d] == player:
-                return True
-        return False
-
-    def _check_winner_full(self, b: list[str]):
-        e = self._EMPTY
-        for a, c, d in self._LINES:
-            v = b[a]
-            if v != e and v == b[c] == b[d]:
-                return v
-        if e not in b:
-            return "DRAW"
-        return None
-
-    def _hash_board(self, b: list[str]) -> int:
-        h = 0
-        for i, v in enumerate(b):
-            if v == "X":
-                h ^= self._ZOBRIST[i][0]
-            elif v == "O":
-                h ^= self._ZOBRIST[i][1]
-        return h
+        return best_score

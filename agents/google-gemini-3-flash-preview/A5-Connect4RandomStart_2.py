@@ -5,97 +5,87 @@ Run: 2
 Generated: 2026-02-12 14:51:12
 """
 
-import collections
+import random
 
-class WordMatrixAgent:
-    def __init__(self, name, word_list):
+class Connect4Agent:
+    def __init__(self, name, symbol):
         """
-        Initialize the agent and pre-process the dictionary.
-        word_list: a collection of lowercase English words.
+        Initialize the agent with a name and piece symbol ('R' or 'Y').
         """
         self.name = name
-        # Organize dictionary by length for efficiency: {length: set(words)}
-        self.words_by_len = collections.defaultdict(set)
-        for word in word_list:
-            word = word.lower()
-            if 2 <= len(word) <= 32: # Max path 16 * 2 = 32
-                self.words_by_len[len(word)].add(word)
-        
-        # Keep a flat set for O(1) exact matches
-        self.dictionary_set = set(word_list)
+        self.symbol = symbol
+        self.opponent_symbol = 'Y' if symbol == 'R' else 'R'
+        self.rows = 6
+        self.cols = 7
 
-    def is_subsequence(self, path_str, word):
-        """Checks if path_str is a subsequence of word."""
-        it = iter(word)
-        return all(char in it for char in path_str)
-
-    def find_best_word_for_path(self, path_str):
+    def make_move(self, board):
         """
-        Finds the shortest valid word for a given path string.
-        Shorter words = more cleared cells = higher score.
+        Decide the next move using a simplified minimax-style evaluation:
+        1. Check for immediate winning moves.
+        2. Check for immediate threats to block.
+        3. Prefer the center column for better connectivity.
+        4. Default to a random valid move if no priority is found.
         """
-        p_len = len(path_str)
+        valid_moves = [c for c in range(self.cols) if board[0][c] == ' ']
         
-        # Priority 1: Exact Match (Length of word == Length of path)
-        if path_str in self.dictionary_set:
-            return path_str
-            
-        # Priority 2: Subsequence matches (Length + 1 up to Length * 2)
-        for length in range(p_len + 1, (2 * p_len) + 1):
-            for word in self.words_by_len[length]:
-                if self.is_subsequence(path_str, word):
-                    return word
+        if not valid_moves:
+            return 0
+
+        # 1. Check if we can win in the next move
+        for col in valid_moves:
+            row = self._get_drop_row(board, col)
+            if self._is_winning_move(board, row, col, self.symbol):
+                return col
+
+        # 2. Check if we need to block the opponent from winning
+        for col in valid_moves:
+            row = self._get_drop_row(board, col)
+            if self._is_winning_move(board, row, col, self.opponent_symbol):
+                return col
+
+        # 3. Heuristic: Prioritize the center column, then move outwards
+        center_preference = [3, 2, 4, 1, 5, 0, 6]
+        for col in center_preference:
+            if col in valid_moves:
+                return col
+
+        return random.choice(valid_moves)
+
+    def _get_drop_row(self, board, col):
+        """Finds the row index where a disc would land in a given column."""
+        for r in range(self.rows - 1, -1, -1):
+            if board[r][col] == ' ':
+                return r
         return None
 
-    def get_neighbors(self, r, c, board):
-        """Returns valid Up/Down/Left/Right neighbors."""
-        neighbors = []
-        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < 4 and 0 <= nc < 4 and board[nr][nc] != "":
-                neighbors.append((nr, nc))
-        return neighbors
+    def _is_winning_move(self, board, row, col, sym):
+        """Checks if placing a symbol at (row, col) creates a connect four."""
+        # Temporarily place the piece
+        board[row][col] = sym
+        is_win = False
 
-    def make_move(self, board, scores, total_passes):
-        """
-        Scans the board for the highest-scoring valid move.
-        """
-        best_move = None
-        max_cleared = -1
+        # Directions: (row_delta, col_delta)
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+        
+        for dr, dc in directions:
+            count = 1
+            # Check positive direction
+            r, c = row + dr, col + dc
+            while 0 <= r < self.rows and 0 <= c < self.cols and board[r][c] == sym:
+                count += 1
+                r += dr
+                c += dc
+            # Check negative direction
+            r, c = row - dr, col - dc
+            while 0 <= r < self.rows and 0 <= c < self.cols and board[r][c] == sym:
+                count += 1
+                r -= dr
+                c -= dc
+            
+            if count >= 4:
+                is_win = True
+                break
 
-        # Iterate through every cell as a potential starting point
-        for r in range(4):
-            for c in range(4):
-                if board[r][c] == "":
-                    continue
-                
-                # Start DFS to find paths (limited to length 8 for performance)
-                stack = [([(r, c)], board[r][c])]
-                
-                while stack:
-                    path, path_str = stack.pop()
-                    
-                    # Try to find a word for this path
-                    if len(path) >= 2:
-                        word = self.find_best_word_for_path(path_str)
-                        if word:
-                            # Efficiency: Cleared cells = len(path) - (len(word) - len(path))
-                            # Simplified: 2 * len(path) - len(word)
-                            cleared_cells = 2 * len(path) - len(word)
-                            
-                            if cleared_cells > max_cleared:
-                                max_cleared = cleared_cells
-                                best_move = (path, word)
-                                
-                                # Early exit for a "perfect" long path
-                                if cleared_cells >= 6: 
-                                    return best_move
-
-                    # Continue DFS if path length is manageable
-                    if len(path) < 8: 
-                        curr_r, curr_c = path[-1]
-                        for nr, nc in self.get_neighbors(curr_r, curr_c, board):
-                            if (nr, nc) not in path:
-                                stack.append((path + [(nr, nc)], path_str + board[nr][nc]))
-
-        return best_move if best_move else "PASS"
+        # Undo the move
+        board[row][col] = ' '
+        return is_win

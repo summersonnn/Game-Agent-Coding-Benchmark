@@ -2,13 +2,12 @@
 Agent Code: A2-TicTacToe
 Model: x-ai/grok-4
 Run: 1
-Generated: 2026-02-13 14:53:21
+Generated: 2026-02-14 17:00:49
 """
 
-import time
+
 
 import random
-import time
 
 class TicTacToeAgent:
     def __init__(self, name, symbol):
@@ -37,107 +36,57 @@ class TicTacToeAgent:
         for a, b, c in self.win_conditions:
             if board[a] == board[b] == board[c] != ' ':
                 return board[a]
-        if all(cell != ' ' for cell in board):
+        if all(s != ' ' for s in board):
             return 'DRAW'
         return None
 
-    def heuristic(self, board):
-        return self.player_score(board, self.symbol) - self.player_score(board, self.opponent)
-
-    def player_score(self, board, player):
-        opp = self.opponent if player == self.symbol else self.symbol
-        score = 0
-        for combo in self.win_conditions:
-            cells = [board[i] for i in combo]
-            num_player = cells.count(player)
-            num_opp = cells.count(opp)
-            if num_opp > 0:
-                continue
-            if num_player == 2:
-                score += 10
-            elif num_player == 1:
-                score += 1
-        return score
-
-    def minimax(self, board, is_maximizing, alpha, beta, current_depth, max_depth):
+    def minimax(self, board, depth, is_max, alpha, beta):
         winner = self.check_winner(board)
         if winner is not None:
-            if winner == 'DRAW':
-                return 0
-            empty = sum(1 for c in board if c == ' ')
-            base = max(empty, 3)
             if winner == self.symbol:
-                return 1000 + base
+                return 100 - depth
+            elif winner == self.opponent:
+                return -100 + depth
             else:
-                return -(1000 + base)
-        if current_depth >= max_depth:
-            return self.heuristic(board)
-        moves = [i for i in range(25) if board[i] == ' ']
-        if moves:
-            current_player = self.symbol if is_maximizing else self.opponent
-            move_scores = []
-            for move in moves:
-                board[move] = current_player
-                sc = self.heuristic(board)
-                board[move] = ' '
-                move_scores.append((sc, move))
-            if is_maximizing:
-                move_scores.sort(key=lambda x: x[0], reverse=True)
-            else:
-                move_scores.sort(key=lambda x: x[0])
-            moves = [m for _, m in move_scores]
-        if is_maximizing:
-            max_eval = -float('inf')
-            for move in moves:
+                return 0
+
+        available = [i for i in range(25) if board[i] == ' ']
+
+        if is_max:
+            max_eval = float('-inf')
+            for move in available:
                 board[move] = self.symbol
-                eval_ = self.minimax(board, False, alpha, beta, current_depth + 1, max_depth)
+                eval = self.minimax(board, depth + 1, False, alpha, beta)
                 board[move] = ' '
-                max_eval = max(max_eval, eval_)
-                alpha = max(alpha, eval_)
+                max_eval = max(max_eval, eval)
+                alpha = max(alpha, eval)
                 if beta <= alpha:
                     break
             return max_eval
         else:
             min_eval = float('inf')
-            for move in moves:
+            for move in available:
                 board[move] = self.opponent
-                eval_ = self.minimax(board, True, alpha, beta, current_depth + 1, max_depth)
+                eval = self.minimax(board, depth + 1, True, alpha, beta)
                 board[move] = ' '
-                min_eval = min(min_eval, eval_)
-                beta = min(beta, eval_)
+                min_eval = min(min_eval, eval)
+                beta = min(beta, eval)
                 if beta <= alpha:
                     break
             return min_eval
 
     def make_move(self, board):
-        start_time = time.time()
-        moves = [i for i in range(25) if board[i] == ' ']
-        if not moves:
+        available = [i for i in range(25) if board[i] == ' ']
+        if not available:
             return None
-        best_move = random.choice(moves)
-        move_scores = []
-        for m in moves:
-            board[m] = self.symbol
-            sc = self.heuristic(board)
-            board[m] = ' '
-            move_scores.append((sc, m))
-        move_scores.sort(key=lambda x: x[0], reverse=True)
-        ordered_moves = [m for _, m in move_scores]
-        depth = 1
-        while True:
-            current_best_move = None
-            best_score = -float('inf')
-            for move in ordered_moves:
-                board[move] = self.symbol
-                score = self.minimax(board, False, -float('inf'), float('inf'), 1, depth)
-                board[move] = ' '
-                if score > best_score:
-                    best_score = score
-                    current_best_move = move
-            if current_best_move is not None:
-                best_move = current_best_move
-            elapsed = time.time() - start_time
-            if elapsed > 0.8 or depth > 20:
-                break
-            depth += 1
+
+        best_score = float('-inf')
+        best_move = available[0]
+        for move in available:
+            board[move] = self.symbol
+            score = self.minimax(board, 1, False, float('-inf'), float('inf'))
+            board[move] = ' '
+            if score > best_score:
+                best_score = score
+                best_move = move
         return best_move

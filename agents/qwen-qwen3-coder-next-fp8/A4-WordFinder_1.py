@@ -1,8 +1,8 @@
 """
 Agent Code: A4-WordFinder
-Model: qwen/qwen3-coder-next
+Model: qwen/qwen3-coder-next@preset/fp8
 Run: 1
-Generated: 2026-02-12 09:31:57
+Generated: 2026-02-14 18:23:39
 """
 
 
@@ -11,155 +11,134 @@ import random
 
 
 class WordFinderAgent:
-    """
-    Your agent implementation goes here.
-    """
     def __init__(self, name):
-        """
-        Initialize your agent.
-        """
         self.name = name
-        self.dictionary = load_words()  # Load the full word dictionary
+        self.dictionary = load_words()
+        # Pre-process dictionary for efficient lookup
+        # Group words by length and by (first_char, last_char) pairs
+        self.words_by_length = {}
+        self.words_by_ends = {}  # key: (first_char, last_char), value: set of words
         
-        # Precompute word length index for faster lookups
-        self.length_index = {}
         for word in self.dictionary:
+            # Store by length
             length = len(word)
-            if length not in self.length_index:
-                self.length_index[length] = set()
-            self.length_index[length].add(word)
+            if length not in self.words_by_length:
+                self.words_by_length[length] = set()
+            self.words_by_length[length].add(word)
+            
+            # Store by first and last characters
+            first_char = word[0]
+            last_char = word[-1]
+            ends_key = (first_char, last_char)
+            if ends_key not in self.words_by_ends:
+                self.words_by_ends[ends_key] = set()
+            self.words_by_ends[ends_key].add(word)
     
     def make_move(self, current_word, word_history):
-        """
-        Called when it's your turn.
-
-        Parameters:
-        -----------
-        current_word : str
-            The word played by the opponent (or the starting word).
-
-        word_history : set
-            A set of all words that have been used so far in the game (by both players).
-            This includes the current_word and all previous words.
-            You MUST NOT return a word that is in this set.
-
-        Returns:
-        --------
-        str
-            Your word choice.
-        """
         # Get required characters (first and last of current word)
         first_char = current_word[0].lower()
         last_char = current_word[-1].lower()
+        required_chars = (first_char, last_char)
+        
+        # Get current word length
         current_length = len(current_word)
         
-        # Precompute candidates that are valid words
-        # We'll look for words that:
-        # 1. Contain both first_char and last_char
-        # 2. first_char is NOT at position 0 and last_char is NOT at position -1
-        # 3. Length != current_length
-        # 4. Not in word_history
-        # 5. In dictionary
+        # Find valid words that meet all criteria
+        valid_moves = []
         
-        best_move = None
-        best_score = -1
-        
-        # Try to find a full move (contains both required letters)
+        # Try to find words containing both required letters (not at start/end)
         for word in self.dictionary:
-            # Skip if already used
+            # Skip if word is already used
             if word in word_history:
                 continue
             
-            # Skip if wrong length
+            # Skip words of same length as current word
             if len(word) == current_length:
                 continue
             
-            # Skip if word is too short to contain letters in middle positions
-            if len(word) < 3:
-                continue
-                
             # Check if word contains both required letters
             if first_char not in word or last_char not in word:
                 continue
-                
-            # Check positions of required letters
-            first_pos = word.find(first_char)
-            last_pos = word.rfind(last_char)
             
-            # Make sure first_char is not at position 0
-            if first_pos == 0:
+            # Check positions: required letters cannot be at start or end
+            if word[0] == first_char or word[-1] == first_char:
                 continue
-                
-            # Make sure last_char is not at position -1
-            if last_pos == len(word) - 1:
+            if word[0] == last_char or word[-1] == last_char:
                 continue
-                
-            # Calculate score
-            base_points = len(word)
             
-            # Check for hyphen penalty
+            # Word passes all checks
+            valid_moves.append(word)
+        
+        # If no valid moves found, try partial moves (only one required letter)
+        if not valid_moves:
+            partial_moves = []
+            
+            # Try to find words containing only the first required letter
+            for word in self.dictionary:
+                if word in word_history:
+                    continue
+                if len(word) == current_length:
+                    continue
+                if first_char not in word:
+                    continue
+                if word[0] == first_char or word[-1] == first_char:
+                    continue
+                # Must not contain the other required letter
+                if last_char in word:
+                    continue
+                    
+                partial_moves.append(word)
+            
+            # Try to find words containing only the last required letter
+            for word in self.dictionary:
+                if word in word_history:
+                    continue
+                if len(word) == current_length:
+                    continue
+                if last_char not in word:
+                    continue
+                if word[0] == last_char or word[-1] == last_char:
+                    continue
+                # Must not contain the other required letter
+                if first_char in word:
+                    continue
+                    
+                partial_moves.append(word)
+            
+            if partial_moves:
+                # Return the longest partial move to minimize penalty
+                return max(partial_moves, key=len)
+            
+            # If no partial moves either, return a random word from dictionary (will be treated as invalid)
+            return random.choice(list(self.dictionary))
+        
+        # Score valid moves to find the best one
+        best_move = None
+        best_score = -1
+        
+        for word in valid_moves:
+            # Base score = word length
+            score = len(word)
+            
+            # Apply hyphen penalty
             if '-' in word:
-                base_points = base_points / 2
-                
-            # Check for consecutive letters bonus (in either order)
-            has_consecutive = False
+                score = score / 2
+            
+            # Check for consecutive letters bonus
+            # Look for first_char+last_char or last_char+first_char as consecutive pairs
+            consecutive_found = False
             for i in range(len(word) - 1):
                 if (word[i] == first_char and word[i+1] == last_char) or \
                    (word[i] == last_char and word[i+1] == first_char):
-                    has_consecutive = True
+                    consecutive_found = True
                     break
-                    
-            if has_consecutive:
-                base_points *= 2
-                
-            # Update best move if this is better
-            if base_points > best_score:
-                best_score = base_points
+            
+            if consecutive_found:
+                score *= 2
+            
+            # Prefer longer words (after scoring) to maximize points
+            if score > best_score:
+                best_score = score
                 best_move = word
         
-        # If no full move found, try partial move (contains only one required letter)
-        if best_move is None:
-            for letter in [first_char, last_char]:
-                for word in self.dictionary:
-                    # Skip if already used
-                    if word in word_history:
-                        continue
-                    
-                    # Skip if wrong length
-                    if len(word) == current_length:
-                        continue
-                    
-                    # Skip if word is too short
-                    if len(word) < 3:
-                        continue
-                        
-                    # Check if word contains the required letter
-                    if letter not in word:
-                        continue
-                        
-                    # Check position of required letter
-                    pos = word.find(letter)
-                    # Make sure it's not at position 0
-                    if pos == 0:
-                        continue
-                    # Make sure it's not at position -1
-                    if pos == len(word) - 1:
-                        continue
-                        
-                    # Calculate penalty (negative points)
-                    base_points = -len(word) / 2 if '-' in word else -len(word)
-                    
-                    # Update best move if this is better (less negative)
-                    if base_points > best_score:
-                        best_score = base_points
-                        best_move = word
-                
-                # If we found a partial move, break
-                if best_move is not None:
-                    break
-        
-        # If still no move, return empty string (will be treated as invalid move with -10 penalty)
-        if best_move is None:
-            return ""
-        
-        return best_move
+        return best_move if best_move else random.choice(list(self.dictionary))

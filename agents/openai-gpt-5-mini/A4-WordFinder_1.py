@@ -95,97 +95,86 @@ class WordFinderAgent:
         Choose a word in response to current_word given the game rules and word_history.
         Returns a single word (string).
         """
-        try:
-            cur = current_word.lower()
-            if not cur:
-                # Defensive fallback
-                remaining = list(self.words - word_history)
-                return random.choice(remaining) if remaining else random.choice(list(self.words))
+        cur = current_word.lower()
+        if not cur:
+            # Defensive fallback
+            remaining = list(self.words - word_history)
+            return random.choice(remaining) if remaining else random.choice(list(self.words))
 
-            req1 = cur[0]
-            req2 = cur[-1]
-            prev_len = len(cur)
+        req1 = cur[0]
+        req2 = cur[-1]
+        prev_len = len(cur)
 
-            # 1) Try to find fully valid words (contain both letters; neither letter at start/end)
-            set1 = self.char_interior.get(req1, set())
-            set2 = self.char_interior.get(req2, set())
-            candidates_raw = set1 & set2  # words that have both letters somewhere interior
+        # 1) Try to find fully valid words (contain both letters; neither letter at start/end)
+        set1 = self.char_interior.get(req1, set())
+        set2 = self.char_interior.get(req2, set())
+        candidates_raw = set1 & set2  # words that have both letters somewhere interior
 
-            candidates = []
-            for w in candidates_raw:
-                # Must not have either required letter as first or last character of the new word
-                if w[0] == req1 or w[0] == req2 or w[-1] == req1 or w[-1] == req2:
-                    continue
-                if w in word_history:
-                    continue
-                if self.word_len.get(w, len(w)) == prev_len:
-                    continue
-                score = self._score_word(w, req1, req2)
-                hyphen = ('-' in w)
-                # Opponent options count for defensive tie-breaking
-                opp_count = self._opponent_options_count(w[0], w[-1])
-                # Sorting key: maximize score -> negative score, prefer no hyphen (False < True),
-                # minimize opponent options, prefer longer word (so -len(w)), deterministic fallback by word
-                candidates.append((-score, hyphen, opp_count, -self.word_len.get(w, len(w)), w))
+        candidates = []
+        for w in candidates_raw:
+            # Must not have either required letter as first or last character of the new word
+            if w[0] == req1 or w[0] == req2 or w[-1] == req1 or w[-1] == req2:
+                continue
+            if w in word_history:
+                continue
+            if self.word_len.get(w, len(w)) == prev_len:
+                continue
+            score = self._score_word(w, req1, req2)
+            hyphen = ('-' in w)
+            # Opponent options count for defensive tie-breaking
+            opp_count = self._opponent_options_count(w[0], w[-1])
+            # Sorting key: maximize score -> negative score, prefer no hyphen (False < True),
+            # minimize opponent options, prefer longer word (so -len(w)), deterministic fallback by word
+            candidates.append((-score, hyphen, opp_count, -self.word_len.get(w, len(w)), w))
 
-            if candidates:
-                candidates.sort()
-                best_word = candidates[0][-1]
-                return best_word
+        if candidates:
+            candidates.sort()
+            best_word = candidates[0][-1]
+            return best_word
 
-            # 2) No fully valid words -> attempt partial move (contains exactly one required letter interior,
-            #    and does NOT contain the other required letter anywhere). Choose shortest to minimize penalty.
-            partial_choices = []
+        # 2) No fully valid words -> attempt partial move (contains exactly one required letter interior,
+        #    and does NOT contain the other required letter anywhere). Choose shortest to minimize penalty.
+        partial_choices = []
 
-            # Words with req1 interior but not containing req2 anywhere
-            for w in self.char_interior.get(req1, set()):
-                if w in word_history:
-                    continue
-                if self.word_len.get(w, len(w)) == prev_len:
-                    continue
-                if req2 in w:
-                    continue
-                # ensure the single required letter is not placed at start or end (must be interior)
-                if w[0] == req1 or w[-1] == req1:
-                    continue
-                partial_choices.append((self.word_len.get(w, len(w)), '-' in w, w))
+        # Words with req1 interior but not containing req2 anywhere
+        for w in self.char_interior.get(req1, set()):
+            if w in word_history:
+                continue
+            if self.word_len.get(w, len(w)) == prev_len:
+                continue
+            if req2 in w:
+                continue
+            # ensure the single required letter is not placed at start or end (must be interior)
+            if w[0] == req1 or w[-1] == req1:
+                continue
+            partial_choices.append((self.word_len.get(w, len(w)), '-' in w, w))
 
-            # Words with req2 interior but not containing req1 anywhere
-            for w in self.char_interior.get(req2, set()):
-                if w in word_history:
-                    continue
-                if self.word_len.get(w, len(w)) == prev_len:
-                    continue
-                if req1 in w:
-                    continue
-                if w[0] == req2 or w[-1] == req2:
-                    continue
-                partial_choices.append((self.word_len.get(w, len(w)), '-' in w, w))
+        # Words with req2 interior but not containing req1 anywhere
+        for w in self.char_interior.get(req2, set()):
+            if w in word_history:
+                continue
+            if self.word_len.get(w, len(w)) == prev_len:
+                continue
+            if req1 in w:
+                continue
+            if w[0] == req2 or w[-1] == req2:
+                continue
+            partial_choices.append((self.word_len.get(w, len(w)), '-' in w, w))
 
-            if partial_choices:
-                # Prefer shortest length, avoid hyphens, deterministic tie-break
-                partial_choices.sort(key=lambda x: (x[0], x[1], x[2]))
-                return partial_choices[0][2]
+        if partial_choices:
+            # Prefer shortest length, avoid hyphens, deterministic tie-break
+            partial_choices.sort(key=lambda x: (x[0], x[1], x[2]))
+            return partial_choices[0][2]
 
-            # 3) No valid or partial moves found. As a last resort return a short unused dictionary word
-            #    (this will be treated as invalid and incur the invalid-move penalty, but we must not crash).
-            remaining = [w for w in sorted(self.words, key=len) if w not in word_history and self.word_len.get(w, len(w)) != prev_len]
-            if remaining:
-                return remaining[0]
-            # If everything used or filtered out, pick any unused word
-            remaining_all = list(self.words - word_history)
-            if remaining_all:
-                return random.choice(remaining_all)
-            # Absolute fallback
-            return random.choice(list(self.words))
+        # 3) No valid or partial moves found. As a last resort return a short unused dictionary word
+        #    (this will be treated as invalid and incur the invalid-move penalty, but we must not crash).
+        remaining = [w for w in sorted(self.words, key=len) if w not in word_history and self.word_len.get(w, len(w)) != prev_len]
+        if remaining:
+            return remaining[0]
+        # If everything used or filtered out, pick any unused word
+        remaining_all = list(self.words - word_history)
+        if remaining_all:
+            return random.choice(remaining_all)
+        # Absolute fallback
+        return random.choice(list(self.words))
 
-        except Exception:
-            # On exception, return a safe fallback to avoid crashing the game
-            try:
-                remaining = list(self.words - word_history)
-                if remaining:
-                    return random.choice(remaining)
-                return random.choice(list(self.words))
-            except Exception:
-                # Worst-case fallback: echo the current word (will be invalid but prevents crash)
-                return current_word

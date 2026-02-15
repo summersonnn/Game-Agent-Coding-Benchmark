@@ -1213,9 +1213,12 @@ async def main_async():
         all_imports = set(imp1.split("\n") + imp2.split("\n"))
         extra_imports = "\n".join(imp for imp in all_imports if imp.strip())
 
+        agent1_name = f"{folder1}:{run1}"
+        agent2_name = f"{folder2}:{run2}"
+
         game_code = build_game_code(
             code1, code2, extra_imports, NUM_GAMES_PER_MATCH, BOARD_SIZE, SHIPS, MOVE_TIME_LIMIT,
-            agent1_name=folder1, agent2_name=folder2
+            agent1_name=agent1_name, agent2_name=agent2_name
         )
         
         match_tasks.append(run_match_async(game_code, i + 1, (run1, run2)))

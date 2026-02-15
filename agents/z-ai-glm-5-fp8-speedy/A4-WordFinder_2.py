@@ -5,124 +5,159 @@ Run: 2
 Generated: 2026-02-12 09:24:15
 """
 
-import random
 from collections import defaultdict
+
 
 class WordFinderAgent:
     def __init__(self, name):
         self.name = name
-        # Load the full word dictionary
         self.dictionary = load_words()
         
-        # Pre-compute an index for faster lookups
-        # Maps a character to a set of words where that character appears internally (not at start or end)
-        self.internal_char_index = defaultdict(set)
+        # word_info: word -> (length, internal_letters_set, consecutive_pairs_set, has_hyphen)
+        self.word_info = {}
+        
+        # letter_pair_to_words: (letter1, letter2) sorted -> [word1, word2, ...]
+        self.letter_pair_to_words = defaultdict(list)
+        
+        # Difficulty scores for letters (higher = harder for opponent)
+        self.difficulty_scores = {
+            'q': 10, 'z': 10, 'j': 9, 'x': 9, 'v': 8, 'k': 8,
+            'b': 5, 'w': 5, 'f': 5, 'g': 5, 'y': 5, 'p': 5,
+            'm': 3, 'c': 3, 'u': 3, 'd': 3, 'l': 3,
+            'n': 1, 'r': 1, 'h': 1, 's': 1, 'i': 1, 'o': 1, 'a': 1, 't': 1, 'e': 1
+        }
         
         for word in self.dictionary:
-            # Words must have at least 3 letters to have valid internal characters
-            if len(word) < 3:
+            w = word.lower()
+            length = len(w)
+            
+            if length < 3:
                 continue
             
-            # Identify characters in the "internal" part of the word (indices 1 to -2)
-            # Using a set to avoid duplicate processing for words with repeated internal letters
-            internal_chars = set(word[1:-1])
+            has_hyphen = '-' in w
             
-            for char in internal_chars:
-                self.internal_char_index[char].add(word)
-
+            # Count internal letters (positions 1 to length-2)
+            internal_letter_counts = defaultdict(int)
+            for i in range(1, length - 1):
+                internal_letter_counts[w[i]] += 1
+            
+            internal_letters = set(internal_letter_counts.keys())
+            
+            # Consecutive pairs (within internal portion)
+            consecutive_pairs = set()
+            for i in range(1, length - 2):
+                pair = (w[i], w[i + 1])
+                consecutive_pairs.add(pair)
+                consecutive_pairs.add((pair[1], pair[0]))
+            
+            self.word_info[w] = (length, internal_letters, consecutive_pairs, has_hyphen)
+            
+            # Index by internal letter pairs
+            sorted_letters = sorted(internal_letters)
+            for i in range(len(sorted_letters)):
+                for j in range(i, len(sorted_letters)):
+                    l1, l2 = sorted_letters[i], sorted_letters[j]
+                    if l1 == l2:
+                        if internal_letter_counts[l1] >= 2:
+                            self.letter_pair_to_words[(l1, l2)].append(w)
+                    else:
+                        self.letter_pair_to_words[(l1, l2)].append(w)
+    
     def make_move(self, current_word, word_history):
-        # Ensure inputs are lowercase for consistency
-        current_word = current_word.lower()
+        prev_word = current_word.lower()
+        required1 = prev_word[0]
+        required2 = prev_word[-1]
+        prev_length = len(prev_word)
         
-        req1 = current_word[0]
-        req2 = current_word[-1]
-        curr_len = len(current_word)
+        # Get candidate words for the required letter pair
+        pair = tuple(sorted([required1, required2]))
+        candidates = self.letter_pair_to_words.get(pair, [])
         
-        # --- 1. Find Full Match Candidates ---
-        # Candidates must contain both req1 and req2 internally
-        set1 = self.internal_char_index.get(req1, set())
-        set2 = self.internal_char_index.get(req2, set())
-        
-        if req1 == req2:
-            candidates = set1
-        else:
-            candidates = set1.intersection(set2)
-            
         best_word = None
-        max_score = -1
-        
-        # Sort candidates to ensure deterministic behavior if scores are equal, 
-        # and potentially process higher value targets first, though linear scan is safer for full evaluation.
-        # We'll just iterate.
+        best_score = float('-inf')
         
         for word in candidates:
             if word in word_history:
                 continue
-            if len(word) == curr_len:
+            
+            info = self.word_info.get(word)
+            if info is None:
                 continue
             
-            # Calculate Score
-            score = len(word)
+            length, internal_letters, consecutive_pairs, has_hyphen = info
             
-            # Hyphen Penalty
-            if '-' in word:
+            if length == prev_length:
+                continue
+            
+            # Check that required letters are not at start or end
+            if word[0] in (required1, required2) or word[-1] in (required1, required2):
+                continue
+            
+            # Calculate score
+            score = length
+            if has_hyphen:
                 score = score // 2
             
-            # Consecutive Bonus
-            # Check if req1 and req2 appear together in the word
-            # Since we know req1 and req2 are internal, the pair will be internal too.
-            if req1 == req2:
-                # Need two consecutive req1 letters (e.g., "ll")
-                if req1 + req1 in word:
-                    score *= 2
-            else:
-                if (req1 + req2 in word) or (req2 + req1 in word):
-                    score *= 2
+            # Check consecutive bonus
+            if (required1, required2) in consecutive_pairs:
+                score *= 2
             
-            # Heuristic: Small bonus for words ending in difficult letters (J, Q, X, Z, V, W, K)
-            # to make it harder for the opponent.
-            if word[-1] in "jqxzvwk":
-                score += 5
+            # Add difficulty bonus (tiebreaker for defensive play)
+            difficulty_bonus = (self.difficulty_scores.get(word[-1], 0) + 
+                                self.difficulty_scores.get(word[0], 0) * 0.5)
+            score += difficulty_bonus * 0.1
             
-            if score > max_score:
-                max_score = score
+            if score > best_score:
+                best_score = score
                 best_word = word
-                
+        
         if best_word:
             return best_word
-
-        # --- 2. Partial Match Fallback ---
-        # If no full match, find a word with at least one required letter internally
-        # We want to minimize penalty (shortest word).
         
-        partial_candidates = set1.union(set2)
-        
+        # Fallback: partial move (one required letter only)
         best_partial = None
-        min_penalty = float('inf')
+        best_partial_score = float('-inf')
         
-        for word in partial_candidates:
+        for word, info in self.word_info.items():
             if word in word_history:
                 continue
-            if len(word) == curr_len:
-                continue
             
-            # Calculate penalty (negative points)
-            penalty = len(word)
-            if '-' in word:
-                penalty = penalty // 2
+            length, internal_letters, _, has_hyphen = info
             
-            if penalty < min_penalty:
-                min_penalty = penalty
-                best_partial = word
-                
+            # Check positions of required letters
+            required1_internal = required1 in internal_letters
+            required2_internal = required2 in internal_letters
+            required1_at_start = word[0] == required1
+            required1_at_end = word[-1] == required1
+            required2_at_start = word[0] == required2
+            required2_at_end = word[-1] == required2
+            
+            required1_in_word = required1_internal or required1_at_start or required1_at_end
+            required2_in_word = required2_internal or required2_at_start or required2_at_end
+            
+            # Partial move: exactly one letter in word, and it's internal
+            if required1_internal and not required2_in_word:
+                score = -length
+                if has_hyphen:
+                    score = score // 2
+                if score > best_partial_score:
+                    best_partial_score = score
+                    best_partial = word
+            elif required2_internal and not required1_in_word:
+                score = -length
+                if has_hyphen:
+                    score = score // 2
+                if score > best_partial_score:
+                    best_partial_score = score
+                    best_partial = word
+        
         if best_partial:
             return best_partial
-            
-        # --- 3. Panic Fallback ---
-        # If even partial match fails (rare), return a random word from dictionary
-        # that isn't in history. This avoids a crash/timeout.
+        
+        # Absolute fallback: return any valid word
         for word in self.dictionary:
-            if word not in word_history:
-                return word
-                
-        return "error" # Should not be reached
+            w = word.lower()
+            if w not in word_history and len(w) >= 3:
+                return w
+        
+        return None

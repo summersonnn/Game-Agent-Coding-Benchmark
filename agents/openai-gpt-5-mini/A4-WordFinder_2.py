@@ -111,71 +111,58 @@ class WordFinderAgent:
         return random.choice(top_group)
 
     def make_move(self, current_word, word_history):
-        try:
-            cur = (current_word or "").lower()
-            used = set(w.lower() for w in word_history) if word_history is not None else set()
-            if not cur:
-                # If for some reason current_word is empty, return a short unused word
-                for w in self.words_by_short_length:
-                    if w not in used:
-                        return w
-                # fallback
-                return random.choice(list(self.dictionary))
-
-            a, b = cur[0], cur[-1]
-            current_len = len(cur)
-
-            # 1) Try to find full valid words that contain BOTH required letters in interior positions
-            set_a = self.interior_index.get(a, set())
-            set_b = self.interior_index.get(b, set())
-            full_candidates = set_a & set_b
-
-            best_full = self._pick_best_from(full_candidates, a, b, current_len, used)
-            if best_full:
-                return best_full
-
-            # 2) No full valid words: try Partial Move = contains EXACTLY ONE of the required letters,
-            #    that letter must appear in interior (and the other letter must not appear anywhere).
-            partial_candidates = []
-            for letter, other in ((a, b), (b, a)):
-                for w in self.interior_index.get(letter, set()):
-                    if w in used:
-                        continue
-                    if len(w) == current_len:
-                        continue
-                    # other letter must NOT appear anywhere in the word
-                    if other in w:
-                        continue
-                    # ensure neither required letter appears at the start or end (rule still applies)
-                    if w[0] == a or w[-1] == a or w[0] == b or w[-1] == b:
-                        continue
-                    partial_candidates.append(w)
-
-            if partial_candidates:
-                # minimize length (to reduce negative penalty), then defensive tie-break
-                partial_candidates.sort(key=lambda w: (len(w), self.first_counts.get(w[0], 0) + self.last_counts.get(w[-1], 0), w))
-                # pick among shortest ones randomly
-                min_len = len(partial_candidates[0])
-                top_group = [w for w in partial_candidates if len(w) == min_len]
-                return random.choice(top_group)
-
-            # 3) Last resort: return a short unused dictionary word (may be invalid).
+        cur = (current_word or "").lower()
+        used = set(w.lower() for w in word_history) if word_history is not None else set()
+        if not cur:
+            # If for some reason current_word is empty, return a short unused word
             for w in self.words_by_short_length:
-                if w not in used and len(w) != current_len:
+                if w not in used:
                     return w
-
-            # If everything is used (very unlikely), just return a random dictionary word
+            # fallback
             return random.choice(list(self.dictionary))
 
-        except Exception:
-            # On any internal error, return a safe random choice to avoid crashing the game loop
-            try:
-                # prefer a short unused word if possible
-                used = set(w.lower() for w in word_history) if word_history is not None else set()
-                for w in self.words_by_short_length:
-                    if w not in used:
-                        return w
-                return random.choice(list(self.dictionary))
-            except Exception:
-                # worst-case fallback
-                return "a"
+        a, b = cur[0], cur[-1]
+        current_len = len(cur)
+
+        # 1) Try to find full valid words that contain BOTH required letters in interior positions
+        set_a = self.interior_index.get(a, set())
+        set_b = self.interior_index.get(b, set())
+        full_candidates = set_a & set_b
+
+        best_full = self._pick_best_from(full_candidates, a, b, current_len, used)
+        if best_full:
+            return best_full
+
+        # 2) No full valid words: try Partial Move = contains EXACTLY ONE of the required letters,
+        #    that letter must appear in interior (and the other letter must not appear anywhere).
+        partial_candidates = []
+        for letter, other in ((a, b), (b, a)):
+            for w in self.interior_index.get(letter, set()):
+                if w in used:
+                    continue
+                if len(w) == current_len:
+                    continue
+                # other letter must NOT appear anywhere in the word
+                if other in w:
+                    continue
+                # ensure neither required letter appears at the start or end (rule still applies)
+                if w[0] == a or w[-1] == a or w[0] == b or w[-1] == b:
+                    continue
+                partial_candidates.append(w)
+
+        if partial_candidates:
+            # minimize length (to reduce negative penalty), then defensive tie-break
+            partial_candidates.sort(key=lambda w: (len(w), self.first_counts.get(w[0], 0) + self.last_counts.get(w[-1], 0), w))
+            # pick among shortest ones randomly
+            min_len = len(partial_candidates[0])
+            top_group = [w for w in partial_candidates if len(w) == min_len]
+            return random.choice(top_group)
+
+        # 3) Last resort: return a short unused dictionary word (may be invalid).
+        for w in self.words_by_short_length:
+            if w not in used and len(w) != current_len:
+                return w
+
+        # If everything is used (very unlikely), just return a random dictionary word
+        return random.choice(list(self.dictionary))
+

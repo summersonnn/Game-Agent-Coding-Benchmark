@@ -1,7 +1,7 @@
 """
 Agent Code: A5-Connect4RandomStart
 Model: deepseek/deepseek-v3.2@preset/fp8
-Run: 1
+Run: 3
 Generated: 2026-02-12 14:50:42
 """
 
@@ -50,46 +50,41 @@ class Connect4Agent:
         best_move = valid_moves[0]
         best_score = -math.inf
         
-        try:
-            for depth in range(1, self.max_depth + 1):
+        for depth in range(1, self.max_depth + 1):
+            if time.time() - start_time > self.time_limit:
+                break
+                
+            current_best_move = None
+            current_best_score = -math.inf
+            
+            # Sort moves by center preference for better pruning
+            sorted_moves = sorted(valid_moves, 
+                                key=lambda x: abs(x - 3))
+            
+            for col in sorted_moves:
                 if time.time() - start_time > self.time_limit:
                     break
                     
-                current_best_move = None
-                current_best_score = -math.inf
-                
-                # Sort moves by center preference for better pruning
-                sorted_moves = sorted(valid_moves, 
-                                    key=lambda x: abs(x - 3))
-                
-                for col in sorted_moves:
-                    if time.time() - start_time > self.time_limit:
-                        break
-                        
-                    row = self.get_next_empty_row(board, col)
-                    if row is None:
-                        continue
-                        
-                    # Make the move
-                    board[row][col] = self.symbol
+                row = self.get_next_empty_row(board, col)
+                if row is None:
+                    continue
                     
-                    # Evaluate with minimax
-                    score = self.minimax(board, depth - 1, -math.inf, math.inf, False, start_time)
-                    
-                    # Undo the move
-                    board[row][col] = ' '
-                    
-                    if score > current_best_score:
-                        current_best_score = score
-                        current_best_move = col
+                # Make the move
+                board[row][col] = self.symbol
                 
-                if current_best_move is not None:
-                    best_move = current_best_move
-                    best_score = current_best_score
-        
-        except Exception:
-            # If any error occurs, return a valid move
-            return random.choice(valid_moves)
+                # Evaluate with minimax
+                score = self.minimax(board, depth - 1, -math.inf, math.inf, False, start_time)
+                
+                # Undo the move
+                board[row][col] = ' '
+                
+                if score > current_best_score:
+                    current_best_score = score
+                    current_best_move = col
+            
+            if current_best_move is not None:
+                best_move = current_best_move
+                best_score = current_best_score
         
         return best_move
     
