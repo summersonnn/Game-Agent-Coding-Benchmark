@@ -1295,6 +1295,10 @@ async def main_async():
         "--humanvsagent", action="store_true",
         help="Play against a stored agent (requires --agent with 1 spec)",
     )
+    parser.add_argument(
+        "--update-scoreboard", action="store_true",
+        help="Write results to scoreboard (default: off; enabled by matchmaker)",
+    )
     args = parser.parse_args()
 
     human_mode = None
@@ -1475,43 +1479,44 @@ async def main_async():
     print(f"\nLogs saved to: {log_f}")
 
     # Update global scoreboard
-    scoreboard_path = Path(__file__).parent.parent / "scoreboard" / "A8-scoreboard.txt"
+    if args.update_scoreboard:
+        scoreboard_path = Path(__file__).parent.parent / "scoreboard" / "A8-scoreboard.txt"
 
-    for result in results:
-        if not result["success"]:
-            continue
+        for result in results:
+            if not result["success"]:
+                continue
 
-        run1 = result["agent1_run_id"]
-        run2 = result["agent2_run_id"]
-        agent1_key = f"{folder1}:{run1}"
-        agent2_key = f"{folder2}:{run2}"
+            run1 = result["agent1_run_id"]
+            run2 = result["agent2_run_id"]
+            agent1_key = f"{folder1}:{run1}"
+            agent2_key = f"{folder2}:{run2}"
 
-        a1_wins = result.get("agent1_wins", 0)
-        a2_wins = result.get("agent2_wins", 0)
-        match_draws = result.get("draws", 0)
+            a1_wins = result.get("agent1_wins", 0)
+            a2_wins = result.get("agent2_wins", 0)
+            match_draws = result.get("draws", 0)
 
-        update_scoreboard(
-            scoreboard_path,
-            agent1_key,
-            games_played=NUM_GAMES_PER_MATCH,
-            wins=a1_wins,
-            losses=a2_wins,
-            draws=match_draws,
-            score=result["agent1_score"],
-            points=result.get("agent1_points", 0),
-        )
-        update_scoreboard(
-            scoreboard_path,
-            agent2_key,
-            games_played=NUM_GAMES_PER_MATCH,
-            wins=a2_wins,
-            losses=a1_wins,
-            draws=match_draws,
-            score=result["agent2_score"],
-            points=result.get("agent2_points", 0),
-        )
+            update_scoreboard(
+                scoreboard_path,
+                agent1_key,
+                games_played=NUM_GAMES_PER_MATCH,
+                wins=a1_wins,
+                losses=a2_wins,
+                draws=match_draws,
+                score=result["agent1_score"],
+                points=result.get("agent1_points", 0),
+            )
+            update_scoreboard(
+                scoreboard_path,
+                agent2_key,
+                games_played=NUM_GAMES_PER_MATCH,
+                wins=a2_wins,
+                losses=a1_wins,
+                draws=match_draws,
+                score=result["agent2_score"],
+                points=result.get("agent2_points", 0),
+            )
 
-    print(f"Scoreboard updated: {scoreboard_path}")
+        print(f"Scoreboard updated: {scoreboard_path}")
 
 
 if __name__ == "__main__":

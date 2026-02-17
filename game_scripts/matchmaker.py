@@ -466,6 +466,7 @@ async def run_tournament(
                 "--agent",
                 f"{a[0]}:{a[1]}",
                 f"{b[0]}:{b[1]}",
+                "--update-scoreboard",
             ]
             label = f"{a[0]}:{a[1]} vs {b[0]}:{b[1]}"
             commands.append((cmd, label))
@@ -473,6 +474,7 @@ async def run_tournament(
         for group in fixtures_6p:
             cmd = [sys.executable, str(match_script), "--agent"]
             cmd.extend(f"{f}:{r}" for f, r in group)
+            cmd.append("--update-scoreboard")
             label = " vs ".join(f"{f}:{r}" for f, r in group)
             commands.append((cmd, label))
 

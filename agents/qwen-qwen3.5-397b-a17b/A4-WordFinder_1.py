@@ -5,190 +5,114 @@ Run: 1
 Generated: 2026-02-16 17:46:27
 """
 
-from collections import defaultdict
-
 import random
-from collections import defaultdict
-
 
 class WordFinderAgent:
-    """
-    WordFinder game agent with optimized word search and scoring strategy.
-    """
     def __init__(self, name):
-        """
-        Initialize agent with pre-computed lookup tables for fast move selection.
-        """
         self.name = name
         self.dictionary = load_words()
+        # Pre-compute index: char -> set of words containing char internally (index 1 to -1)
+        self.char_index = {chr(c): set() for c in range(ord('a'), ord('z') + 1)}
         
-        # Filter to clean words (lowercase, alphabetic or with hyphens)
-        self.words = [w for w in self.dictionary if w and len(w) >= 3]
-        
-        # Index words by length for quick length-based filtering
-        self.words_by_length = defaultdict(list)
-        
-        # Index words by which letters they contain internally (not at start/end)
-        # Key: frozenset of internal letters, Value: list of words
-        self.words_by_internal_letters = defaultdict(list)
-        
-        # Index words by individual internal letters for partial move fallback
-        # Key: letter, Value: list of words containing that letter internally
-        self.words_by_single_internal = defaultdict(list)
-        
-        # Pre-compute all indices
-        self._build_indices()
-    
-    def _build_indices(self):
-        """Build lookup indices for fast word searching."""
-        for word in self.words:
-            word_lower = word.lower()
-            length = len(word_lower)
-            
-            # Skip very short words
-            if length < 3:
+        for word in self.dictionary:
+            if len(word) < 3:
                 continue
-            
-            # Index by length
-            self.words_by_length[length].append(word_lower)
-            
-            # Get internal letters (not first or last)
-            if length > 2:
-                internal = word_lower[1:-1]
-                internal_letters = set(internal)
-                
-                # Index by set of internal letters
-                if internal_letters:
-                    key = frozenset(internal_letters)
-                    self.words_by_internal_letters[key].append(word_lower)
-                
-                # Index by individual internal letters
-                for letter in internal_letters:
-                    self.words_by_single_internal[letter].append(word_lower)
-    
+            internal_chars = set(word[1:-1])
+            for char in internal_chars:
+                if char in self.char_index:
+                    self.char_index[char].add(word)
+
     def make_move(self, current_word, word_history):
-        """
-        Find the best valid word based on game rules and scoring optimization.
-        """
-        current_lower = current_word.lower()
-        first_char = current_lower[0]
-        last_char = current_lower[-1]
-        current_length = len(current_lower)
+        req1 = current_word[0].lower()
+        req2 = current_word[-1].lower()
+        prev_len = len(current_word)
         
-        # Required letters that must appear internally
-        required_letters = {first_char, last_char}
+        set1 = self.char_index.get(req1, set())
+        set2 = self.char_index.get(req2, set())
         
-        # Find all candidate words
-        candidates = self._find_valid_candidates(
-            first_char, last_char, current_length, word_history
-        )
-        
-        if candidates:
-            # Score and select best candidate
-            return self._select_best_word(candidates, first_char, last_char)
-        
-        # Fallback: partial move with one required letter
-        partial = self._find_partial_move(
-            first_char, last_char, current_length, word_history
-        )
-        
-        if partial:
-            return partial
-        
-        # Last resort: return any valid word not in history
-        return self._get_random_valid_word(current_length, word_history)
-    
-    def _find_valid_candidates(self, first_char, last_char, current_length, word_history):
-        """Find words containing both required letters internally."""
-        candidates = []
-        
-        # Get words that contain both letters internally
-        # Check all words that have first_char internally
-        for word in self.words_by_single_internal.get(first_char, []):
-            if len(word) == current_length:
-                continue
-            if word in word_history:
-                continue
-            
-            # Verify word contains both required letters internally
-            internal = word[1:-1]
-            if first_char in internal and last_char in internal:
-                # Verify neither is at start or end
-                if (word[0].lower() != first_char and word[-1].lower() != first_char and
-                    word[0].lower() != last_char and word[-1].lower() != last_char):
-                    candidates.append(word)
-        
-        return candidates
-    
-    def _select_best_word(self, candidates, first_char, last_char):
-        """Select the highest scoring word from candidates."""
-        scored = []
+        # Try Full Moves (Intersection: contains both req1 and req2 internally)
+        candidates = set1.intersection(set2)
+        valid_words = []
+        is_partial = False
         
         for word in candidates:
-            score = self._calculate_score(word, first_char, last_char)
-            scored.append((score, word))
-        
-        # Sort by score descending
-        scored.sort(key=lambda x: x[0], reverse=True)
-        
-        # Add some randomness among top candidates to avoid predictability
-        top_score = scored[0][0]
-        top_candidates = [w for s, w in scored if s >= top_score * 0.9]
-        
-        if len(top_candidates) > 1:
-            return random.choice(top_candidates)
-        
-        return scored[0][1]
-    
-    def _calculate_score(self, word, first_char, last_char):
-        """Calculate the score for a word based on game rules."""
-        length = len(word)
-        
-        # Hyphen penalty
-        if '-' in word:
-            length = length / 2
-        
-        # Consecutive letter bonus (PH or HP)
-        internal = word[1:-1]
-        if (first_char + last_char in internal or 
-            last_char + first_char in internal):
-            length *= 2
-        
-        return length
-    
-    def _find_partial_move(self, first_char, last_char, current_length, word_history):
-        """Find a word with only ONE required letter internally (fallback)."""
-        for char in [first_char, last_char]:
-            for word in self.words_by_single_internal.get(char, []):
-                if len(word) == current_length:
-                    continue
+            if word in word_history:
+                continue
+            if len(word) == prev_len:
+                continue
+            # Rule 2: Required letters cannot be first or last
+            if word[0] in (req1, req2) or word[-1] in (req1, req2):
+                continue
+            valid_words.append(word)
+            
+        # Fallback to Partial Moves (Union: contains at least one) if no Full Moves
+        if not valid_words:
+            candidates = set1.union(set2)
+            is_partial = True
+            for word in candidates:
                 if word in word_history:
                     continue
-                
-                internal = word[1:-1]
-                # Must contain this char internally
-                if char not in internal:
+                if len(word) == prev_len:
                     continue
-                
-                # Must NOT contain the other required letter internally
-                other_char = last_char if char == first_char else first_char
-                if other_char in internal:
+                if word[0] in (req1, req2) or word[-1] in (req1, req2):
                     continue
-                
-                # Verify char is not at start or end
-                if word[0].lower() == char or word[-1].lower() == char:
-                    continue
-                
-                return word
+                valid_words.append(word)
         
-        return None
-    
-    def _get_random_valid_word(self, current_length, word_history):
-        """Get any valid word not in history as last resort."""
-        available = [w for w in self.words if w not in word_history and len(w) != current_length]
+        # Emergency Fallback if still no moves (to avoid crash/invalid penalty)
+        if not valid_words:
+            for word in self.dictionary:
+                if word not in word_history and len(word) != prev_len:
+                    return word
+            return next(iter(self.dictionary))
+
+        # Scoring
+        scored_words = []
+        for word in valid_words:
+            length = len(word)
+            if is_partial:
+                score = -length
+            else:
+                score = length
+                if '-' in word:
+                    score /= 2
+                # Check consecutive bonus
+                if (req1 + req2) in word or (req2 + req1) in word:
+                    score *= 2
+            scored_words.append((score, word))
         
-        if available:
-            return random.choice(available)
+        # Sort by score descending
+        scored_words.sort(key=lambda x: x[0], reverse=True)
         
-        # Absolute last resort
-        return "the"
+        # Opponent Difficulty Analysis on Top Candidates
+        # Limit to top 50 to ensure we stay within time limit
+        top_candidates = scored_words[:50]
+        
+        best_move = None
+        best_score = -float('inf')
+        best_opponent_options = float('inf')
+        
+        for score, word in top_candidates:
+            # Estimate opponent options using our precomputed index
+            o_req1 = word[0]
+            o_req2 = word[-1]
+            o_set1 = self.char_index.get(o_req1, set())
+            o_set2 = self.char_index.get(o_req2, set())
+            opponent_options = len(o_set1.intersection(o_set2))
+            
+            # Select best: Max Score, Min Opponent Options
+            if score > best_score:
+                best_score = score
+                best_move = word
+                best_opponent_options = opponent_options
+            elif score == best_score:
+                if opponent_options < best_opponent_options:
+                    best_opponent_options = opponent_options
+                    best_move = word
+                elif opponent_options == best_opponent_options:
+                    if random.random() > 0.5:
+                        best_move = word
+        
+        if best_move is None and scored_words:
+            best_move = scored_words[0][1]
+            
+        return best_move

@@ -1090,6 +1090,10 @@ async def main_async():
     human_group.add_argument("--humanvsbot", action="store_true", help="Play interactively against a random bot")
     human_group.add_argument("--humanvshuman", action="store_true", help="Two humans play at the same terminal")
     human_group.add_argument("--humanvsagent", action="store_true", help="Play against a stored agent (requires --agent with 1 spec)")
+    parser.add_argument(
+        "--update-scoreboard", action="store_true",
+        help="Write results to scoreboard (default: off; enabled by matchmaker)",
+    )
 
     args = parser.parse_args()
 
@@ -1276,16 +1280,16 @@ async def main_async():
             f.write("-" * 60 + "\n\n")
 
             # Update scoreboard once per match
-            if result["success"]:
+            if result["success"] and args.update_scoreboard:
                 # Agent 1 update
                 agent1_key = f"{folder1}:{result['agent1_run_id']}"
                 update_scoreboard(
                     SCOREBOARD_PATH, agent1_key,
                     games_played=NUM_GAMES_PER_MATCH,
-                    wins=result["agent1_wins"], 
-                    losses=result["agent2_wins"], 
+                    wins=result["agent1_wins"],
+                    losses=result["agent2_wins"],
                     draws=result.get("draws", 0),
-                    score=result["agent1_score"], 
+                    score=result["agent1_score"],
                     points=result.get("agent1_points", 0)
                 )
                 # Agent 2 update
@@ -1293,10 +1297,10 @@ async def main_async():
                 update_scoreboard(
                     SCOREBOARD_PATH, agent2_key,
                     games_played=NUM_GAMES_PER_MATCH,
-                    wins=result["agent2_wins"], 
-                    losses=result["agent1_wins"], 
+                    wins=result["agent2_wins"],
+                    losses=result["agent1_wins"],
                     draws=result.get("draws", 0),
-                    score=result["agent2_score"], 
+                    score=result["agent2_score"],
                     points=result.get("agent2_points", 0)
                 )
 

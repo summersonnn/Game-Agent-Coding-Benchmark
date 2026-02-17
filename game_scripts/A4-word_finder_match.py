@@ -77,7 +77,7 @@ INVALID_PENALTY = -10
 FORFEIT_SCORE = 12
 
 # Max rounds per game (50 rounds = 100 individual turns)
-MAX_ROUNDS = 50
+MAX_ROUNDS = 100
 
 
 def is_valid_word(word):
@@ -444,11 +444,8 @@ def play_game(game_num, match_stats, Agent1Class, Agent2Class, dictionary):
         winner = "DRAW"
         loser = None
 
-    BIG_WIN_THRESHOLD = MAX_ROUNDS * 2  # decisive win: margin >= 2 * max_rounds
-    DRAW_THRESHOLD = MAX_ROUNDS          # near-draw: margin < max_rounds
-
     print("-" * 40)
-    if winner == "DRAW" or score_diff < DRAW_THRESHOLD:
+    if winner == "DRAW":
         print("Final Result: Draw.")
         print("-" * 40)
         print("Points:")
@@ -465,8 +462,8 @@ def play_game(game_num, match_stats, Agent1Class, Agent2Class, dictionary):
         match_stats["Agent-2"]["draws"] += 1
         match_stats["Agent-2"]["points"] += 1
         return "DRAW"
-    elif score_diff >= BIG_WIN_THRESHOLD:
-        print(f"Final Result: {winner} wins (decisive).")
+    else:
+        print(f"Final Result: {winner} wins.")
         print("-" * 40)
         print("Points:")
         print(f"{winner}: 3")
@@ -481,26 +478,6 @@ def play_game(game_num, match_stats, Agent1Class, Agent2Class, dictionary):
         match_stats[winner]["points"] += 3
         match_stats[winner]["score"] += score_diff
         match_stats[loser]["losses"] += 1
-        match_stats[loser]["score"] -= score_diff
-        return winner
-    else:
-        # Narrow win: DRAW_THRESHOLD <= score_diff < BIG_WIN_THRESHOLD
-        print(f"Final Result: {winner} wins (narrow).")
-        print("-" * 40)
-        print("Points:")
-        print(f"{winner}: 2")
-        print(f"{loser}: 0.5")
-        print("-" * 40)
-        print("Scores:")
-        print(f"{winner}: {score_diff:.1f}")
-        print(f"{loser}: -{score_diff:.1f}")
-        print("=" * 60)
-
-        match_stats[winner]["wins"] += 1
-        match_stats[winner]["points"] += 2
-        match_stats[winner]["score"] += score_diff
-        match_stats[loser]["losses"] += 1
-        match_stats[loser]["points"] += 0.5
         match_stats[loser]["score"] -= score_diff
         return winner
 
@@ -554,12 +531,12 @@ def main():
 
     match_stats = {
         "Agent-1": {
-            "wins": 0, "losses": 0, "draws": 0, "points": 0.0, "score": 0.0,
+            "wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0,
             "make_move_crash": 0, "other_crash": 0, "crash": 0,
             "timeout": 0, "invalid": 0,
         },
         "Agent-2": {
-            "wins": 0, "losses": 0, "draws": 0, "points": 0.0, "score": 0.0,
+            "wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0,
             "make_move_crash": 0, "other_crash": 0, "crash": 0,
             "timeout": 0, "invalid": 0,
         },
@@ -788,8 +765,8 @@ def run_match(
             agent1_wins = int(wins_match.group(1)) if wins_match else 0
             agent2_wins = int(wins_match.group(2)) if wins_match else 0
             draws = int(draws_match.group(1)) if draws_match else 0
-            agent1_points = float(match.group(1))
-            agent2_points = float(match.group(2))
+            agent1_points = int(float(match.group(1)))
+            agent2_points = int(float(match.group(2)))
             agent1_score = float(score_match.group(1)) if score_match else 0.0
             agent2_score = float(score_match.group(2)) if score_match else 0.0
 
@@ -893,6 +870,10 @@ async def main_async():
     human_group.add_argument(
         "--humanvsagent", action="store_true",
         help="Play against a stored agent (requires --agent with 1 spec)",
+    )
+    parser.add_argument(
+        "--update-scoreboard", action="store_true",
+        help="Write results to scoreboard (default: off; enabled by matchmaker)",
     )
     args = parser.parse_args()
 
@@ -1072,33 +1053,34 @@ async def main_async():
             f.write("-" * 60 + "\n\n")
 
     # Update global scoreboard
-    for result in results:
-        if not result["success"]:
-            continue
+    if args.update_scoreboard:
+        for result in results:
+            if not result["success"]:
+                continue
 
-        run1 = result["agent1_run_id"]
-        run2 = result["agent2_run_id"]
-        agent1_key = f"{folder1}:{run1}"
-        agent2_key = f"{folder2}:{run2}"
+            run1 = result["agent1_run_id"]
+            run2 = result["agent2_run_id"]
+            agent1_key = f"{folder1}:{run1}"
+            agent2_key = f"{folder2}:{run2}"
 
-        a1_wins = result.get("agent1_wins", 0)
-        a2_wins = result.get("agent2_wins", 0)
-        match_draws = result.get("draws", 0)
+            a1_wins = result.get("agent1_wins", 0)
+            a2_wins = result.get("agent2_wins", 0)
+            match_draws = result.get("draws", 0)
 
-        update_scoreboard(
-            SCOREBOARD_PATH, agent1_key,
-            games_played=NUM_GAMES_PER_MATCH,
-            wins=a1_wins, losses=a2_wins, draws=match_draws,
-            score=result["agent1_score"],
-            points=result.get("agent1_points", 0),
-        )
-        update_scoreboard(
-            SCOREBOARD_PATH, agent2_key,
-            games_played=NUM_GAMES_PER_MATCH,
-            wins=a2_wins, losses=a1_wins, draws=match_draws,
-            score=result["agent2_score"],
-            points=result.get("agent2_points", 0),
-        )
+            update_scoreboard(
+                SCOREBOARD_PATH, agent1_key,
+                games_played=NUM_GAMES_PER_MATCH,
+                wins=a1_wins, losses=a2_wins, draws=match_draws,
+                score=result["agent1_score"],
+                points=result.get("agent1_points", 0),
+            )
+            update_scoreboard(
+                SCOREBOARD_PATH, agent2_key,
+                games_played=NUM_GAMES_PER_MATCH,
+                wins=a2_wins, losses=a1_wins, draws=match_draws,
+                score=result["agent2_score"],
+                points=result.get("agent2_points", 0),
+            )
 
     runs1_str = ",".join(str(r) for r in runs1)
     runs2_str = ",".join(str(r) for r in runs2)

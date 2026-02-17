@@ -1417,6 +1417,10 @@ async def main_async():
     parser = argparse.ArgumentParser(description="Run 2x8 Mini Chess matches between stored AI agents")
     parser.add_argument("--agent", nargs="+", help="Agent specs: model1[:run1:run2] model2[:run3:run4]")
     parser.add_argument("--human", action="store_true", help="Play interactively against a random bot")
+    parser.add_argument(
+        "--update-scoreboard", action="store_true",
+        help="Write results to scoreboard (default: off; enabled by matchmaker)",
+    )
     args = parser.parse_args()
 
     # Human play mode
@@ -1540,35 +1544,37 @@ async def main_async():
             print(f"  Match {match_id} ({folder1}:{run1} vs {folder2}:{run2}): Pts {p1}-{p2}")
 
             # Update scoreboard for both agents
-            agent1_key = f"{folder1}:{run1}"
-            agent2_key = f"{folder2}:{run2}"
-            a1_wins = result.get("agent1_wins", 0)
-            a2_wins = result.get("agent2_wins", 0)
-            match_draws = result.get("draws", 0)
+            if args.update_scoreboard:
+                agent1_key = f"{folder1}:{run1}"
+                agent2_key = f"{folder2}:{run2}"
+                a1_wins = result.get("agent1_wins", 0)
+                a2_wins = result.get("agent2_wins", 0)
+                match_draws = result.get("draws", 0)
 
-            update_scoreboard(
-                SCOREBOARD_PATH, agent1_key,
-                games_played=NUM_GAMES_PER_MATCH,
-                wins=a1_wins,
-                losses=a2_wins,
-                draws=match_draws,
-                score=s1,
-                points=p1,
-            )
-            update_scoreboard(
-                SCOREBOARD_PATH, agent2_key,
-                games_played=NUM_GAMES_PER_MATCH,
-                wins=a2_wins,
-                losses=a1_wins,
-                draws=match_draws,
-                score=s2,
-                points=p2,
-            )
+                update_scoreboard(
+                    SCOREBOARD_PATH, agent1_key,
+                    games_played=NUM_GAMES_PER_MATCH,
+                    wins=a1_wins,
+                    losses=a2_wins,
+                    draws=match_draws,
+                    score=s1,
+                    points=p1,
+                )
+                update_scoreboard(
+                    SCOREBOARD_PATH, agent2_key,
+                    games_played=NUM_GAMES_PER_MATCH,
+                    wins=a2_wins,
+                    losses=a1_wins,
+                    draws=match_draws,
+                    score=s2,
+                    points=p2,
+                )
         else:
             print(f"  Match {match_id} ({folder1}:{run1} vs {folder2}:{run2}): FAILED - {result.get('error')}")
 
     print(f"\nLogs saved to: {RESULTS_DIR}")
-    print(f"Scoreboard updated: {SCOREBOARD_PATH}")
+    if args.update_scoreboard:
+        print(f"Scoreboard updated: {SCOREBOARD_PATH}")
 
 
 if __name__ == "__main__":

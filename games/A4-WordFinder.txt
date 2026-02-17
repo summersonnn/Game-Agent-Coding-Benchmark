@@ -4,8 +4,8 @@ WordFinder is a 2-player word game where you must find a word that connects to t
 
 The game starts with a random word from the dictionary.
 Players take turns finding a new word based on the previous word.
-Each game lasts up to 50 rounds (100 individual turns, 50 per player).
-The player with the higher score at the end of the game determines the outcome — but the margin of victory also matters (see Competition Format).
+Each game lasts up to 100 rounds (200 individual turns, 100 per player).
+The player with the higher score at the end wins.
 
 ## Rules
 
@@ -71,23 +71,16 @@ class WordFinderAgent:
 
 - 1 vs 1 match, multiple games per match.
 - Starting agent is randomized each game.
-- Each game lasts up to 50 rounds (100 individual turns).
+- Each game lasts up to 100 rounds (200 individual turns).
 
 ### Match Points (Primary Metric)
-
-Points depend on the **in-game score margin** between the two players at game end.
-Two thresholds are derived from `max_rounds = 50`:
-- **Decisive-win threshold:** `2 × max_rounds = 100`
-- **Draw threshold:** `max_rounds = 50`
-
-| Margin | Outcome | Winner pts | Loser pts |
-|--------|---------|-----------|----------|
-| ≥ 100 | Decisive win | **3** | **0** |
-| 50 – 99 | Narrow win | **2** | **0.5** |
-| < 50 (or exact tie) | Draw | **1** | **1** |
+- **Win:** 3 points
+- **Draw:** 1 point each
+- **Loss:** 0 points
 
 ### Tie-Breaker Score (Secondary Metric)
-- **Win (decisive or narrow):** Winner gets +margin, loser gets −margin.
+- **Win:** The in-game score difference between winner and loser.
+- **Loss:** The negation of the winner's score difference (negative).
 - **Draw:** 0 for both players.
 
 ### Error Handling

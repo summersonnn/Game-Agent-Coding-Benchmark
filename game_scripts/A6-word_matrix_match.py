@@ -930,6 +930,10 @@ async def main_async():
         "--humanvsagent", action="store_true",
         help="Play against a stored agent (requires --agent with 1 spec)",
     )
+    parser.add_argument(
+        "--update-scoreboard", action="store_true",
+        help="Write results to scoreboard (default: off; enabled by matchmaker)",
+    )
     args = parser.parse_args()
 
     # --- Human play modes ---
@@ -1121,20 +1125,21 @@ async def main_async():
         a2_wins = result.get("agent2_wins", 0)
         match_draws = result.get("draws", 0)
 
-        update_scoreboard(
-            SCOREBOARD_PATH, agent1_key,
-            games_played=NUM_GAMES_PER_MATCH,
-            wins=a1_wins, losses=a2_wins, draws=match_draws,
-            score=result["agent1_score"],
-            points=result.get("agent1_points", 0),
-        )
-        update_scoreboard(
-            SCOREBOARD_PATH, agent2_key,
-            games_played=NUM_GAMES_PER_MATCH,
-            wins=a2_wins, losses=a1_wins, draws=match_draws,
-            score=result["agent2_score"],
-            points=result.get("agent2_points", 0),
-        )
+        if args.update_scoreboard:
+            update_scoreboard(
+                SCOREBOARD_PATH, agent1_key,
+                games_played=NUM_GAMES_PER_MATCH,
+                wins=a1_wins, losses=a2_wins, draws=match_draws,
+                score=result["agent1_score"],
+                points=result.get("agent1_points", 0),
+            )
+            update_scoreboard(
+                SCOREBOARD_PATH, agent2_key,
+                games_played=NUM_GAMES_PER_MATCH,
+                wins=a2_wins, losses=a1_wins, draws=match_draws,
+                score=result["agent2_score"],
+                points=result.get("agent2_points", 0),
+            )
 
     runs1_str = ",".join(str(r) for r in runs1)
     runs2_str = ",".join(str(r) for r in runs2)
@@ -1142,7 +1147,8 @@ async def main_async():
     print(f"  {folder1}:{runs1_str}: Pts {total_pts1}, Score {total1:.1f}")
     print(f"  {folder2}:{runs2_str}: Pts {total_pts2}, Score {total2:.1f}")
     print(f"\nLogs saved to: {log_f}")
-    print(f"Scoreboard updated: {SCOREBOARD_PATH}")
+    if args.update_scoreboard:
+        print(f"Scoreboard updated: {SCOREBOARD_PATH}")
 
 
 if __name__ == "__main__":

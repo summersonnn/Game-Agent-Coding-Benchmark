@@ -789,6 +789,10 @@ async def main_async():
     parser = argparse.ArgumentParser(description="Run Connect 4 matches between stored AI agents")
     parser.add_argument("--agent", nargs="+", help="Agent specs: model1[:run1:run2] model2[:run3:run4]")
     parser.add_argument("--human", action="store_true", help="Play interactively against a bot")
+    parser.add_argument(
+        "--update-scoreboard", action="store_true",
+        help="Write results to scoreboard (default: off; enabled by matchmaker)",
+    )
     args = parser.parse_args()
 
     if args.human:
@@ -915,29 +919,30 @@ async def main_async():
                 f.write(f"{status}\n")
                 
                 # SCOREBOARD INTEGRATION
-                # Agent 1
-                agent1_key = f"{folder1}:{res['agent1_run_id']}"
-                update_scoreboard(
-                    SCOREBOARD_PATH, agent1_key,
-                    games_played=NUM_ROUNDS_PER_MATCH,
-                    wins=res["agent1_wins"],
-                    losses=res["agent2_wins"],
-                    draws=res["draws"],
-                    score=res["agent1_score"],
-                    points=res["agent1_points"]
-                )
-                
-                # Agent 2
-                agent2_key = f"{folder2}:{res['agent2_run_id']}"
-                update_scoreboard(
-                    SCOREBOARD_PATH, agent2_key,
-                    games_played=NUM_ROUNDS_PER_MATCH,
-                    wins=res["agent2_wins"],
-                    losses=res["agent1_wins"],
-                    draws=res["draws"],
-                    score=res["agent2_score"],
-                    points=res["agent2_points"]
-                )
+                if args.update_scoreboard:
+                    # Agent 1
+                    agent1_key = f"{folder1}:{res['agent1_run_id']}"
+                    update_scoreboard(
+                        SCOREBOARD_PATH, agent1_key,
+                        games_played=NUM_ROUNDS_PER_MATCH,
+                        wins=res["agent1_wins"],
+                        losses=res["agent2_wins"],
+                        draws=res["draws"],
+                        score=res["agent1_score"],
+                        points=res["agent1_points"]
+                    )
+
+                    # Agent 2
+                    agent2_key = f"{folder2}:{res['agent2_run_id']}"
+                    update_scoreboard(
+                        SCOREBOARD_PATH, agent2_key,
+                        games_played=NUM_ROUNDS_PER_MATCH,
+                        wins=res["agent2_wins"],
+                        losses=res["agent1_wins"],
+                        draws=res["draws"],
+                        score=res["agent2_score"],
+                        points=res["agent2_points"]
+                    )
                 
             else:
                 print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): FAILED - {res.get('error')}")
