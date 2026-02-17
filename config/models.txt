@@ -15,6 +15,8 @@ z-ai/glm-5@preset/fp8-speedy
 z-ai/glm-4.7@preset/fp8-speedy
 moonshotai/kimi-k2.5
 minimax/minimax-m2.5@preset/fp8
+qwen/qwen3.5-397b-a17b
+qwen/qwen3.5-plus-02-15
 qwen/qwen3-235b-a22b-thinking-2507@preset/fp8
 qwen/qwen3-coder@preset/fp8
 qwen/qwen3-coder-next@preset/fp8
