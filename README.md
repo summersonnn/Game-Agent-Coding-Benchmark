@@ -1,175 +1,320 @@
 # Competitive LLM Agent Benchmark
 
-This project is a benchmarking framework for evaluating Large Language Models (LLMs) in competitive environments through multi-agent games.
+Benchmarking framework for evaluating LLMs in competitive multi-agent game environments. Generates agent implementations via OpenRouter API and orchestrates head-to-head/multiplayer matches.
 
 ## Features
 
-- **Multi-Agent Games**: Support for various games like Wizard, Battleship, and Tic-Tac-Toe.
-- **Model-Agnostic API**: Integration with OpenRouter to test a wide range of LLMs.
-- **Persistence**: Generate and save agent implementations for reuse and analysis.
-- **Head-to-Head Evaluation**: Compare model performance through direct competition.
+- **8 Competitive Games**: Battleship, TicTacToe, Wizard, WordFinder, Connect4, WordMatrix, 2x8Chess, SurroundMorris.
+- **Model-Agnostic**: OpenRouter integration supports any available LLM.
+- **Persistent Agents**: Generated code stored per-model for reuse and analysis.
+- **Football-Style Scoring**: Win = 3 pts, Draw = 1 pt, Loss = 0 pts with goal-difference tiebreaker.
+- **Tournament Automation**: Round-robin matchmaker with configurable concurrency.
+
+---
 
 ## Getting Started
 
 ### Prerequisites
 
 - [uv](https://github.com/astral-sh/uv) installed on your system.
-- An OpenRouter API Key.
+- An OpenRouter API key.
 
 ### Installation
 
-1. Clone the repository.
-2. Create and configure your `.env` file:
-   ```bash
-   cp .env.example .env  # If one exists, or create manually
-   ```
+```bash
+git clone <repo>
+cd Competitive-LLM-Agents
+uv sync
+```
 
 ### Configuration
 
-Your `.env` file should contain:
-- `MODEL_API_KEY`: Your OpenRouter API key.
-- `NUM_RUNS`: Default number of agents to generate per model/game (e.g., `4`).
-- `MAX_WORKERS`: For parallel execution.
+Create a `.env` file:
 
-Models are listed in `config/models.txt`. Lines starting with `!` are disabled.
+```
+MODEL_API_KEY=your_openrouter_api_key
+MODEL_API_BASE_URL=https://openrouter.ai/api/v1
+MODEL_MAX_TOKENS=16384
+MODEL_TEMPERATURE=0.7
+MAX_WORKERS=16
+NUM_RUNS=4
+NUM_OF_GAMES_IN_A_MATCH=100
+```
+
+Edit `config/models.txt` — one model ID per line. Prefix with `!` to disable a model without removing it.
 
 ---
 
-## Tool: Agent Population (`populate_agents.py`)
+## Step 1: Generate Agents
 
-The `populate_agents.py` script prompts LLMs to generate agent implementations for specific games and saves them to the `agents/` directory.
-
-### Usage
-
-Run the script using `uv`:
+`utils/populate_agents.py` prompts LLMs to generate agent implementations and saves them under `agents/`.
 
 ```bash
-# Populate for all active models and all available games
+# All active models, all games
 uv run python utils/populate_agents.py --all
 
-# Specify models by substring or index (from models.txt)
-# This also works for disabled models (starting with !)
-uv run python utils/populate_agents.py --model mistral deepseek 0
+# Specific models by substring or index from models.txt
+uv run python utils/populate_agents.py --model mistral deepseek
 
-# Filter by game prefix
-uv run python utils/populate_agents.py --games A1,A3
+# Filter to specific games
+uv run python utils/populate_agents.py --games A1,A8
 
-# Override the default number of runs
-uv run python utils/populate_agents.py --all --runs 3
+# Override run count (adds to existing runs, does not overwrite)
+uv run python utils/populate_agents.py --all --runs 2
+
+# Interactive model selection (no args)
+uv run python utils/populate_agents.py
 ```
 
-- **Substring matching**: `--model mistral` matches any model name containing "mistral".
-- **Index matching**: `--model 0` selects the first model defined in `models.txt`.
-- **Disabled models**: You can select models marked with `!` by using their substring or index.
+**Model selection rules:**
+- `--model mistral` matches any model name containing "mistral" (case-insensitive).
+- `--model 0` selects the model at index 0 in `models.txt`.
+- Disabled models (prefixed `!`) can still be selected by substring or index.
+- If a substring matches multiple models, an interactive prompt resolves the ambiguity.
 
-### Folder Structure
+**Output:** `agents/<sanitized_model_name>/<game_id>_<run>.py`
 
-Generated agents are stored as follows:
+Run IDs are appended automatically — existing agents are never overwritten.
+
+---
+
+## Step 2: Run Matches
+
+Match scripts load pre-generated agents from `agents/` and run a series of games between them.
+
+### Agent Spec Format
+
 ```
-agents/
-├── <model_name>/
-│   ├── A1-Battleship_1.py
-│   ├── A1-Battleship_2.py
-│   └── ...
+model_pattern[:run1:run2:...]
+```
+
+- `model_pattern`: substring matched against folder names inside `agents/`.
+- `run1:run2...`: optional, specific run numbers. If omitted, all available runs are used.
+
+All match scripts require `--agent` for agent-vs-agent mode. Human play modes are available in most scripts (see per-game details below).
+
+---
+
+### A1: Battleship
+
+2-player, 8x8 grid. Ships: [5, 4, 3]. Placement phase then bombing phase.
+
+```bash
+# Agent vs agent
+uv run python game_scripts/A1-battleship_match.py --agent model1:1 model2:1
+
+# Human modes
+uv run python game_scripts/A1-battleship_match.py --humanvsbot
+uv run python game_scripts/A1-battleship_match.py --humanvshuman
+uv run python game_scripts/A1-battleship_match.py --humanvsagent --agent model:1
 ```
 
 ---
 
-## Running Matches
+### A2: TicTacToe
 
-Matches are run using pre-generated agents from the `agents/` folder. The scripts match agents in pairs (for 2-player games) or groups of 6 (for Wizard).
-
-### General Usage
-
-All match scripts use the `--agent` argument to specify which models and runs to use.
-
-**Format**: `--agent model_pattern[:run1:run2:...]`
-
-- `model_pattern`: A substring to match the model's folder name in `agents/`.
-- `run1:run2...`: Optional. Specific run numbers to use. If omitted, all available runs for that model are used.
-
-### Games
-
-#### 1. Wizard (6 Players)
-Requires a total number of agents that is a multiple of 6.
+2-player, 5x5 board. First-move assignment alternates across games.
 
 ```bash
-# Use all runs from mistral and gpt-mini
-uv run python game_scripts/A3-wizard_match.py --agent mistral gpt-mini
-
-# Use specific runs
-uv run python game_scripts/A3-wizard_match.py --agent mistral:1:2:3 gpt-mini:1:2:3
-```
-
-#### 2. Battleship (2 Players)
-Matches agents from two models head-to-head.
-
-```bash
-# Match first N runs of mistral against first N runs of deepseek
-uv run python game_scripts/A1-battleship_match.py --agent mistral deepseek
-
-# Match specific runs
-uv run python game_scripts/A1-battleship_match.py --agent mistral:1:2 deepseek:3:4
-```
-
-#### 3. Tic Tac Toe (2 Players)
-Matches agents from two models head-to-head.
-
-```bash
-uv run python game_scripts/A2-tictactoe_match.py --agent mistral deepseek
-```
-
-### Debug Mode
-For Wizard, you can enable interactive debug mode:
-```bash
-uv run python game_scripts/A3-wizard_match.py --agent mistral:1 --debug
+uv run python game_scripts/A2-tictactoe_match.py --agent model1:1 model2:1
+uv run python game_scripts/A2-tictactoe_match.py --humanvsbot
+uv run python game_scripts/A2-tictactoe_match.py --humanvshuman
+uv run python game_scripts/A2-tictactoe_match.py --humanvsagent --agent model:1
 ```
 
 ---
 
-## Tool: Matchmaker (`matchmaker.py`)
+### A3: Wizard
 
-The matchmaker automates full round-robin tournaments. It discovers all agents for a game, generates every cross-model fixture, and executes them concurrently as subprocesses — each delegated to the appropriate match runner.
+6-player trick-taking card game. 10 rounds, players bid on tricks won.
 
-### Usage
+Requires agents from at least 6 different models (total agent count must be a multiple of 6).
 
 ```bash
-# Full tournament for SurroundMorris, each pair plays 4 times
+# Use all runs from 6+ models
+uv run python game_scripts/A3-wizard_match.py --agent modelA modelB modelC modelD modelE modelF
+
+# Specific runs
+uv run python game_scripts/A3-wizard_match.py --agent a:1:2:3 b:1:2:3 c:1 d:1 e:1 f:1
+
+# Debug mode (interactive, detailed output)
+uv run python game_scripts/A3-wizard_match.py --agent model:1 --debug
+
+# Human vs 5 random bots
+uv run python game_scripts/A3-wizard_match.py --human
+```
+
+---
+
+### A4: WordFinder
+
+2-player word chain game. Each word must start/end with letters from the previous word.
+
+```bash
+uv run python game_scripts/A4-word_finder_match.py --agent model1:1 model2:1
+uv run python game_scripts/A4-word_finder_match.py --humanvsbot
+uv run python game_scripts/A4-word_finder_match.py --humanvshuman
+uv run python game_scripts/A4-word_finder_match.py --humanvsagent --agent model:1
+```
+
+---
+
+### A5: Connect4 (Random Start)
+
+2-player, 6x7 board. One disc is pre-placed randomly at match start.
+
+```bash
+uv run python game_scripts/A5-connect4_match.py --agent model1:1 model2:1
+
+# Human vs random bot
+uv run python game_scripts/A5-connect4_match.py --human
+```
+
+---
+
+### A6: WordMatrixGame
+
+2-player, 4x4 letter grid. Players trace paths through adjacent cells to form words.
+
+```bash
+uv run python game_scripts/A6-word_matrix_match.py --agent model1:1 model2:1
+uv run python game_scripts/A6-word_matrix_match.py --humanvsbot
+uv run python game_scripts/A6-word_matrix_match.py --humanvshuman
+uv run python game_scripts/A6-word_matrix_match.py --humanvsagent --agent model:1
+```
+
+---
+
+### A7: 2x8 Mini Chess
+
+2-player, 2x8 board. Each side has K, N, R, P. Pawns promote to Rook.
+
+```bash
+uv run python game_scripts/A7-twobyeight_chess_match.py --agent model1:1 model2:1
+
+# Human vs random bot
+uv run python game_scripts/A7-twobyeight_chess_match.py --human
+```
+
+---
+
+### A8: SurroundMorris
+
+2-player, Nine Men's Morris variant. Capture by surrounding (overwhelm rule) instead of mills.
+
+```bash
+uv run python game_scripts/A8-surround_morris_match.py --agent model1:1 model2:1
+uv run python game_scripts/A8-surround_morris_match.py --humanvsbot
+uv run python game_scripts/A8-surround_morris_match.py --humanvshuman
+uv run python game_scripts/A8-surround_morris_match.py --humanvsagent --agent model:1
+```
+
+---
+
+## Step 3: Run Tournaments
+
+`game_scripts/matchmaker.py` automates round-robin tournaments. It discovers all agents for a game, generates cross-model fixtures, and runs them concurrently as subprocesses.
+
+```bash
+# Full tournament for SurroundMorris, each cross-model pair plays 4 times
 uv run python game_scripts/matchmaker.py --game A8 --same_opponent_match 4
 
-# Preview fixtures without running anything
-uv run python game_scripts/matchmaker.py --game A8 --same_opponent_match 1 --dry-run
+# Preview fixtures without executing
+uv run python game_scripts/matchmaker.py --game A8 --dry-run
 
 # Wizard tournament with 8 concurrent workers
 uv run python game_scripts/matchmaker.py --game A3 --same_opponent_match 2 --workers 8
+
+# Only run matches involving newly added models (incremental update)
+uv run python game_scripts/matchmaker.py --game A8 --new-model model-folder-name
+
+# Verify agent syntax before running
+uv run python game_scripts/matchmaker.py --game A8 --health
 ```
 
-### Arguments
+### Matchmaker Arguments
 
 | Argument | Type | Default | Description |
 |---|---|---|---|
 | `--game` | str | required | Game ID: A1 through A8 |
-| `--same_opponent_match` | int | 1 | Minimum encounters per cross-model agent pair |
-| `--workers` | int | 4 | Max concurrent match subprocesses |
+| `--same_opponent_match` | int | 2 | Minimum times each cross-model pair must meet |
+| `--workers` | int | 16 | Max concurrent match subprocesses |
 | `--dry-run` | flag | false | Print fixture list without executing |
+| `--new-model` | str | — | Comma-separated model folder names; only generate fixtures involving these models |
+| `--health` | flag | false | Run syntax + exception-handler checks on all agents before execution |
 
-### How `--same_opponent_match` works
+### How `--same_opponent_match` Works
 
-This controls how many times every cross-model agent pair is guaranteed to encounter each other.
+**2-player games (A1, A2, A4–A8):** Every cross-model agent pair plays a direct match `N` times. Example: 20 models × 2 runs = 40 agents → 760 cross-model pairs → `--same_opponent_match 4` = 3040 matches.
 
-**2-player games (A1, A2, A4-A8):** Each cross-model pair plays a direct head-to-head match `same_opponent_match` times. All `itertools.combinations` of agents are generated, same-model pairs are filtered out, and the remainder is repeated. For example, 20 models with 2 runs each (40 agents) produce 760 cross-model pairs — with `--same_opponent_match 4` that's 3040 total matches.
+**6-player games (A3 Wizard):** No direct head-to-head; 6 agents from different models share each table. A greedy pairwise-coverage algorithm generates groups ensuring every cross-model pair co-occurs in at least `N` games.
 
-**6-player games (A3 Wizard):** There is no head-to-head; instead, 6 agents from 6 different models share a table per game. The matchmaker uses a greedy pairwise-coverage algorithm to generate groups such that every cross-model agent pair co-occurs in at least `same_opponent_match` games. This ensures sufficient statistical signal to compare any two models even in a multiplayer setting.
+### Incremental Tournaments (`--new-model`)
 
-### What the matchmaker does NOT do
+When you add new models and regenerate agents, use `--new-model` to avoid replaying all existing cross-model pairs. Only fixtures involving the specified model folders are scheduled.
 
-The matchmaker is purely a scheduler. Each subprocess call to a match runner handles game execution, result parsing, scoreboard updates, and log writing internally. The matchmaker only tracks success/failure counts and reports a summary at the end.
+```bash
+uv run python game_scripts/matchmaker.py --game A8 --new-model new-gpt-model,new-claude-model
+```
+
+### Agent Health Checks (`--health`)
+
+Before executing a tournament, `--health` validates every agent:
+1. **Syntax check** — parses each file with `ast.parse`.
+2. **Broad except in `make_move`** — detects `except Exception`, `except BaseException`, or bare `except:` at the top level of `make_move`. These swallow `MoveTimeoutException` and prevent the time limit from being enforced.
+
+Execution aborts if any agent fails.
+
+### What the Matchmaker Does NOT Do
+
+The matchmaker is a scheduler only. Each subprocess call to a match runner handles: game execution, result parsing, scoreboard updates, and log writing. The matchmaker only tracks success/failure counts and prints a summary.
+
+**Timeout:** 900 seconds per match subprocess. Timed-out matches are killed and recorded as failures.
+
+---
+
+## Scoreboard
+
+Each game maintains a scoreboard at `scoreboard/<game-id>-scoreboard.txt`.
+
+**Format:**
+```
+Agent | Games | Wins | Losses | Draws | Points | Score
+```
+
+**Sorting:** Primary by Points (descending), tiebreaker by Score (descending).
+
+Scoreboards are updated atomically via file-locking after each match. Match runners only update the scoreboard when called with `--update-scoreboard` (added automatically by the matchmaker).
+
+---
 
 ## Project Structure
 
-- `agents/`: Stored agent implementations.
-- `config/`: Configuration files (models, questions).
-- `games/`: Game prompts and rules.
-- `game_scripts/`: Match runners and tournament scheduler.
-- `utils/`: Core logic and population scripts.
-- `results/`: Logs and performance data.
+```
+agents/           # Generated agent code (organized by model name)
+config/           # models.txt, max_tokens.txt
+games/            # Game prompts/rules for agent generation
+game_scripts/     # Match runners (*_match.py) and matchmaker.py
+utils/            # Core logic: API client, agent generation, scoreboard, logging
+results/          # Match logs and outcomes per game
+scoreboard/       # Per-game leaderboard files
+```
+
+### Key Modules
+
+| File | Purpose |
+|------|---------|
+| `utils/model_api.py` | Async OpenRouter API client with per-game token multipliers |
+| `utils/populate_agents.py` | LLM-based agent code generation |
+| `utils/scoreboard.py` | Atomic scoreboard read/write with file locking |
+| `utils/logging_config.py` | Centralized logging setup |
+| `game_scripts/*_match.py` | Game-specific match orchestrators |
+| `game_scripts/matchmaker.py` | Round-robin tournament scheduler |
+
+### `config/models.txt`
+
+One model ID per line. Lines starting with `!` are disabled (excluded from `--all` but still selectable by name/index in `populate_agents.py`).
+
+### `config/max_tokens.txt`
+
+Per-game token multipliers applied to `MODEL_MAX_TOKENS`. Example: `A1: 4` means Battleship generation uses `4 × MODEL_MAX_TOKENS` tokens.

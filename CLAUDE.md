@@ -24,19 +24,21 @@ uv run python utils/populate_agents.py --games A1,A3 --runs 3   # Specific games
 **Running Individual Matches:**
 ```bash
 uv run python game_scripts/A1-battleship_match.py --agent model1:1 model2:1
-uv run python game_scripts/A2-tictactoe_match.py --agent model1:1:2 model2:1
-uv run python game_scripts/A3-wizard_match.py --agent model1:1 model2:1 model3:1
+uv run python game_scripts/A2-tictactoe_match.py --agent model1:1 model2:1
+uv run python game_scripts/A3-wizard_match.py --agent model1:1 model2:1 model3:1 model4:1 model5:1 model6:1
 uv run python game_scripts/A4-word_finder_match.py --agent model1:1 model2:1
+uv run python game_scripts/A5-connect4_match.py --agent model1:1 model2:1
 uv run python game_scripts/A6-word_matrix_match.py --agent model1:1 model2:1
-uv run python game_scripts/A6-word_matrix_match.py --human
+uv run python game_scripts/A7-twobyeight_chess_match.py --agent model1:1 model2:1
 uv run python game_scripts/A8-surround_morris_match.py --agent model1:1 model2:1
 ```
 
 **Running Tournaments (Matchmaker):**
 ```bash
 uv run python game_scripts/matchmaker.py --game A8 --same_opponent_match 4
-uv run python game_scripts/matchmaker.py --game A8 --same_opponent_match 1 --dry-run
+uv run python game_scripts/matchmaker.py --game A8 --dry-run
 uv run python game_scripts/matchmaker.py --game A3 --same_opponent_match 2 --workers 8
+uv run python game_scripts/matchmaker.py --game A8 --new-model new-model-folder --health
 ```
 
 ## Key Modules
@@ -72,9 +74,10 @@ uv run python game_scripts/matchmaker.py --game A3 --same_opponent_match 2 --wor
 | A2 | TicTacToe | 2 | Playable |
 | A3 | Wizard | 6 | Playable |
 | A4 | WordFinder | 2 | Playable |
+| A5 | Connect4RandomStart | 2 | Playable |
 | A6 | WordMatrixGame | 2 | Playable |
+| A7 | TwoByEightChess | 2 | Playable |
 | A8 | SurroundMorris | 2 | Playable |
-| A5,A7 | (Placeholders) | - | Not implemented |
 
 ---
 
@@ -322,19 +325,125 @@ Total Turns: <count>
 ---
 
 ### A1: Battleship
-*Details to be added*
+
+**Type:** 2-player naval strategy
+**Match File:** `game_scripts/A1-battleship_match.py`
+**Game Prompt:** `games/A1-Battleship.txt`
+**Scoreboard:** `scoreboard/A1-scoreboard.txt`
+
+**Overview:** Classic Battleship on an 8x8 grid. Ships: [5, 4, 3]. Two phases — placement then bombing. Players call shots until all opponent ships are sunk.
+
+**Agent Interface:** `class BattleshipAgent` with `place_ships(board_size, ships)` returning placement coordinates and `make_move(state, feedback)` returning a target cell.
+
+**Scoring:** Winner gets +remaining_ship_cells, loser gets -remaining_ship_cells.
+
+**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
+
+---
 
 ### A2: TicTacToe
-*Details to be added*
+
+**Type:** 2-player abstract strategy
+**Match File:** `game_scripts/A2-tictactoe_match.py`
+**Game Prompt:** `games/A2-TicTacToe.txt`
+**Scoreboard:** `scoreboard/A2-scoreboard.txt`
+
+**Overview:** Extended 5x5 TicTacToe. First-move assignment (X/O) alternates across games within a match. First move of each game is randomised.
+
+**Agent Interface:** `class TicTacToeAgent` with `make_move(state, feedback)` returning a board position (0–24).
+
+**Scoring:** Score = empty cells remaining at win (min 3). Forfeit score: 20.
+
+**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
+
+---
 
 ### A3: Wizard
-*Details to be added*
+
+**Type:** 6-player trick-taking card game
+**Match File:** `game_scripts/A3-wizard_match.py`
+**Game Prompt:** `games/A3-Wizard.txt`
+**Scoreboard:** `scoreboard/A3-scoreboard.txt`
+
+**Overview:** 10-round trick-taking game. Each round players bid on how many tricks they will win, then play cards. Scoring: +20 per round for exact bid + 10 per trick won; -10 per missed trick. Hook rule: last bidder cannot make total bids equal the number of tricks.
+
+**Agent count:** Must be a multiple of 6 (one per seat). All 6 seats must be from different model folders.
+
+**Agent Interface:** `class WizardAgent` with `make_bid(state)` returning an integer and `play_card(state, feedback)` returning a card identifier.
+
+**Debug mode:** `--debug` enables interactive per-trick pausing useful for development.
+
+**Human mode:** `--human` places a human at one seat against 5 random bots.
+
+---
 
 ### A4: WordFinder
-*Details to be added*
+
+**Type:** 2-player word chain game
+**Match File:** `game_scripts/A4-word_finder_match.py`
+**Game Prompt:** `games/A4-WordFinder.txt`
+**Scoreboard:** `scoreboard/A4-scoreboard.txt`
+
+**Overview:** Players alternate submitting words. Each word must share the first or last letter with the previous word. Valid words score points; invalid moves are penalised. Dictionary is a random 10k-word sample per match. Max 200 individual turns.
+
+**Agent Interface:** `class WordFinderAgent` with `make_move(state, feedback)` returning a word string.
+
+**Scoring:** Base points per word + bonuses. Forfeit score: 12. 10 games per match (reduced for performance).
+
+**Move timeout:** 3 seconds (extended vs other games).
+
+**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
+
+---
+
+### A5: Connect4 (Random Start)
+
+**Type:** 2-player connection game
+**Match File:** `game_scripts/A5-connect4_match.py`
+**Game Prompt:** `games/A5-Connect4RandomStart.txt`
+**Scoreboard:** `scoreboard/A5-scoreboard.txt`
+
+**Overview:** Standard Connect4 on a 6x7 board with one twist: one disc is pre-placed at a random column before each match to break standard opening theory. Colors alternate between odd/even games.
+
+**Agent Interface:** `class Connect4Agent` with `make_move(state, feedback)` returning a column index (0–6).
+
+**Scoring:** Score = empty cells remaining at win (min 3). Forfeit score: 41 cells. 10 games per match.
+
+**Human mode:** `--human` plays interactively against a random bot.
+
+---
 
 ### A6: WordMatrixGame
-*Details to be added*
+
+**Type:** 2-player word path game
+**Match File:** `game_scripts/A6-word_matrix_match.py`
+**Game Prompt:** `games/A6-WordMatrixGame.txt`
+**Scoreboard:** `scoreboard/A6-scoreboard.txt`
+
+**Overview:** 4x4 letter grid. Each turn a player traces a path through adjacent cells (min 2) to form a valid word. Matched cells are cleared and replaced with new letters. 6 consecutive passes end the game.
+
+**Agent Interface:** `class WordMatrixAgent` with `make_move(state, feedback)` returning a list of cell indices forming the path.
+
+**Scoring:** 10 base + 10 per cleared cell per word. Invalid move penalty: -10 (no fallback to random). Forfeit score: 12.
+
+**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
+
+---
+
+### A7: 2x8 Mini Chess
+
+**Type:** 2-player abstract chess variant
+**Match File:** `game_scripts/A7-twobyeight_chess_match.py`
+**Game Prompt:** `games/A7-TwoByEightChess.txt`
+**Scoreboard:** `scoreboard/A7-scoreboard.txt`
+
+**Overview:** Chess played on a 2x8 board. Each side starts with King, Knight, Rook, and Pawn. Pawns promote to Rook upon reaching the far edge. Knight movement is modified (L-shape + 2-step linear). Full chess rules: check, checkmate, stalemate, repetition draw, insufficient material draw. Move limit: 200.
+
+**Agent Interface:** `class TwoByEightChessAgent` with `make_move(state, feedback)` returning a move in UCI notation (e.g. `"a1b1"`).
+
+**Scoring:** Win in ≤5 full moves = +10, ≤10 = +5, >10 = +3. Draw = 0 for both. 100 games per match.
+
+**Human mode:** `--human` plays interactively against a random bot.
 
 ---
 
@@ -353,9 +462,11 @@ Example: `agents/openai-gpt-5-mini/A1-Battleship_1.py`
 | Argument | Type | Default | Description |
 |---|---|---|---|
 | `--game` | str | required | Game ID: A1 through A8 |
-| `--same_opponent_match` | int | 1 | Minimum encounters per cross-model agent pair (see below) |
-| `--workers` | int | 4 | Max concurrent match subprocesses |
+| `--same_opponent_match` | int | 2 | Minimum encounters per cross-model agent pair (see below) |
+| `--workers` | int | 16 | Max concurrent match subprocesses |
 | `--dry-run` | flag | false | Print fixture list without executing |
+| `--new-model` | str | — | Comma-separated model folder names; restrict fixtures to those involving these models |
+| `--health` | flag | false | Run syntax + broad-except checks on all agents before execution |
 
 **How `--same_opponent_match` works:**
 
@@ -365,9 +476,15 @@ This controls how many times every cross-model agent pair is guaranteed to encou
 
 - **6-player games (A3 Wizard):** There is no head-to-head; instead, 6 agents from 6 different models share a table. The matchmaker uses a greedy pairwise-coverage algorithm to generate groups such that every cross-model agent pair co-occurs in at least `same_opponent_match` games. This ensures sufficient statistical signal to compare any two models even in a multiplayer setting.
 
+**Incremental tournaments (`--new-model`):** When new models are added, pass their folder names (comma-separated) to generate only the fixtures where at least one side is a new model. Avoids replaying all existing cross-model pairs.
+
+**Agent health checks (`--health`):** Before executing, validates every discovered agent for:
+1. Syntax validity (`ast.parse`).
+2. Broad exception handlers in `make_move` (`except Exception`, `except BaseException`, bare `except:`) — these swallow `MoveTimeoutException` and disable per-move time limits.
+
 **Agent discovery:** Scans `agents/*/` for files matching `{game_name}_{run}.py`. Only cross-model pairings are generated — agents from the same model folder never face each other.
 
-**Execution:** Each match is a subprocess calling the game's match runner (e.g. `A8-surround_morris_match.py --agent modelA:1 modelB:2`). The match runner handles game execution, result parsing, scoreboard updates, and log writing internally. The matchmaker only orchestrates scheduling and reports success/failure counts.
+**Execution:** Each match is a subprocess calling the game's match runner with `--update-scoreboard` appended automatically. The match runner handles game execution, result parsing, scoreboard updates, and log writing internally. The matchmaker only orchestrates scheduling and reports success/failure counts.
 
 **Timeout:** 900 seconds per match subprocess. Timed-out matches are killed and recorded as failures.
 
