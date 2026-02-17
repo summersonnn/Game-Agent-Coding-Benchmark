@@ -6,187 +6,109 @@ Generated: 2026-02-12 14:50:42
 """
 
 
-
 class Connect4Agent:
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
         self.opponent = 'Y' if symbol == 'R' else 'R'
-    
+
     def make_move(self, board):
-        """
-        Decision-making strategy:
-        1. Win immediately if possible
-        2. Block opponent's winning move
-        3. Use minimax with alpha-beta pruning to find best move
-        """
-        valid_moves = self._get_valid_moves(board)
+        _, col = self._minimax(board, 4, float('-inf'), float('inf'), True)
+        return col
+
+    def _minimax(self, board, depth, alpha, beta, is_max):
+        winner = self._check_winner(board)
+        if winner == self.symbol:
+            return 1000 + depth, None
+        if winner == self.opponent:
+            return -1000 - depth, None
+        if depth == 0:
+            return self._evaluate(board), None
         
-        if not valid_moves:
+        valid = [c for c in range(7) if board[0][c] == ' ']
+        if not valid:
+            return 0, None
+        
+        best_col = valid[0]
+        if is_max:
+            max_val = float('-inf')
+            for col in valid:
+                b = [row[:] for row in board]
+                self._drop(b, col, self.symbol)
+                val, _ = self._minimax(b, depth - 1, alpha, beta, False)
+                if val > max_val:
+                    max_val = val
+                    best_col = col
+                alpha = max(alpha, val)
+                if beta <= alpha:
+                    break
+            return max_val, best_col
+        else:
+            min_val = float('inf')
+            for col in valid:
+                b = [row[:] for row in board]
+                self._drop(b, col, self.opponent)
+                val, _ = self._minimax(b, depth - 1, alpha, beta, True)
+                if val < min_val:
+                    min_val = val
+                    best_col = col
+                beta = min(beta, val)
+                if beta <= alpha:
+                    break
+            return min_val, best_col
+
+    def _evaluate(self, board):
+        score = 0
+        for r in range(6):
+            for c in range(7):
+                score += self._count_threats(board, r, c, self.symbol) * 10
+                score -= self._count_threats(board, r, c, self.opponent) * 10
+        return score
+
+    def _count_threats(self, board, r, c, symbol):
+        if board[r][c] != symbol:
             return 0
         
-        # Priority 1: Win immediately
-        for col in valid_moves:
-            if self._is_winning_move(board, col, self.symbol):
-                return col
-        
-        # Priority 2: Block opponent's win
-        for col in valid_moves:
-            if self._is_winning_move(board, col, self.opponent):
-                return col
-        
-        # Priority 3: Best move via minimax
-        best_col = valid_moves[0]
-        best_score = float('-inf')
-        
-        for col in valid_moves:
-            board_copy = [row[:] for row in board]
-            self._drop_disc(board_copy, col, self.symbol)
-            score = self._minimax(board_copy, depth=6, is_maximizing=False)
+        score = 0
+        for dr, dc in [(0, 1), (1, 0), (1, 1), (1, -1)]:
+            count = 1
+            for i in range(1, 4):
+                nr, nc = r + i * dr, c + i * dc
+                if 0 <= nr < 6 and 0 <= nc < 7 and board[nr][nc] == symbol:
+                    count += 1
+                else:
+                    break
             
-            if score > best_score:
-                best_score = score
-                best_col = col
+            if count >= 4:
+                return 1000
+            elif count == 3:
+                score += 5
+            elif count == 2:
+                score += 1
         
-        return best_col
-    
-    def _get_valid_moves(self, board):
-        """Get all valid column indices (not full)"""
-        return [c for c in range(7) if board[0][c] == ' ']
-    
-    def _drop_disc(self, board, col, symbol):
-        """Drop disc in column, return landing row or None if full"""
+        return score
+
+    def _drop(self, board, col, symbol):
         for r in range(5, -1, -1):
             if board[r][col] == ' ':
                 board[r][col] = symbol
-                return r
+                return
+
+    def _check_winner(self, board):
+        for r in range(6):
+            for c in range(4):
+                if board[r][c] != ' ' and board[r][c] == board[r][c+1] == board[r][c+2] == board[r][c+3]:
+                    return board[r][c]
+        for r in range(3):
+            for c in range(7):
+                if board[r][c] != ' ' and board[r][c] == board[r+1][c] == board[r+2][c] == board[r+3][c]:
+                    return board[r][c]
+        for r in range(3, 6):
+            for c in range(4):
+                if board[r][c] != ' ' and board[r][c] == board[r-1][c+1] == board[r-2][c+2] == board[r-3][c+3]:
+                    return board[r][c]
+        for r in range(3):
+            for c in range(4):
+                if board[r][c] != ' ' and board[r][c] == board[r+1][c+1] == board[r+2][c+2] == board[r+3][c+3]:
+                    return board[r][c]
         return None
-    
-    def _is_winning_move(self, board, col, symbol):
-        """Check if moving in col creates 4-in-a-row for symbol"""
-        board_copy = [row[:] for row in board]
-        row = self._drop_disc(board_copy, col, symbol)
-        return row is not None and self._check_winner(board_copy, row, col, symbol)
-    
-    def _check_winner(self, board, row, col, symbol):
-        """Check if (row, col) completes 4-in-a-row"""
-        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]  # H, V, Diag, Diag
-        
-        for dr, dc in directions:
-            count = 1
-            
-            # Count in positive direction
-            r, c = row + dr, col + dc
-            while 0 <= r < 6 and 0 <= c < 7 and board[r][c] == symbol:
-                count += 1
-                r += dr
-                c += dc
-            
-            # Count in negative direction
-            r, c = row - dr, col - dc
-            while 0 <= r < 6 and 0 <= c < 7 and board[r][c] == symbol:
-                count += 1
-                r -= dr
-                c -= dc
-            
-            if count >= 4:
-                return True
-        
-        return False
-    
-    def _minimax(self, board, depth, alpha=float('-inf'), beta=float('inf'),
-                 is_maximizing=True):
-        """Minimax algorithm with alpha-beta pruning"""
-        
-        # Terminal state: check for winner
-        for r in range(6):
-            for c in range(7):
-                if board[r][c] != ' ' and self._check_winner(board, r, c, board[r][c]):
-                    if board[r][c] == self.symbol:
-                        return 1000 + depth  # Prefer faster wins
-                    else:
-                        return -1000 - depth  # Prefer slower losses
-        
-        # Terminal state: no valid moves (draw)
-        valid_moves = self._get_valid_moves(board)
-        if not valid_moves:
-            return 0
-        
-        # Terminal state: depth limit reached
-        if depth == 0:
-            return self._evaluate_board(board)
-        
-        if is_maximizing:  # My turn (maximize score)
-            max_eval = float('-inf')
-            for col in valid_moves:
-                board_copy = [row[:] for row in board]
-                self._drop_disc(board_copy, col, self.symbol)
-                value = self._minimax(board_copy, depth - 1, alpha, beta, False)
-                max_eval = max(max_eval, value)
-                alpha = max(alpha, value)
-                if beta <= alpha:
-                    break  # Beta cutoff
-            return max_eval
-        else:  # Opponent's turn (minimize score)
-            min_eval = float('inf')
-            for col in valid_moves:
-                board_copy = [row[:] for row in board]
-                self._drop_disc(board_copy, col, self.opponent)
-                value = self._minimax(board_copy, depth - 1, alpha, beta, True)
-                min_eval = min(min_eval, value)
-                beta = min(beta, value)
-                if beta <= alpha:
-                    break  # Alpha cutoff
-            return min_eval
-    
-    def _evaluate_board(self, board):
-        """Heuristic evaluation when depth limit reached"""
-        score = 0
-        
-        # Evaluate each piece on board
-        for r in range(6):
-            for c in range(7):
-                if board[r][c] == self.symbol:
-                    score += self._evaluate_cell(board, r, c, self.symbol)
-                elif board[r][c] == self.opponent:
-                    score -= self._evaluate_cell(board, r, c, self.opponent)
-        
-        return score
-    
-    def _evaluate_cell(self, board, row, col, symbol):
-        """Evaluate value of a single cell"""
-        value = 0
-        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
-        
-        for dr, dc in directions:
-            count = 1
-            
-            # Count consecutive pieces in positive direction
-            r, c = row + dr, col + dc
-            while 0 <= r < 6 and 0 <= c < 7 and board[r][c] == symbol:
-                count += 1
-                r += dr
-                c += dc
-            
-            # Count consecutive pieces in negative direction
-            r, c = row - dr, col - dc
-            while 0 <= r < 6 and 0 <= c < 7 and board[r][c] == symbol:
-                count += 1
-                r -= dr
-                c -= dc
-            
-            # Award points based on line strength
-            if count == 3:
-                value += 50
-            elif count == 2:
-                value += 10
-            elif count == 1:
-                value += 1
-        
-        # Bonus for center column control
-        if col == 3:
-            value += 3
-        elif col in [2, 4]:
-            value += 1
-        
-        return value

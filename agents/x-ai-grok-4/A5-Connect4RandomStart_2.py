@@ -5,186 +5,121 @@ Run: 2
 Generated: 2026-02-14 19:46:39
 """
 
-import time
-
-import time
-
 class Connect4Agent:
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
+        self.opponent = 'Y' if symbol == 'R' else 'R'
 
     def make_move(self, board):
-        opponent = 'Y' if self.symbol == 'R' else 'R'
-        ROWS = 6
-        COLS = 7
-        EMPTY = ' '
-        INF = 1000000
+        best_score = -float('inf')
+        best_col = None
+        move_order = [3, 4, 2, 5, 1, 6, 0]
+        alpha = -float('inf')
+        beta = float('inf')
+        depth = 7
+        for col in move_order:
+            if self.is_valid_move(board, col):
+                row = self.drop(board, col, self.symbol)
+                score = self.minimax(board, depth - 1, alpha, beta, False)
+                self.undo(board, row, col)
+                if score > best_score:
+                    best_score = score
+                    best_col = col
+                alpha = max(alpha, score)
+        return best_col
 
-        filled = [0 for _ in range(COLS)]
-        for c in range(COLS):
-            for r in range(ROWS):
-                if board[r][c] != EMPTY:
-                    filled[c] += 1
+    def minimax(self, board, depth, alpha, beta, maximizing):
+        if depth == 0 or self.check_winner(board) is not None or self.is_full(board):
+            return self.evaluate(board)
+        move_order = [3, 4, 2, 5, 1, 6, 0]
+        if maximizing:
+            max_eval = -float('inf')
+            for col in move_order:
+                if self.is_valid_move(board, col):
+                    row = self.drop(board, col, self.symbol)
+                    eval_ = self.minimax(board, depth - 1, alpha, beta, False)
+                    self.undo(board, row, col)
+                    max_eval = max(max_eval, eval_)
+                    alpha = max(alpha, max_eval)
+                    if beta <= alpha:
+                        break
+            return max_eval
+        else:
+            min_eval = float('inf')
+            for col in move_order:
+                if self.is_valid_move(board, col):
+                    row = self.drop(board, col, self.opponent)
+                    eval_ = self.minimax(board, depth - 1, alpha, beta, True)
+                    self.undo(board, row, col)
+                    min_eval = min(min_eval, eval_)
+                    beta = min(beta, min_eval)
+                    if beta <= alpha:
+                        break
+            return min_eval
 
-        valid_cols = [c for c in range(COLS) if filled[c] < 6]
-        if not valid_cols:
-            return 0  # Should not happen
-        if len(valid_cols) == 1:
-            return valid_cols[0]
-
-        def check_winner(board):
-            # Horizontal
-            for r in range(ROWS):
-                for c in range(COLS - 3):
-                    if board[r][c] != EMPTY and \
-                       board[r][c] == board[r][c+1] == board[r][c+2] == board[r][c+3]:
-                        return board[r][c]
-            # Vertical
-            for r in range(ROWS - 3):
-                for c in range(COLS):
-                    if board[r][c] != EMPTY and \
-                       board[r][c] == board[r+1][c] == board[r+2][c] == board[r+3][c]:
-                        return board[r][c]
-            # Diagonal /
-            for r in range(3, ROWS):
-                for c in range(COLS - 3):
-                    if board[r][c] != EMPTY and \
-                       board[r][c] == board[r-1][c+1] == board[r-2][c+2] == board[r-3][c+3]:
-                        return board[r][c]
-            # Diagonal \
-            for r in range(ROWS - 3):
-                for c in range(COLS - 3):
-                    if board[r][c] != EMPTY and \
-                       board[r][c] == board[r+1][c+1] == board[r+2][c+2] == board[r+3][c+3]:
-                        return board[r][c]
-            return None
-
-        def evaluate(board, my_symbol, opp_symbol):
-            score = 0
-            # Horizontal
-            for r in range(ROWS):
-                for c in range(COLS - 3):
-                    window = [board[r][c + i] for i in range(4)]
-                    score += score_window(window, my_symbol, opp_symbol)
-            # Vertical
-            for r in range(ROWS - 3):
-                for c in range(COLS):
-                    window = [board[r + i][c] for i in range(4)]
-                    score += score_window(window, my_symbol, opp_symbol)
-            # Diagonal /
-            for r in range(3, ROWS):
-                for c in range(COLS - 3):
-                    window = [board[r - i][c + i] for i in range(4)]
-                    score += score_window(window, my_symbol, opp_symbol)
-            # Diagonal \
-            for r in range(ROWS - 3):
-                for c in range(COLS - 3):
-                    window = [board[r + i][c + i] for i in range(4)]
-                    score += score_window(window, my_symbol, opp_symbol)
-            return score
-
-        def score_window(window, my, opp):
-            count_my = window.count(my)
-            count_opp = window.count(opp)
-            count_empty = window.count(EMPTY)
-            score = 0
-            if count_my == 3 and count_empty == 1:
-                score += 100
-            elif count_my == 2 and count_empty == 2:
-                score += 10
-            elif count_my == 1 and count_empty == 3:
-                score += 1
-            if count_opp == 3 and count_empty == 1:
-                score -= 1000
-            elif count_opp == 2 and count_empty == 2:
-                score -= 10
-            return score
-
-        def alpha_beta(board, filled, depth, alpha, beta, maximizing):
-            win = check_winner(board)
-            if win:
-                empty = 42 - sum(filled)
-                if win == self.symbol:
-                    return INF + max(empty, 3)
-                else:
-                    return -INF - max(empty, 3)
-            if all(filled[c] == 6 for c in range(COLS)):
-                return 0
-            if depth == 0:
-                return evaluate(board, self.symbol, opponent)
-
-            if maximizing:
-                value = -float('inf')
-                for col in range(COLS):
-                    if filled[col] < 6:
-                        row = 5 - filled[col]
-                        board[row][col] = self.symbol
-                        filled[col] += 1
-                        score = alpha_beta(board, filled, depth - 1, alpha, beta, False)
-                        value = max(value, score)
-                        alpha = max(alpha, value)
-                        filled[col] -= 1
-                        board[row][col] = EMPTY
-                        if beta <= alpha:
-                            break
-                return value
+    def evaluate(self, board):
+        winner = self.check_winner(board)
+        if winner is not None:
+            empty = sum(1 for r in range(6) for c in range(7) if board[r][c] == ' ')
+            if winner == self.symbol:
+                return 1000000 + empty
             else:
-                value = float('inf')
-                for col in range(COLS):
-                    if filled[col] < 6:
-                        row = 5 - filled[col]
-                        board[row][col] = opponent
-                        filled[col] += 1
-                        score = alpha_beta(board, filled, depth - 1, alpha, beta, True)
-                        value = min(value, score)
-                        beta = min(beta, value)
-                        filled[col] -= 1
-                        board[row][col] = EMPTY
-                        if beta <= alpha:
-                            break
-                return value
+                return -1000000 - empty
+        if self.is_full(board):
+            return 0
+        my_score = 0
+        opp_score = 0
+        directions = [(0, 1), (1, 0), (1, 1), (-1, 1)]
+        for dr, dc in directions:
+            for r in range(6):
+                for c in range(7):
+                    if (r + 3 * dr >= 0 and r + 3 * dr < 6 and
+                        c + 3 * dc >= 0 and c + 3 * dc < 7):
+                        window = [board[r + i * dr][c + i * dc] for i in range(4)]
+                        my_count = window.count(self.symbol)
+                        opp_count = window.count(self.opponent)
+                        if opp_count == 0:
+                            my_score += 10 ** my_count
+                        if my_count == 0:
+                            opp_score += 10 ** opp_count
+        return my_score - opp_score
 
-        start = time.time()
-        best_move = valid_cols[0]
-        move_scores = {}
-        for d in range(1, 43):
-            timed_out = False
-            move_scores_new = {}
-            if d == 1:
-                col_order = sorted(valid_cols, key=lambda c: abs(c - 3))
-            else:
-                col_order = sorted(valid_cols, key=lambda c: move_scores.get(c, -float('inf')), reverse=True)
-            current_best_score = -float('inf')
-            current_best = None
-            root_alpha = -float('inf')
-            root_beta = float('inf')
-            for col in col_order:
-                if time.time() - start > 0.8:
-                    timed_out = True
-                    break
-                row = 5 - filled[col]
-                board[row][col] = self.symbol
-                filled[col] += 1
-                total_discs = sum(filled)
-                empty = 42 - total_discs
-                win = check_winner(board)
-                if win == self.symbol:
-                    score = INF + max(empty, 3)
-                elif total_discs == 42:
-                    score = 0
-                else:
-                    score = alpha_beta(board, filled, d - 1, root_alpha, root_beta, False)
-                move_scores_new[col] = score
-                if score > current_best_score:
-                    current_best_score = score
-                    current_best = col
-                root_alpha = max(root_alpha, score)
-                filled[col] -= 1
-                board[row][col] = EMPTY
-            move_scores = move_scores_new
-            if current_best is not None:
-                best_move = current_best
-            if timed_out or time.time() - start > 0.8:
-                break
-        return best_move
+    def drop(self, board, col, symbol):
+        for r in range(5, -1, -1):
+            if board[r][col] == ' ':
+                board[r][col] = symbol
+                return r
+        return None
+
+    def undo(self, board, row, col):
+        board[row][col] = ' '
+
+    def is_valid_move(self, board, col):
+        return 0 <= col < 7 and board[0][col] == ' '
+
+    def is_full(self, board):
+        return all(board[0][c] != ' ' for c in range(7))
+
+    def check_winner(self, board):
+        # Horizontal
+        for r in range(6):
+            for c in range(4):
+                if board[r][c] != ' ' and all(board[r][c] == board[r][c + i] for i in range(1, 4)):
+                    return board[r][c]
+        # Vertical
+        for r in range(3):
+            for c in range(7):
+                if board[r][c] != ' ' and all(board[r][c] == board[r + i][c] for i in range(1, 4)):
+                    return board[r][c]
+        # Diagonal /
+        for r in range(3, 6):
+            for c in range(4):
+                if board[r][c] != ' ' and all(board[r][c] == board[r - i][c + i] for i in range(1, 4)):
+                    return board[r][c]
+        # Diagonal \
+        for r in range(3):
+            for c in range(4):
+                if board[r][c] != ' ' and all(board[r][c] == board[r + i][c + i] for i in range(1, 4)):
+                    return board[r][c]
+        return None

@@ -1,26 +1,28 @@
 """
 Agent Code: A1-Battleship
 Model: qwen/qwen3.5-plus-02-15
-Run: 1
+Run: 3
 Generated: 2026-02-16 18:33:07
 """
 
-
 import random
-from collections import deque
 
 class BattleshipAgent:
     """
     Smart Battleship Agent with strategic placement and bombing logic.
     Uses checkerboard hunting pattern and targeted sinking after hits.
     """
+    
     def __init__(self, name, board_size, ships):
         self.name = name
         self.board_size = board_size
         self.ships = ships
-        self.shot_history = []
-        self.hit_stack = []  # Stack for tracking hits to sink ships
-        self.placement_attempts = 0
+        self.shot_history = set()
+        self.potential_targets = []
+        self.mode = 'hunt'  # 'hunt' or 'target'
+        self.last_hit = None
+        self.hits_on_current_ship = 0
+        self.ship_direction = None
         
     def make_move(self, state, feedback):
         """
@@ -32,31 +34,27 @@ class BattleshipAgent:
             return self._bomb(state)
     
     def _place_ship(self, state):
-        """
-        Strategic ship placement avoiding clustering and preferring edges.
-        """
+        """Strategic ship placement avoiding clustering."""
         ship_length = state['ships_to_place'][0]
         my_board = state['my_board']
         
-        # Collect all valid placement positions with scores
+        # Find all valid placements with scores
         valid_placements = []
         
         for row in range(self.board_size):
             for col in range(self.board_size):
                 for orientation in ['horizontal', 'vertical']:
                     if self._is_valid_placement(my_board, row, col, ship_length, orientation):
-                        score = self._calculate_placement_score(my_board, row, col, ship_length, orientation)
+                        score = self._score_placement(my_board, row, col, ship_length, orientation)
                         valid_placements.append((score, row, col, orientation))
         
         if valid_placements:
-            # Sort by score (higher is better) and pick best
+            # Sort by score and pick from top options for variety
             valid_placements.sort(key=lambda x: x[0], reverse=True)
-            # Add some randomness among top choices to avoid predictability
-            top_count = min(5, len(valid_placements))
-            choice = random.choice(valid_placements[:top_count])
-            _, row, col, orientation = choice
+            top_count = max(1, len(valid_placements) // 3)
+            _, row, col, orientation = random.choice(valid_placements[:top_count])
         else:
-            # Fallback: random valid placement
+            # Fallback to random valid placement
             orientation = random.choice(['horizontal', 'vertical'])
             if orientation == 'horizontal':
                 row = random.randint(0, self.board_size - 1)
@@ -72,7 +70,7 @@ class BattleshipAgent:
         }
     
     def _is_valid_placement(self, board, row, col, length, orientation):
-        """Check if ship can be placed at given position."""
+        """Check if ship placement is valid."""
         if orientation == 'horizontal':
             if col + length > self.board_size:
                 return False
@@ -87,153 +85,130 @@ class BattleshipAgent:
                     return False
         return True
     
-    def _calculate_placement_score(self, board, row, col, length, orientation):
-        """
-        Score placement based on strategic factors:
-        - Prefer edges and corners (harder to find)
-        - Avoid placing near other ships (harder to deduce)
-        - Spread ships across the board
-        """
+    def _score_placement(self, board, row, col, length, orientation):
+        """Score placement based on spacing from edges and other ships."""
         score = 0
         
-        # Bonus for edges and corners
-        if row == 0 or row == self.board_size - 1:
-            score += 15
-        if col == 0 or col == self.board_size - 1:
-            score += 15
-        if (row == 0 or row == self.board_size - 1) and (col == 0 or col == self.board_size - 1):
-            score += 20  # Corner bonus
+        # Prefer positions away from edges (harder to find)
+        if orientation == 'horizontal':
+            score += min(row, self.board_size - 1 - row) * 3
+            score += min(col, self.board_size - 1 - (col + length - 1)) * 3
+        else:
+            score += min(row, self.board_size - 1 - (row + length - 1)) * 3
+            score += min(col, self.board_size - 1 - col) * 3
         
-        # Penalize proximity to other placed ships
-        for r in range(self.board_size):
-            for c in range(self.board_size):
-                if board[r][c] == 'S':
-                    # Calculate minimum distance from this ship cell to new ship
-                    if orientation == 'horizontal':
-                        min_row_dist = min(abs(r - row) for _ in range(length))
-                        min_col_dist = min(abs(c - (col + i)) for i in range(length))
-                    else:
-                        min_row_dist = min(abs(r - (row + i)) for i in range(length))
-                        min_col_dist = min(abs(c - col) for _ in range(length))
-                    
-                    min_dist = min(min_row_dist, min_col_dist)
-                    if min_dist <= 1:
-                        score -= 30  # Strong penalty for adjacency
-                    elif min_dist <= 2:
-                        score -= 10  # Moderate penalty for proximity
+        # Penalize proximity to existing ships
+        cells = []
+        if orientation == 'horizontal':
+            cells = [(row, col + i) for i in range(length)]
+        else:
+            cells = [(row + i, col) for i in range(length)]
         
-        # Slight preference for center to avoid edge-only clustering
-        center_dist = abs(row - self.board_size // 2) + abs(col - self.board_size // 2)
-        score -= center_dist
+        for r, c in cells:
+            for dr in range(-2, 3):
+                for dc in range(-2, 3):
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < self.board_size and 0 <= nc < self.board_size:
+                        if board[nr][nc] == 'S':
+                            score -= 10  # Strong penalty for being near other ships
         
         return score
     
     def _bomb(self, state):
-        """
-        Smart bombing strategy:
-        - Use checkerboard pattern for hunting (guarantees hitting ships of min length 3)
-        - After hit, target adjacent cells to sink the ship
-        - Track shot history to avoid wasting shots
-        """
+        """Smart bombing with hunt and target modes."""
         shot_history = state.get('shot_history', [])
-        last_result = state.get('last_shot_result')
-        last_coord = state.get('last_shot_coord')
-        turn_continues = state.get('turn_continues', False)
+        last_result = state.get('last_shot_result', None)
+        last_coord = state.get('last_shot_coord', None)
         
-        # Build set of already shot coordinates
-        shot_coords = set(entry['coord'] for entry in shot_history)
+        # Update shot history from state
+        for shot in shot_history:
+            self.shot_history.add(shot['coord'])
         
-        # If we hit and get another turn, continue targeting adjacent cells
-        if last_result == 'HIT' and turn_continues and last_coord:
-            target = self._target_adjacent_to_sink(last_coord, shot_coords)
-            if target:
-                return {'target': target}
+        # Process last shot result
+        if last_coord and last_result:
+            if last_result == 'HIT':
+                self._process_hit(last_coord)
+            else:
+                self._process_miss(last_coord)
         
-        # If we have hits in stack from previous turns, continue targeting
-        if self.hit_stack:
-            target = self._continue_sinking(shot_coords)
-            if target:
-                return {'target': target}
+        # Choose target based on mode
+        if self.mode == 'target' and self.potential_targets:
+            target = self._get_target_shot()
+        else:
+            target = self._get_hunt_shot()
         
-        # Hunt mode: use checkerboard pattern
-        target = self._checkerboard_hunt(shot_coords)
-        if target:
-            return {'target': target}
+        # Ensure target hasn't been shot (safety check)
+        attempts = 0
+        while target in self.shot_history and attempts < 100:
+            if self.mode == 'target' and self.potential_targets:
+                if target in self.potential_targets:
+                    self.potential_targets.remove(target)
+                if self.potential_targets:
+                    target = self._get_target_shot()
+                else:
+                    self.mode = 'hunt'
+                    target = self._get_hunt_shot()
+            else:
+                self.mode = 'hunt'
+                target = self._get_hunt_shot()
+            attempts += 1
         
-        # Fallback: any unshot cell
-        target = self._random_valid_target(shot_coords)
+        self.shot_history.add(target)
+        
         return {'target': target}
     
-    def _target_adjacent_to_sink(self, hit_coord, shot_coords):
-        """
-        After a hit, target adjacent cells to find ship orientation and sink it.
-        Prioritize cells that could extend the ship.
-        """
-        row, col = hit_coord
+    def _process_hit(self, coord):
+        """Process a hit and add adjacent cells as potential targets."""
+        self.mode = 'target'
+        self.last_hit = coord
+        self.hits_on_current_ship += 1
+        
+        row, col = coord
         adjacent = [
-            (row - 1, col), (row + 1, col),
-            (row, col - 1), (row, col + 1)
+            (row - 1, col),  # up
+            (row + 1, col),  # down
+            (row, col - 1),  # left
+            (row, col + 1)   # right
         ]
         
-        # Filter valid adjacent cells
-        valid_adjacent = []
         for adj in adjacent:
-            if (0 <= adj[0] < self.board_size and 
-                0 <= adj[1] < self.board_size and 
-                adj not in shot_coords):
-                valid_adjacent.append(adj)
+            if 0 <= adj[0] < self.board_size and 0 <= adj[1] < self.board_size:
+                if adj not in self.shot_history and adj not in self.potential_targets:
+                    self.potential_targets.append(adj)
+    
+    def _process_miss(self, coord):
+        """Process a miss and clean up potential targets."""
+        if coord in self.potential_targets:
+            self.potential_targets.remove(coord)
         
-        if valid_adjacent:
-            # Add to hit stack for continued targeting
-            for adj in valid_adjacent:
-                if adj not in [h[0] for h in self.hit_stack]:
-                    self.hit_stack.append((adj, hit_coord))
-            return valid_adjacent[0]
-        
+        # If no more potential targets, return to hunt mode
+        if not self.potential_targets:
+            self.mode = 'hunt'
+            self.last_hit = None
+            self.hits_on_current_ship = 0
+            self.ship_direction = None
+    
+    def _get_target_shot(self):
+        """Get next target when sinking a ship."""
+        if self.potential_targets:
+            return self.potential_targets.pop(0)
         return None
     
-    def _continue_sinking(self, shot_coords):
-        """
-        Continue targeting from hit stack to sink identified ships.
-        """
-        while self.hit_stack:
-            target, origin = self.hit_stack.pop(0)
-            if target not in shot_coords:
-                return target
-        
-        return None
-    
-    def _checkerboard_hunt(self, shot_coords):
-        """
-        Use checkerboard pattern for hunting.
-        Since minimum ship length is 3, hitting every other cell guarantees finding ships.
-        """
-        # Try checkerboard pattern (even sum of coordinates)
+    def _get_hunt_shot(self):
+        """Get next hunt shot using checkerboard pattern for efficiency."""
+        # Checkerboard pattern - hits every other cell
+        # This guarantees hitting all ships (minimum length 3) efficiently
         for row in range(self.board_size):
             for col in range(self.board_size):
-                if (row + col) % 2 == 0 and (row, col) not in shot_coords:
+                if (row + col) % 2 == 0:
+                    if (row, col) not in self.shot_history:
+                        return (row, col)
+        
+        # If checkerboard exhausted, try all remaining cells
+        for row in range(self.board_size):
+            for col in range(self.board_size):
+                if (row, col) not in self.shot_history:
                     return (row, col)
         
-        # If all checkerboard cells exhausted, try remaining cells
-        for row in range(self.board_size):
-            for col in range(self.board_size):
-                if (row, col) not in shot_coords:
-                    return (row, col)
-        
-        return None
-    
-    def _random_valid_target(self, shot_coords):
-        """
-        Fallback: return any unshot cell randomly.
-        """
-        available = []
-        for row in range(self.board_size):
-            for col in range(self.board_size):
-                if (row, col) not in shot_coords:
-                    available.append((row, col))
-        
-        if available:
-            return random.choice(available)
-        
-        # Should not happen in normal gameplay
-        return (0, 0)
+        # Fallback (shouldn't happen in normal gameplay)
+        return (random.randint(0, self.board_size-1), random.randint(0, self.board_size-1))

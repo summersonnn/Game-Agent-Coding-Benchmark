@@ -2,167 +2,198 @@
 Agent Code: A4-WordFinder
 Model: openai/gpt-5-mini
 Run: 2
-Generated: 2026-02-12 09:24:15
+Generated: 2026-02-17 14:14:06
 """
 
-from collections import defaultdict, Counter
+from collections import defaultdict
 
 class WordFinderAgent:
     """
-    WordFinderAgent implementation that:
-    - Precomputes interior-letter and any-letter indexes for fast lookup.
-    - Prefers long, non-hyphenated words.
-    - Prioritizes words that contain the two required letters consecutively (interior) for the 2x bonus.
-    - Avoids returning words that are in word_history, have the same length as current_word,
-      or have the required letters at the start or end.
-    - Falls back to a partial move (contains exactly one required letter interiorly) if no full valid word exists.
-    - As a last resort returns a short unused dictionary word (may be invalid) to avoid crashes.
+    WordFinderAgent for the WordFinder game.
+
+    Strategy summary:
+    - Precompute, for each dictionary word:
+      - length, hyphen flag, set of interior adjacent 2-char substrings
+      - index words by characters that appear in interior positions (not at word start or end)
+    - On each move:
+      1. Try to find any valid full-move words that contain BOTH required letters in interior.
+         - Score each candidate using the game's scoring formula (hyphen penalty and consecutive-letter bonus).
+         - Select the candidate with highest expected points; tie-break by making the opponent's next required letters as difficult as possible
+           (heuristic: minimize the number of words that contain the opponent's required letters in interior).
+      2. If no full move exists, attempt a partial move (contains exactly one required letter in interior and NOT the other letter anywhere).
+         - Choose a partial word minimizing the expected penalty (shorter and hyphenated words preferred).
+      3. If no partial move is available, fall back to a short unused dictionary word (best-effort).
     """
     def __init__(self, name):
         self.name = name
-        self.dictionary = load_words()  # Provided by environment; set of lowercase words
+        self.dictionary = load_words()  # provided by the environment; set of lowercase words
 
-        # Maps char -> set(words) where the char appears anywhere
-        self.any_index = defaultdict(set)
-        # Maps char -> set(words) where the char appears in an interior position (not first or last)
-        self.interior_index = defaultdict(set)
+        # Metadata per word
+        self.word_len = {}
+        self.has_hyphen = {}
+        # interior_adj[w] = set of two-char substrings that occur fully in the interior of w (i.e., both chars not at start or end)
+        self.interior_adj = {}
 
-        # Frequency counts for first and last letters (used for defensive tie-breaking)
-        self.first_counts = Counter()
-        self.last_counts = Counter()
+        # char_interior_map[c] = set of words where character c appears in interior and is NOT equal to the word's first or last character
+        self.char_interior_map = defaultdict(set)
 
-        # Build indexes
+        # Build indices
         for w in self.dictionary:
-            if not w:
-                continue
-            lw = w  # words are lowercase from load_words()
-            self.first_counts[lw[0]] += 1
-            self.last_counts[lw[-1]] += 1
+            n = len(w)
+            self.word_len[w] = n
+            self.has_hyphen[w] = ('-' in w)
 
-            # characters anywhere in the word
-            for c in set(lw):
-                self.any_index[c].add(lw)
+            # interior adjacency substrings (both chars strictly in interior positions)
+            if n >= 4:
+                adj = set()
+                # interior-adjacent pairs: i from 1 .. n-3 inclusive => range(1, n-2)
+                for i in range(1, n - 2):
+                    adj.add(w[i : i + 2])
+                self.interior_adj[w] = adj
+            else:
+                self.interior_adj[w] = set()
 
-            # interior characters (positions 1..len-2)
-            if len(lw) >= 3:
-                for c in set(lw[1:-1]):
-                    self.interior_index[c].add(lw)
+            # interior-valid characters: appear in w[1:-1] and are not equal to first or last char
+            if n >= 3:
+                first, last = w[0], w[-1]
+                interior = w[1:-1]
+                # use set to avoid duplicate insertions
+                interior_valid_set = {ch for ch in set(interior) if ch != first and ch != last}
+                for ch in interior_valid_set:
+                    self.char_interior_map[ch].add(w)
 
-        # Precompute a list of words sorted by increasing length for fallback (short words first)
-        self.words_by_short_length = sorted(self.dictionary, key=lambda w: (len(w), w))
-
-    def _has_interior_consecutive_pair(self, word, a, b):
-        """Return True if 'ab' or 'ba' occurs such that neither letter is at start/end."""
-        L = len(word)
-        # Need indices i and i+1 such that i >= 1 and i+1 <= L-2 -> i in [1, L-3]
-        # If L < 4 it's impossible for a consecutive interior pair to satisfy the position constraint.
-        if L < 4:
-            return False
-        for i in range(1, L - 2 + 1):  # up to L-3 inclusive
-            c1, c2 = word[i], word[i + 1]
-            if (c1 == a and c2 == b) or (c1 == b and c2 == a):
-                return True
-        return False
-
-    def _estimate_score(self, word, a, b):
-        """Estimate effective points for choosing 'word' given required letters a,b.
-        This uses integer math consistent with game description: hyphen halves by integer division,
-        and consecutive interior pair doubles the resulting base points.
-        """
-        base = len(word)
-        if '-' in word:
-            base = base // 2
-        if self._has_interior_consecutive_pair(word, a, b):
-            base = base * 2
-        return base
-
-    def _pick_best_from(self, candidates, a, b, current_len, used):
-        """Select the best candidate by estimated score, break ties defensively using first+last frequency."""
-        best_score = -1
-        best_words = []
-        for w in candidates:
-            # additional safety checks (some may slip through indexes)
-            if w in used:
-                continue
-            if len(w) == current_len:
-                continue
-            # required letters must NOT be at start or end of the new word
-            if w[0] == a or w[-1] == a or w[0] == b or w[-1] == b:
-                continue
-            score = self._estimate_score(w, a, b)
-            if score > best_score:
-                best_score = score
-                best_words = [w]
-            elif score == best_score:
-                best_words.append(w)
-
-        if not best_words:
-            return None
-
-        # tie-breaker: choose word whose first+last letter frequency is minimal (defensive)
-        def difficulty_metric(word):
-            return self.first_counts.get(word[0], 0) + self.last_counts.get(word[-1], 0)
-
-        best_words.sort(key=lambda w: (difficulty_metric(w), -len(w), w))
-        # choose randomly among the top few with identical metrics to add variety
-        top_metric = difficulty_metric(best_words[0])
-        top_len = len(best_words[0])
-        top_group = [w for w in best_words if difficulty_metric(w) == top_metric and len(w) == top_len]
-        return random.choice(top_group)
+        # Precompute counts for heuristic (how many words have a character in interior)
+        self.char_interior_count = {ch: len(s) for ch, s in self.char_interior_map.items()}
 
     def make_move(self, current_word, word_history):
-        cur = (current_word or "").lower()
-        used = set(w.lower() for w in word_history) if word_history is not None else set()
-        if not cur:
-            # If for some reason current_word is empty, return a short unused word
-            for w in self.words_by_short_length:
-                if w not in used:
-                    return w
-            # fallback
-            return random.choice(list(self.dictionary))
+        a = current_word[0]
+        b = current_word[-1]
+        cw_len = len(current_word)
 
-        a, b = cur[0], cur[-1]
-        current_len = len(cur)
+        # Helper to compute effective (positive) score for a word given required letters a,b
+        def effective_score_for_word(w, req_a, req_b):
+            n = self.word_len[w]
+            hy = self.has_hyphen[w]
+            adj = self.interior_adj.get(w, set())
+            if req_a == req_b:
+                consecutive = (req_a + req_a) in adj
+            else:
+                consecutive = (req_a + req_b) in adj or (req_b + req_a) in adj
+            base = (n / 2.0) if hy else float(n)
+            final = base * 2.0 if consecutive else base
+            return final
 
-        # 1) Try to find full valid words that contain BOTH required letters in interior positions
-        set_a = self.interior_index.get(a, set())
-        set_b = self.interior_index.get(b, set())
-        full_candidates = set_a & set_b
+        # 1) Try full-move candidates: words that contain BOTH a and b in interior (and do NOT have a or b at start/end)
+        if a == b:
+            cand_set = set(self.char_interior_map.get(a, set()))
+        else:
+            set_a = self.char_interior_map.get(a, set())
+            set_b = self.char_interior_map.get(b, set())
+            if not set_a or not set_b:
+                cand_set = set()
+            else:
+                # intersect smaller into larger for speed
+                if len(set_a) < len(set_b):
+                    cand_set = {w for w in set_a if w in set_b}
+                else:
+                    cand_set = {w for w in set_b if w in set_a}
 
-        best_full = self._pick_best_from(full_candidates, a, b, current_len, used)
-        if best_full:
-            return best_full
+        # Filter out words already used and those with the same length as current word.
+        full_candidates = []
+        for w in cand_set:
+            if w in word_history:
+                continue
+            if self.word_len[w] == cw_len:
+                continue
+            # safety: required letters must not appear at start or end of candidate (indexing step ensured this, but double-check)
+            if w[0] == a or w[-1] == a or w[0] == b or w[-1] == b:
+                continue
+            full_candidates.append(w)
 
-        # 2) No full valid words: try Partial Move = contains EXACTLY ONE of the required letters,
-        #    that letter must appear in interior (and the other letter must not appear anywhere).
-        partial_candidates = []
+        if full_candidates:
+            # Evaluate full candidates and pick best by effective score. Tie-break by minimizing opponent's options.
+            best_score = -float("inf")
+            best_candidates = []
+            for w in full_candidates:
+                score = effective_score_for_word(w, a, b)
+                if score > best_score:
+                    best_score = score
+                    best_candidates = [w]
+                elif score == best_score:
+                    best_candidates.append(w)
+
+            if len(best_candidates) == 1:
+                return best_candidates[0]
+
+            # Tie-breaker: choose candidate that gives the opponent the fewest interior options for their required letters
+            best_choice = None
+            best_avail = float("inf")
+            for w in best_candidates:
+                next_first, next_last = w[0], w[-1]
+                # approximate opponent availability by sum of interior counts for the two letters (lower is better)
+                avail = self.char_interior_count.get(next_first, 0) + self.char_interior_count.get(next_last, 0)
+                if avail < best_avail:
+                    best_avail = avail
+                    best_choice = w
+                elif avail == best_avail:
+                    # further tie-break: prefer longer word (gives more points)
+                    if best_choice is None or self.word_len[w] > self.word_len[best_choice]:
+                        best_choice = w
+            # If still None improbable, pick random
+            return best_choice if best_choice is not None else random.choice(best_candidates)
+
+        # 2) No full move possible -> attempt a partial move (contains exactly one required letter in interior, and does NOT contain the other letter anywhere)
+        partial_best = None
+        partial_best_val = float("inf")  # minimize expected penalty magnitude
+
+        # Consider words containing 'a' but not 'b', and vice versa
         for letter, other in ((a, b), (b, a)):
-            for w in self.interior_index.get(letter, set()):
-                if w in used:
+            for w in self.char_interior_map.get(letter, set()):
+                if w in word_history:
                     continue
-                if len(w) == current_len:
+                if self.word_len[w] == cw_len:
                     continue
-                # other letter must NOT appear anywhere in the word
+                # The other required letter must NOT appear anywhere in the word
                 if other in w:
                     continue
-                # ensure neither required letter appears at the start or end (rule still applies)
-                if w[0] == a or w[-1] == a or w[0] == b or w[-1] == b:
-                    continue
-                partial_candidates.append(w)
+                # This qualifies as a partial move. Choose one minimizing expected penalty.
+                # Use the same base scoring function but note no consecutive bonus (only one letter present), and hyphen reduces penalty.
+                eff = (self.word_len[w] / 2.0) if self.has_hyphen[w] else float(self.word_len[w])
+                if eff < partial_best_val:
+                    partial_best_val = eff
+                    partial_best = w
+                elif eff == partial_best_val:
+                    # tie-break: prefer one that leaves opponent fewer options (heuristic)
+                    prev = partial_best
+                    if prev is None:
+                        partial_best = w
+                    else:
+                        avail_w = self.char_interior_count.get(w[0], 0) + self.char_interior_count.get(w[-1], 0)
+                        avail_prev = self.char_interior_count.get(prev[0], 0) + self.char_interior_count.get(prev[-1], 0)
+                        if avail_w < avail_prev:
+                            partial_best = w
+                        elif avail_w == avail_prev and self.word_len[w] > self.word_len[prev]:
+                            partial_best = w
 
-        if partial_candidates:
-            # minimize length (to reduce negative penalty), then defensive tie-break
-            partial_candidates.sort(key=lambda w: (len(w), self.first_counts.get(w[0], 0) + self.last_counts.get(w[-1], 0), w))
-            # pick among shortest ones randomly
-            min_len = len(partial_candidates[0])
-            top_group = [w for w in partial_candidates if len(w) == min_len]
-            return random.choice(top_group)
+        if partial_best is not None:
+            return partial_best
 
-        # 3) Last resort: return a short unused dictionary word (may be invalid).
-        for w in self.words_by_short_length:
-            if w not in used and len(w) != current_len:
-                return w
+        # 3) As a last resort, return a short unused word (best-effort). This may be invalid if truly no partial/full moves exist.
+        fallback = None
+        min_len = float("inf")
+        for w in self.dictionary:
+            if w in word_history:
+                continue
+            lw = self.word_len.get(w, len(w))
+            if lw == cw_len:
+                continue
+            if lw < min_len:
+                min_len = lw
+                fallback = w
+                if min_len <= 3:
+                    break
+        if fallback is not None:
+            return fallback
 
-        # If everything is used (very unlikely), just return a random dictionary word
+        # If everything used (very unlikely), pick any word (will be handled by the engine)
         return random.choice(list(self.dictionary))
-

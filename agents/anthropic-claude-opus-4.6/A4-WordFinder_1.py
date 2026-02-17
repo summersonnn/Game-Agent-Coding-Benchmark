@@ -6,7 +6,7 @@ Generated: 2026-02-12 09:24:15
 """
 
 
-from collections import defaultdict
+import random
 
 
 class WordFinderAgent:
@@ -14,84 +14,78 @@ class WordFinderAgent:
         self.name = name
         self.dictionary = load_words()
 
-        # Count how many words each (c1,c2) pair can reach - fewer = harder for opponent
-        pair_count = defaultdict(int)
-        self.pair_index = defaultdict(list)
-        self.char_index = defaultdict(list)
+        self.word_info = {}
+        self.by_letter = {}
 
-        word_data = []
         for word in self.dictionary:
-            if len(word) < 3:
+            if '-' in word or len(word) < 3:
                 continue
-            inner = word[1:-1]
-            if not inner:
-                continue
-            inner_chars = set(inner) - {'-'}
-            has_hyphen = '-' in word
             wlen = len(word)
-            base = wlen // 2 if has_hyphen else wlen
-            fc, lc = word[0], word[-1]
-            pair_count[(fc, lc)] += 1
-            word_data.append((word, inner, inner_chars, has_hyphen, wlen, base, fc, lc))
+            fc = word[0]
+            lc = word[-1]
+            valid_chars = set(word[1:-1]) - {fc, lc}
+            if not valid_chars:
+                continue
+            self.word_info[word] = (wlen, valid_chars, fc, lc)
+            for c in valid_chars:
+                if c not in self.by_letter:
+                    self.by_letter[c] = []
+                self.by_letter[c].append(word)
 
-        for word, inner, inner_chars, has_hyphen, wlen, base, fc, lc in word_data:
-            # Difficulty: fewer options for opponent = better for us
-            opponent_options = pair_count.get((fc, lc), 0)
+        # Precompute candidate counts per pair for difficulty scoring
+        self.pair_count = {}
+        all_chars = list(self.by_letter.keys())
+        for i, c1 in enumerate(all_chars):
+            s1 = set(self.by_letter[c1])
+            for c2 in all_chars[i:]:
+                s2 = set(self.by_letter[c2])
+                count = len(s1 & s2)
+                self.pair_count[(c1, c2)] = count
+                self.pair_count[(c2, c1)] = count
 
-            for c in inner_chars:
-                self.char_index[c].append((wlen, word))
+        # Build candidate lists sorted by: score desc, then difficulty for opponent (fewer options = harder)
+        self.candidates = {}
+        for i, c1 in enumerate(all_chars):
+            s1 = set(self.by_letter[c1])
+            for c2 in all_chars[i:]:
+                s2 = set(self.by_letter[c2])
+                both = s1 & s2
+                if not both:
+                    continue
+                scored = []
+                for w in both:
+                    wlen, _, fc, lc = self.word_info[w]
+                    consec = (c1 + c2) in w or (c2 + c1) in w
+                    score = wlen * 2 if consec else wlen
+                    difficulty = self.pair_count.get((fc, lc), 0)
+                    scored.append((score, difficulty, wlen, w))
+                # Sort: highest score first, then fewest opponent options (hardest)
+                scored.sort(key=lambda x: (-x[0], x[1]))
+                result = [(s, wl, w) for s, d, wl, w in scored]
+                self.candidates[(c1, c2)] = result
+                if c1 != c2:
+                    self.candidates[(c2, c1)] = result
 
-            chars_list = sorted(inner_chars)
-            for i, a in enumerate(chars_list):
-                for b in chars_list[i:]:
-                    if a == b and inner.count(a) < 2:
-                        continue
-                    has_bonus = (a + b in inner) or (b + a in inner)
-                    score = base * 2 if has_bonus else base
-                    # Sort: score desc, opponent difficulty asc (fewer options = harder)
-                    entry = (score, -opponent_options, wlen, word)
-                    self.pair_index[(a, b)].append(entry)
-                    if a != b:
-                        self.pair_index[(b, a)].append(entry)
-
-        for key in self.pair_index:
-            self.pair_index[key].sort(reverse=True)
-        for key in self.char_index:
-            self.char_index[key].sort(reverse=True)
+        self.partial = {}
+        for c, words in self.by_letter.items():
+            self.partial[c] = sorted(
+                [(self.word_info[w][0], w) for w in words],
+                key=lambda x: -x[0]
+            )
 
     def make_move(self, current_word, word_history):
-        c1 = current_word[0].lower()
-        c2 = current_word[-1].lower()
-        cur_len = len(current_word)
+        cw = current_word.lower()
+        c1 = cw[0]
+        c2 = cw[-1]
+        cw_len = len(cw)
 
-        candidates = self.pair_index.get((c1, c2), [])
-        for score, neg_opp, wlen, word in candidates:
-            if wlen == cur_len:
-                continue
-            if word in word_history:
-                continue
-            return word
-
-        best = None
-        for char in set([c1, c2]):
-            for wlen, word in self.char_index.get(char, []):
-                if wlen == cur_len:
-                    continue
-                if word in word_history:
-                    continue
-                fc, lc = word[0], word[-1]
-                if fc in (c1, c2) or lc in (c1, c2):
-                    continue
-                best = word
-                break
-            if best:
-                break
-
-        if best:
-            return best
-
-        for word in self.dictionary:
-            if len(word) != cur_len and word not in word_history:
+        for score, wlen, word in self.candidates.get((c1, c2), []):
+            if wlen != cw_len and word not in word_history:
                 return word
 
-        return "fallback"
+        for c in (c1, c2):
+            for wlen, word in self.partial.get(c, []):
+                if wlen != cw_len and word not in word_history:
+                    return word
+
+        return random.choice(list(self.dictionary - word_history))

@@ -9,5 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
-results/
-scoreboard/
+results/*
+scoreboard/*
+agents/*
+
+!results/.gitkeep
+!scoreboard/.gitkeep
+!agents/.gitkeep

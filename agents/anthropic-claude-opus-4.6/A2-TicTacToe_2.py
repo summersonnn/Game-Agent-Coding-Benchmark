@@ -6,195 +6,201 @@ Generated: 2026-02-13 14:53:21
 """
 
 
+import time
+
 class TicTacToeAgent:
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
         self.opponent = 'O' if symbol == 'X' else 'X'
 
-        self.win_lines = []
+        self.lines = []
         for r in range(5):
             for c in range(3):
                 s = r * 5 + c
-                self.win_lines.append((s, s + 1, s + 2))
+                self.lines.append((s, s + 1, s + 2))
         for c in range(5):
             for r in range(3):
                 s = r * 5 + c
-                self.win_lines.append((s, s + 5, s + 10))
+                self.lines.append((s, s + 5, s + 10))
         for r in range(3):
             for c in range(3):
                 s = r * 5 + c
-                self.win_lines.append((s, s + 6, s + 12))
+                self.lines.append((s, s + 6, s + 12))
         for r in range(3):
             for c in range(2, 5):
                 s = r * 5 + c
-                self.win_lines.append((s, s + 4, s + 8))
+                self.lines.append((s, s + 4, s + 8))
 
         self.cell_lines = [[] for _ in range(25)]
-        for i, line in enumerate(self.win_lines):
+        for i, line in enumerate(self.lines):
             for cell in line:
                 self.cell_lines[cell].append(i)
 
-        self.center_dist = []
+        self.center_score = [0] * 25
         for i in range(25):
             r, c = divmod(i, 5)
-            self.center_dist.append(abs(r - 2) + abs(c - 2))
+            self.center_score[i] = max(0, 3 - abs(r - 2)) + max(0, 3 - abs(c - 2))
 
     def make_move(self, board):
         empty = [i for i in range(25) if board[i] == ' ']
         if not empty:
             return 0
 
-        win = self._find_winning_move(board, self.symbol, empty)
-        if win is not None:
-            return win
+        for move in empty:
+            if self._is_winning_move(board, move, self.symbol):
+                return move
+        for move in empty:
+            if self._is_winning_move(board, move, self.opponent):
+                return move
 
-        block = self._find_winning_move(board, self.opponent, empty)
-        if block is not None:
-            return block
+        self.start_time = time.time()
+        self.time_limit = 0.8
+        self.timed_out = False
+        self.tt = {}
 
-        fork = self._find_fork_move(board, self.symbol, empty)
-        if fork is not None:
-            return fork
+        best_move = empty[0]
+        for depth in range(1, 30):
+            if self.timed_out:
+                break
+            move, score = self._search_root(board, empty, depth)
+            if not self.timed_out:
+                best_move = move
+                if score >= 10000:
+                    break
+        return best_move
 
-        block_fork = self._find_fork_move(board, self.opponent, empty)
-        if block_fork is not None:
-            return block_fork
+    def _is_winning_move(self, board, pos, symbol):
+        for li in self.cell_lines[pos]:
+            a, b, c = self.lines[li]
+            count = 0
+            for cell in (a, b, c):
+                if cell == pos:
+                    continue
+                if board[cell] == symbol:
+                    count += 1
+                elif board[cell] != ' ':
+                    count = -1
+                    break
+            if count == 2:
+                return True
+        return False
 
-        n = len(empty)
-        if n > 20:
-            depth = 5
-        elif n > 16:
-            depth = 6
-        elif n > 12:
-            depth = 7
-        elif n > 8:
-            depth = 10
-        else:
-            depth = 14
-
-        moves = sorted(empty, key=lambda m: (-self._move_score(board, m, self.symbol), self.center_dist[m]))
-
-        best_score = float('-inf')
-        best_move = moves[0]
-        alpha = float('-inf')
+    def _search_root(self, board, empty, max_depth):
+        best_score = -float('inf')
+        best_move = empty[0]
+        moves = self._order_moves(board, empty, self.symbol)
 
         for move in moves:
+            if time.time() - self.start_time > self.time_limit:
+                self.timed_out = True
+                break
             board[move] = self.symbol
-            score = self._minimax(board, depth - 1, False, alpha, float('inf'))
+            score = -self._negamax(board, max_depth - 1, -float('inf'), -best_score, self.opponent)
             board[move] = ' '
             if score > best_score:
                 best_score = score
                 best_move = move
-            alpha = max(alpha, score)
+        return best_move, best_score
 
-        return best_move
+    def _negamax(self, board, depth, alpha, beta, current):
+        if time.time() - self.start_time > self.time_limit:
+            self.timed_out = True
+            return 0
 
-    def _find_winning_move(self, board, symbol, empty):
-        for move in empty:
-            for li in self.cell_lines[move]:
-                a, b, c = self.win_lines[li]
-                vals = [board[a], board[b], board[c]]
-                if vals.count(symbol) == 2 and vals.count(' ') == 1:
-                    idx = [a, b, c][vals.index(' ')]
-                    if idx == move:
-                        return move
-        return None
+        opp = self.opponent if current == self.symbol else self.symbol
 
-    def _find_fork_move(self, board, symbol, empty):
-        best = None
-        best_threats = 0
-        for move in empty:
-            board[move] = symbol
-            threats = 0
-            for li in self.cell_lines[move]:
-                a, b, c = self.win_lines[li]
-                vals = [board[a], board[b], board[c]]
-                if vals.count(symbol) == 2 and vals.count(' ') == 1:
-                    threats += 1
-            board[move] = ' '
-            if threats >= 2 and threats > best_threats:
-                best_threats = threats
-                best = move
-        return best
-
-    def _move_score(self, board, move, symbol):
-        score = 0
-        for li in self.cell_lines[move]:
-            a, b, c = self.win_lines[li]
-            my = 0
-            opp = 0
-            for cell in (a, b, c):
-                if board[cell] == symbol:
-                    my += 1
-                elif board[cell] != ' ':
-                    opp += 1
-            if opp == 0:
-                score += my * 3 + 1
-            if my == 0 and opp > 0:
-                score += opp
-        return score
-
-    def _minimax(self, board, depth, is_max, alpha, beta):
-        winner = self._check_winner_fast(board)
-        if winner:
-            return (1000 + depth) if winner == self.symbol else (-1000 - depth)
+        for line in self.lines:
+            a, b, c = line
+            if board[a] != ' ' and board[a] == board[b] == board[c]:
+                return 10000 + depth if board[a] == current else -(10000 + depth)
 
         empty = [i for i in range(25) if board[i] == ' ']
         if not empty:
             return 0
-        if depth == 0:
-            return self._evaluate(board)
 
-        if depth >= 3:
-            sym = self.symbol if is_max else self.opponent
-            moves = sorted(empty, key=lambda m: (-self._move_score(board, m, sym), self.center_dist[m]))
-        else:
-            moves = empty
+        if depth <= 0:
+            return self._evaluate(board, current, opp)
 
-        if is_max:
-            best = float('-inf')
-            for move in moves:
-                board[move] = self.symbol
-                score = self._minimax(board, depth - 1, False, alpha, beta)
-                board[move] = ' '
-                best = max(best, score)
-                alpha = max(alpha, score)
-                if beta <= alpha:
-                    break
-            return best
-        else:
-            best = float('inf')
-            for move in moves:
-                board[move] = self.opponent
-                score = self._minimax(board, depth - 1, True, alpha, beta)
-                board[move] = ' '
-                best = min(best, score)
-                beta = min(beta, score)
-                if beta <= alpha:
-                    break
-            return best
+        board_key = (tuple(board), current)
+        tt_entry = self.tt.get(board_key)
+        if tt_entry and tt_entry[0] >= depth:
+            flag, tt_score, tt_alpha, tt_beta = tt_entry[0], tt_entry[1], tt_entry[2], tt_entry[3]
+            if tt_alpha <= alpha and beta <= tt_beta:
+                return tt_score
 
-    def _check_winner_fast(self, board):
-        for a, b, c in self.win_lines:
-            if board[a] != ' ' and board[a] == board[b] == board[c]:
-                return board[a]
-        return None
+        moves = self._order_moves(board, empty, current)
+        best = -float('inf')
+        for move in moves:
+            if self.timed_out:
+                return 0
+            board[move] = current
+            score = -self._negamax(board, depth - 1, -beta, -alpha, opp)
+            board[move] = ' '
+            if score > best:
+                best = score
+            if best > alpha:
+                alpha = best
+            if alpha >= beta:
+                break
 
-    def _evaluate(self, board):
+        if not self.timed_out:
+            self.tt[board_key] = (depth, best, alpha, beta)
+
+        return best
+
+    def _evaluate(self, board, current, opp):
         score = 0
-        for a, b, c in self.win_lines:
-            va, vb, vc = board[a], board[b], board[c]
-            my = (va == self.symbol) + (vb == self.symbol) + (vc == self.symbol)
-            opp = (va == self.opponent) + (vb == self.opponent) + (vc == self.opponent)
-            if opp == 0:
-                if my == 2:
-                    score += 15
-                elif my == 1:
-                    score += 2
-            elif my == 0:
-                if opp == 2:
-                    score -= 15
-                elif opp == 1:
-                    score -= 2
+        for a, b, c in self.lines:
+            cur = 0
+            op = 0
+            for cell in (a, b, c):
+                v = board[cell]
+                if v == current:
+                    cur += 1
+                elif v == opp:
+                    op += 1
+            if op == 0:
+                if cur == 2:
+                    score += 50
+                elif cur == 1:
+                    score += 5
+            elif cur == 0:
+                if op == 2:
+                    score -= 50
+                elif op == 1:
+                    score -= 5
+
+        if board[12] == current:
+            score += 3
+        elif board[12] == opp:
+            score -= 3
         return score
+
+    def _order_moves(self, board, empty, current):
+        opp = self.opponent if current == self.symbol else self.symbol
+        scored = []
+        for move in empty:
+            s = self.center_score[move]
+            if self._is_winning_move(board, move, current):
+                s += 10000
+            elif self._is_winning_move(board, move, opp):
+                s += 5000
+            else:
+                for li in self.cell_lines[move]:
+                    a, b, c = self.lines[li]
+                    cur = op = 0
+                    for cell in (a, b, c):
+                        if cell == move:
+                            continue
+                        if board[cell] == current:
+                            cur += 1
+                        elif board[cell] == opp:
+                            op += 1
+                    if op == 0 and cur == 1:
+                        s += 8
+                    elif cur == 0 and op == 1:
+                        s += 6
+            scored.append((-s, move))
+        scored.sort()
+        return [m for _, m in scored]

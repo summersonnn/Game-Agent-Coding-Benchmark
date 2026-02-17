@@ -2,7 +2,7 @@
 Agent Code: A1-Battleship
 Model: x-ai/grok-code-fast-1
 Run: 1
-Generated: 2026-02-11 19:20:19
+Generated: 2026-02-17 12:25:21
 """
 
 from collections import deque
@@ -11,79 +11,59 @@ import random
 from collections import deque
 
 class BattleshipAgent:
-    """
-    Your agent implementation goes here.
-    Implement smart placement and bombing logic to beat your opponent.
-    """
     def __init__(self, name, board_size, ships):
         self.name = name
         self.board_size = board_size
         self.ships = ships
-        # For placement: simple sequential placement on different rows
-        self.placement_index = 0
-        # For bombing: track opponent's board and targeting
-        self.opponent_board = [['?' for _ in range(self.board_size)] for _ in range(self.board_size)]  # '?' unknown, 'M' miss, 'H' hit
-        self.shot_history = set()  # set of (row, col) for quick lookup
-        self.target_queue = deque()  # queue for adjacent targets after a hit
+        self.shots = set()  # Positions already shot
+        self.hits = set()   # Positions that were hits
+        self.possible = set((i, j) for i in range(board_size) for j in range(board_size))
+        self.priority = deque()  # Queue for priority targets (adjacent to hits)
 
     def make_move(self, state, feedback):
-        """
-        Handles both placement and bombing phases based on state['phase'].
-
-        Parameters:
-        - state: Dictionary containing game state (see phase-specific documentation above)
-        - feedback: Always None (reserved for future use)
-
-        Returns:
-        - During placement phase: Dictionary with 'ship_length', 'start', and 'orientation'
-        - During bombing phase: Dictionary with 'target'
-        """
         if state['phase'] == 'placement':
-            # Place ships horizontally on sequential rows starting from top-left
             ship_length = state['ships_to_place'][0]
-            row = self.placement_index
-            col = 0
-            orientation = 'horizontal'
-            self.placement_index += 1
-            return {
-                'ship_length': ship_length,
-                'start': (row, col),
-                'orientation': orientation
-            }
+            board = state['my_board']
+            while True:
+                orientation = random.choice(['horizontal', 'vertical'])
+                if orientation == 'horizontal':
+                    row = random.randint(0, self.board_size - 1)
+                    col = random.randint(0, self.board_size - ship_length)
+                    if all(board[row][c] == 'O' for c in range(col, col + ship_length)):
+                        return {
+                            'ship_length': ship_length,
+                            'start': (row, col),
+                            'orientation': orientation
+                        }
+                else:
+                    row = random.randint(0, self.board_size - ship_length)
+                    col = random.randint(0, self.board_size - 1)
+                    if all(board[r][col] == 'O' for r in range(row, row + ship_length)):
+                        return {
+                            'ship_length': ship_length,
+                            'start': (row, col),
+                            'orientation': orientation
+                        }
         else:  # bombing phase
-            # Update opponent board and shot history
-            for shot in state['shot_history']:
-                coord = tuple(shot['coord'])
-                if coord not in self.shot_history:
-                    r, c = coord
-                    self.opponent_board[r][c] = 'M' if shot['result'] == 'MISS' else 'H'
-                    self.shot_history.add(coord)
-            
-            # If last shot was a hit, add adjacent unexplored cells to queue
-            if state['last_shot_result'] == 'HIT' and state['last_shot_coord'] is not None:
+            # Update based on last shot
+            if state['last_shot_coord'] is not None and state['last_shot_result'] == 'HIT':
+                self.hits.add(state['last_shot_coord'])
                 r, c = state['last_shot_coord']
-                directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-                for dr, dc in directions:
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                     nr, nc = r + dr, c + dc
-                    if 0 <= nr < self.board_size and 0 <= nc < self.board_size and self.opponent_board[nr][nc] == '?':
-                        self.target_queue.append((nr, nc))
-            
-            # Decide target
-            if state['turn_continues'] and self.target_queue:
-                # Continue targeting adjacent cells
-                target = self.target_queue.popleft()
+                    if 0 <= nr < self.board_size and 0 <= nc < self.board_size and (nr, nc) in self.possible:
+                        self.priority.append((nr, nc))
+
+            # Choose target
+            if self.priority:
+                target = self.priority.popleft()
+                while self.priority and target not in self.possible:
+                    target = self.priority.popleft()
+                if target not in self.possible:
+                    target = random.choice(list(self.possible)) if self.possible else (0, 0)
             else:
-                # Hunt mode: find the next unexplored cell
-                target = None
-                for r in range(self.board_size):
-                    for c in range(self.board_size):
-                        if self.opponent_board[r][c] == '?':
-                            target = (r, c)
-                            break
-                    if target:
-                        break
-                if not target:
-                    # Fallback, though unlikely
-                    target = (0, 0)
-            
+                target = random.choice(list(self.possible)) if self.possible else (0, 0)
+
+            self.possible.discard(target)
+            self.shots.add(target)
             return {'target': target}

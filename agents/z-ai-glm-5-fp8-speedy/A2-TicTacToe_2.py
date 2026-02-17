@@ -6,170 +6,172 @@ Generated: 2026-02-13 14:53:21
 """
 
 
-import random
-
 class TicTacToeAgent:
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
-        self.opponent = 'O' if symbol == 'X' else 'X'
-        self.win_lines = self._create_win_lines()
+        self.opp = 'O' if symbol == 'X' else 'X'
+        self.lines = self._init_lines()
     
-    def _create_win_lines(self):
+    def _init_lines(self):
         lines = []
-        # Horizontal
+        # Rows
         for r in range(5):
             for c in range(3):
-                lines.append((r*5+c, r*5+c+1, r*5+c+2))
-        # Vertical
+                s = r * 5 + c
+                lines.append((s, s + 1, s + 2))
+        # Columns
         for c in range(5):
             for r in range(3):
-                lines.append((r*5+c, (r+1)*5+c, (r+2)*5+c))
-        # Diagonal down-right
+                s = r * 5 + c
+                lines.append((s, s + 5, s + 10))
+        # Diagonals down-right
         for r in range(3):
             for c in range(3):
-                lines.append((r*5+c, (r+1)*5+c+1, (r+2)*5+c+2))
-        # Diagonal down-left
+                s = r * 5 + c
+                lines.append((s, s + 6, s + 12))
+        # Diagonals down-left
         for r in range(3):
             for c in range(2, 5):
-                lines.append((r*5+c, (r+1)*5+c-1, (r+2)*5+c-2))
+                s = r * 5 + c
+                lines.append((s, s + 4, s + 8))
         return lines
     
-    def _get_empty(self, board):
-        return [i for i in range(25) if board[i] == ' ']
+    def make_move(self, board):
+        empty = [i for i in range(25) if board[i] == ' ']
+        if not empty:
+            return None
+        
+        # Priority 1: Win immediately
+        for move in empty:
+            board[move] = self.symbol
+            if self._is_winner(board, self.symbol):
+                board[move] = ' '
+                return move
+            board[move] = ' '
+        
+        # Priority 2: Block opponent's win
+        for move in empty:
+            board[move] = self.opp
+            if self._is_winner(board, self.opp):
+                board[move] = ' '
+                return move
+            board[move] = ' '
+        
+        # Priority 3: Create a fork (two winning threats)
+        for move in empty:
+            board[move] = self.symbol
+            if self._count_threats(board, self.symbol) >= 2:
+                board[move] = ' '
+                return move
+            board[move] = ' '
+        
+        # Priority 4: Block opponent's fork
+        for move in empty:
+            board[move] = self.opp
+            if self._count_threats(board, self.opp) >= 2:
+                board[move] = ' '
+                return move
+            board[move] = ' '
+        
+        # Priority 5: Strategic search via minimax
+        return self._search_move(board, empty)
     
     def _is_winner(self, board, player):
-        for a, b, c in self.win_lines:
+        for a, b, c in self.lines:
             if board[a] == board[b] == board[c] == player:
                 return True
         return False
     
-    def _get_winning_move(self, board, player):
-        for move in self._get_empty(board):
-            board[move] = player
-            won = self._is_winner(board, player)
-            board[move] = ' '
-            if won:
-                return move
-        return None
-    
     def _count_threats(self, board, player):
         count = 0
-        for a, b, c in self.win_lines:
-            vals = [board[a], board[b], board[c]]
-            if vals.count(player) == 2 and vals.count(' ') == 1:
+        for a, b, c in self.lines:
+            cells = (board[a], board[b], board[c])
+            if cells.count(player) == 2 and cells.count(' ') == 1:
                 count += 1
         return count
     
-    def _evaluate(self, board):
-        score = 0
-        for a, b, c in self.win_lines:
-            vals = [board[a], board[b], board[c]]
-            my = vals.count(self.symbol)
-            opp = vals.count(self.opponent)
-            if opp == 0 and my > 0:
-                score += my * my * 10
-            elif my == 0 and opp > 0:
-                score -= opp * opp * 10
-        return score
-    
-    def _alphabeta(self, board, depth, alpha, beta, maximizing):
-        if self._is_winner(board, self.symbol):
-            return 1000 + depth
-        if self._is_winner(board, self.opponent):
-            return -1000 - depth
+    def _search_move(self, board, empty):
+        n = len(empty)
+        depth = 2 if n > 15 else 3 if n > 10 else 4 if n > 5 else 6
         
-        moves = self._get_empty(board)
-        if not moves:
+        # Order moves by static evaluation for better pruning
+        scored = []
+        for m in empty:
+            board[m] = self.symbol
+            scored.append((m, self._evaluate(board)))
+            board[m] = ' '
+        scored.sort(key=lambda x: -x[1])
+        
+        best_move = scored[0][0]
+        best_score = -100000
+        
+        for move, _ in scored:
+            board[move] = self.symbol
+            score = self._minimax(board, depth - 1, False, -100000, 100000)
+            board[move] = ' '
+            if score > best_score:
+                best_score = score
+                best_move = move
+        
+        return best_move
+    
+    def _minimax(self, board, depth, maximizing, alpha, beta):
+        winner = self._get_winner(board)
+        if winner == self.symbol:
+            return 10000 + depth
+        if winner == self.opp:
+            return -10000 - depth
+        
+        empty = [i for i in range(25) if board[i] == ' ']
+        if not empty:
             return 0
         if depth == 0:
             return self._evaluate(board)
         
         if maximizing:
-            value = float('-inf')
-            for m in moves:
+            value = -100000
+            for m in empty:
                 board[m] = self.symbol
-                value = max(value, self._alphabeta(board, depth-1, alpha, beta, False))
+                value = max(value, self._minimax(board, depth - 1, False, alpha, beta))
                 board[m] = ' '
                 alpha = max(alpha, value)
                 if beta <= alpha:
                     break
             return value
         else:
-            value = float('inf')
-            for m in moves:
-                board[m] = self.opponent
-                value = min(value, self._alphabeta(board, depth-1, alpha, beta, True))
+            value = 100000
+            for m in empty:
+                board[m] = self.opp
+                value = min(value, self._minimax(board, depth - 1, True, alpha, beta))
                 board[m] = ' '
                 beta = min(beta, value)
                 if beta <= alpha:
                     break
             return value
     
-    def make_move(self, board):
-        board = list(board)
-        moves = self._get_empty(board)
-        if not moves:
-            return None
-        
-        # 1. Immediate win
-        m = self._get_winning_move(board, self.symbol)
-        if m is not None:
-            return m
-        
-        # 2. Block opponent win
-        m = self._get_winning_move(board, self.opponent)
-        if m is not None:
-            return m
-        
-        # 3. Create fork (two winning threats)
-        for move in moves:
-            board[move] = self.symbol
-            threats = self._count_threats(board, self.symbol)
-            board[move] = ' '
-            if threats >= 2:
-                return move
-        
-        # 4. Block opponent fork
-        for move in moves:
-            board[move] = self.opponent
-            threats = self._count_threats(board, self.opponent)
-            board[move] = ' '
-            if threats >= 2:
-                return move
-        
-        # 5. Minimax search with alpha-beta pruning
-        num_moves = len(moves)
-        if num_moves <= 15:
-            depth = 5 if num_moves > 8 else 6
-            best_move = None
-            best_val = float('-inf')
+    def _get_winner(self, board):
+        for a, b, c in self.lines:
+            if board[a] != ' ' and board[a] == board[b] == board[c]:
+                return board[a]
+        return None
+    
+    def _evaluate(self, board):
+        score = 0
+        for a, b, c in self.lines:
+            cells = (board[a], board[b], board[c])
+            my = cells.count(self.symbol)
+            opp = cells.count(self.opp)
             
-            # Sort moves by heuristic for better pruning
-            scored_moves = []
-            for move in moves:
-                board[move] = self.symbol
-                score = self._evaluate(board)
-                board[move] = ' '
-                scored_moves.append((score, move))
-            scored_moves.sort(reverse=True)
-            
-            for _, move in scored_moves:
-                board[move] = self.symbol
-                val = self._alphabeta(board, depth-1, float('-inf'), float('inf'), False)
-                board[move] = ' '
-                if val > best_val:
-                    best_val = val
-                    best_move = move
-            if best_move is not None:
-                return best_move
+            if opp == 0 and my > 0:
+                score += my * my
+            elif my == 0 and opp > 0:
+                score -= opp * opp
         
-        # 6. Positional preference
-        priority = [12, 7, 11, 13, 17, 6, 8, 16, 18, 
-                    0, 4, 20, 24, 1, 3, 5, 9, 15, 19, 21, 23,
-                    2, 10, 14, 22]
-        for p in priority:
-            if p in moves:
-                return p
+        # Center control bonus
+        if board[12] == self.symbol:
+            score += 3
+        elif board[12] == self.opp:
+            score -= 3
         
-        return random.choice(moves)
+        return score

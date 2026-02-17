@@ -2,283 +2,237 @@
 Agent Code: A5-Connect4RandomStart
 Model: openai/gpt-oss-120b@preset/fp8
 Run: 1
-Generated: 2026-02-12 14:50:42
+Generated: 2026-02-17 13:57:36
 """
 
+import math
+import copy
 import time
-from copy import deepcopy
-from copy import deepcopy
-from time import sleep
 
-import time
 import random
-from copy import deepcopy
+import math
+import copy
+import time
 
 class Connect4Agent:
     """
-    Connect‑4 agent for the Random‑Start variant.
-    Works with the engine you supplied (expects a 6×7 board,
-    'R' = Red, 'Y' = Yellow, ' ' = empty).
+    A simple but strong Connect‑4 agent.
+
+    Strategy (in order of priority):
+    1. Win immediately if possible.
+    2. Block opponent's immediate winning move.
+    3. Use a depth‑limited minimax search with alpha‑beta pruning
+       (default depth = 4). The evaluation function favours centre columns,
+       potential 2‑ and 3‑in‑a‑rows and penalises opponent threats.
     """
 
-    # ------------------------------------------------------------------
-    #  Public API (required by the engine)
-    # ------------------------------------------------------------------
-    def __init__(self, name: str, symbol: str):
-        """
-        Parameters
-        ----------
-        name : str
-            Human readable name – used only for reporting.
-        symbol : str
-            'R' for Red or 'Y' for Yellow.  The engine will always call
-            make_move() when it is this symbol's turn.
-        """
-        if symbol not in ("R", "Y"):
-            raise ValueError("symbol must be 'R' or 'Y'")
-        self.name = name
-        self.my_piece = symbol
-        self.opp_piece = "Y" if symbol == "R" else "R"
-
-        # --- search parameters (tuned for the 1 s limit) -----------------
-        self.time_limit = 0.90          # seconds (leave a safety margin)
-        self.max_depth = 5              # will be reduced if we run out of time
-        self.start_time = None
-
-        # Pre‑compute column order for move‑ordering (centre first)
-        self.column_order = [3, 2, 4, 1, 5, 0, 6]
-
-    # ------------------------------------------------------------------
-    def make_move(self, board):
-        """
-        Return the column (0‑6) where we want to drop a disc.
-
-        The engine passes us a **copy** of the current board, so we can
-        modify it safely if we want to.
-        """
-        self.start_time = time.time()
-
-        legal_cols = self._legal_moves(board)
-        # Defensive programming – the engine guarantees at least one legal move,
-        # but we keep the check just in case.
-        if not legal_cols:
-            return 3  # centre (any column would be illegal, but this will never happen)
-
-        # --------------------------------------------------------------
-        # 1) Immediate win / block
-        # --------------------------------------------------------------
-        for col in legal_cols:
-            # Simulate our move
-            r, _ = self._drop(board, col, self.my_piece)
-            if self._is_winning_move(board, r, col, self.my_piece):
-                return col
-            # Undo
-            board[r][col] = " "
-
-        # Block opponent's immediate win
-        for col in legal_cols:
-            r, _ = self._drop(board, col, self.opp_piece)
-            if self._is_winning_move(board, r, col, self.opp_piece):
-                # Undo before returning
-                board[r][col] = " "
-                return col
-            board[r][col] = " "
-
-        # --------------------------------------------------------------
-        # 2) Negamax search (alpha‑beta) – iterative deepening
-        # --------------------------------------------------------------
-        best_col = random.choice(legal_cols)   # fallback
-        best_score = -float('inf')
-
-        # Iterative deepening: start shallow, increase depth while we have time.
-        for depth in range(1, self.max_depth + 1):
-            if self._time_up():
-                break
-            score, col = self._negamax(board, depth, -float('inf'), float('inf'), True)
-            if self._time_up():
-                break
-            # In the very rare case that the search returns None (no move)
-            # we keep the previous best.
-            if col is not None:
-                best_score, best_col = score, col
-
-        return best_col
-
-    # ------------------------------------------------------------------
-    #  Internal helper methods (not part of the public API)
-    # ------------------------------------------------------------------
-
-    # --------------------------------------------------------------
-    # Timing
-    # --------------------------------------------------------------
-    def _time_up(self) -> bool:
-        """True if we have exceeded the allotted time."""
-        return (time.time() - self.start_time) >= self.time_limit
-
-    # --------------------------------------------------------------
-    # Board utilities
-    # --------------------------------------------------------------
     ROWS = 6
     COLS = 7
-    EMPTY = " "
+    EMPTY = ' '
 
-    def _legal_moves(self, board):
-        """Return a list of columns that are not full."""
-        return [c for c in self.column_order if board[0][c] == self.EMPTY]
+    def __init__(self, name: str, symbol: str):
+        """
+        name   – arbitrary identifier (not used by the agent)
+        symbol – 'R' for Red or 'Y' for Yellow
+        """
+        self.name = name
+        self.symbol = symbol
+        self.opponent = 'Y' if symbol == 'R' else 'R'
+        # depth can be tuned; 4 gives a good trade‑off between strength and speed
+        self.search_depth = 4
 
-    def _drop(self, board, col, piece):
+    # --------------------------------------------------------------------- #
+    # Helper methods operating on the board (list of lists, row‑major order) #
+    # --------------------------------------------------------------------- #
+
+    def _valid_columns(self, board):
+        """Return a list of column indices that are not full."""
+        return [c for c in range(self.COLS) if board[0][c] == self.EMPTY]
+
+    def _drop(self, board, col, disc):
         """
-        Drop a piece in `col` on the supplied board.
-        Returns (row, col) where the piece landed, or (None, None) if the column is full.
+        Return a new board with `disc` placed in `col`.
+        Assumes the column is not full.
         """
+        new_board = [row[:] for row in board]
         for r in range(self.ROWS - 1, -1, -1):
-            if board[r][col] == self.EMPTY:
-                board[r][col] = piece
-                return r, col
-        return None, None
+            if new_board[r][col] == self.EMPTY:
+                new_board[r][col] = disc
+                break
+        return new_board
 
-    # --------------------------------------------------------------
-    # Win detection (used during search)
-    # --------------------------------------------------------------
-    def _is_winning_move(self, board, row, col, piece):
-        """Check whether placing `piece` at (row, col) creates a 4‑in‑a‑row."""
-        if row is None:
-            return False
-
-        # Directions: (dr, dc)
-        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
-
-        for dr, dc in directions:
-            count = 1  # the piece we just placed
-            # forward
-            r, c = row + dr, col + dc
-            while 0 <= r < self.ROWS and 0 <= c < self.COLS and board[r][c] == piece:
-                count += 1
-                r += dr
-                c += dc
-            # backward
-            r, c = row - dr, col - dc
-            while 0 <= r < self.ROWS and 0 <= c < self.COLS and board[r][c] == piece:
-                count += 1
-                r -= dr
-                c -= dc
-
-            if count >= 4:
-                return True
-        return False
-
-    # --------------------------------------------------------------
-    # Evaluation function
-    # --------------------------------------------------------------
-    def _evaluate(self, board):
-        """
-        Heuristic score from the point of view of `self.my_piece`.
-        Positive = good for us, Negative = good for opponent.
-        """
-        SCORE_FOUR = 100000   # guaranteed win
-        SCORE_THREE = 1000
-        SCORE_TWO = 100
-        SCORE_ONE = 10
-
-        # Helper to count windows of length 4
-        def count_window(window, piece):
-            opp = self.opp_piece
-            if opp in window:
-                return 0
-            cnt = window.count(piece)
-            if cnt == 4:
-                return SCORE_FOUR
-            elif cnt == 3:
-                return SCORE_THREE
-            elif cnt == 2:
-                return SCORE_TWO
-            elif cnt == 1:
-                return SCORE_ONE
-            else:
-                return 0
-
-        total = 0
-
-        # Horizontal windows
+    def _winner(self, board):
+        """Detect a winner on the given board; return 'R', 'Y' or None."""
+        # Horizontal
         for r in range(self.ROWS):
             for c in range(self.COLS - 3):
-                window = [board[r][c + i] for i in range(4)]
-                total += count_window(window, self.my_piece)
-                total -= count_window(window, self.opp_piece)
-
-        # Vertical windows
-        for c in range(self.COLS):
-            for r in range(self.ROWS - 3):
-                window = [board[r + i][c] for i in range(4)]
-                total += count_window(window, self.my_piece)
-                total -= count_window(window, self.opp_piece)
-
-        # Positive‑slope diagonal windows (/)
+                s = board[r][c]
+                if s != self.EMPTY and s == board[r][c+1] == board[r][c+2] == board[r][c+3]:
+                    return s
+        # Vertical
+        for r in range(self.ROWS - 3):
+            for c in range(self.COLS):
+                s = board[r][c]
+                if s != self.EMPTY and s == board[r+1][c] == board[r+2][c] == board[r+3][c]:
+                    return s
+        # Diagonal /
         for r in range(3, self.ROWS):
             for c in range(self.COLS - 3):
-                window = [board[r - i][c + i] for i in range(4)]
-                total += count_window(window, self.my_piece)
-                total -= count_window(window, self.opp_piece)
-
-        # Negative‑slope diagonal windows (\)
+                s = board[r][c]
+                if s != self.EMPTY and s == board[r-1][c+1] == board[r-2][c+2] == board[r-3][c+3]:
+                    return s
+        # Diagonal \
         for r in range(self.ROWS - 3):
             for c in range(self.COLS - 3):
-                window = [board[r + i][c + i] for i in range(4)]
-                total += count_window(window, self.my_piece)
-                total -= count_window(window, self.opp_piece)
+                s = board[r][c]
+                if s != self.EMPTY and s == board[r+1][c+1] == board[r+2][c+2] == board[r+3][c+3]:
+                    return s
+        return None
 
-        return total
-
-    # --------------------------------------------------------------
-    # Negamax with alpha‑beta pruning
-    # --------------------------------------------------------------
-    def _negamax(self, board, depth, alpha, beta, is_root):
+    def _window_score(self, window, disc):
         """
-        Returns (score, best_column).  The score is from the viewpoint of
-        the player to move (positive = good for that player).
+        Score a list of four cells (`window`) for `disc`.
+        Positive values favour `disc`, negative values favour opponent.
         """
-        if self._time_up():
-            # Abort search – treat as a neutral score
-            return 0, None
+        opp = self.opponent
+        count_disc = window.count(disc)
+        count_opp = window.count(opp)
+        count_empty = window.count(self.EMPTY)
 
-        legal = self._legal_moves(board)
+        if count_disc == 4:
+            return 100000
+        if count_disc == 3 and count_empty == 1:
+            return 100
+        if count_disc == 2 and count_empty == 2:
+            return 10
+        if count_opp == 3 and count_empty == 1:
+            return -80   # block opponent threat
+        if count_opp == 2 and count_empty == 2:
+            return -5
+        return 0
+
+    def _evaluate(self, board, disc):
+        """
+        Simple heuristic evaluation for `disc`.
+        Higher scores indicate a more favorable position for `disc`.
+        """
+        score = 0
+
+        # centre column preference
+        centre_col = [board[r][self.COLS // 2] for r in range(self.ROWS)]
+        centre_count = centre_col.count(disc)
+        score += centre_count * 3
+
+        # Horizontal
+        for r in range(self.ROWS):
+            row_array = board[r]
+            for c in range(self.COLS - 3):
+                window = row_array[c:c+4]
+                score += self._window_score(window, disc)
+
+        # Vertical
+        for c in range(self.COLS):
+            col_array = [board[r][c] for r in range(self.ROWS)]
+            for r in range(self.ROWS - 3):
+                window = col_array[r:r+4]
+                score += self._window_score(window, disc)
+
+        # Diagonal /
+        for r in range(3, self.ROWS):
+            for c in range(self.COLS - 3):
+                window = [board[r-i][c+i] for i in range(4)]
+                score += self._window_score(window, disc)
+
+        # Diagonal \
+        for r in range(self.ROWS - 3):
+            for c in range(self.COLS - 3):
+                window = [board[r+i][c+i] for i in range(4)]
+                score += self._window_score(window, disc)
+
+        return score
+
+    # --------------------------------------------------------------------- #
+    # Minimax with alpha‑beta pruning                                          #
+    # --------------------------------------------------------------------- #
+
+    def _minimax(self, board, depth, alpha, beta, maximizing):
+        """
+        Return a tuple (score, column).  If no moves are possible, column is None.
+        """
+        valid_cols = self._valid_columns(board)
 
         # Terminal test
-        if depth == 0 or not legal:
-            # If board is full we treat it as a draw (score 0)
-            return self._evaluate(board), None
+        winner = self._winner(board)
+        if winner == self.symbol:
+            return (float('inf'), None)
+        elif winner == self.opponent:
+            return (float('-inf'), None)
+        elif not valid_cols:
+            return (0, None)  # draw
 
-        best_score = -float('inf')
-        best_col = None
+        if depth == 0:
+            return (self._evaluate(board, self.symbol), None)
 
-        for col in legal:
-            # Simulate move
-            r, _ = self._drop(board, col, self.my_piece if is_root else self.opp_piece)
-            win = self._is_winning_move(board, r, col,
-                                        self.my_piece if is_root else self.opp_piece)
+        if maximizing:
+            value = -math.inf
+            best_col = random.choice(valid_cols)
+            for col in valid_cols:
+                child = self._drop(board, col, self.symbol)
+                new_score, _ = self._minimax(child, depth - 1, alpha, beta, False)
+                if new_score > value:
+                    value, best_col = new_score, col
+                alpha = max(alpha, value)
+                if alpha >= beta:
+                    break  # beta cut‑off
+            return (value, best_col)
+        else:
+            value = math.inf
+            best_col = random.choice(valid_cols)
+            for col in valid_cols:
+                child = self._drop(board, col, self.opponent)
+                new_score, _ = self._minimax(child, depth - 1, alpha, beta, True)
+                if new_score < value:
+                    value, best_col = new_score, col
+                beta = min(beta, value)
+                if alpha >= beta:
+                    break  # alpha cut‑off
+            return (value, best_col)
 
-            if win:
-                # Immediate win for the player who just moved.
-                # From the perspective of the *current* player we return
-                # a huge positive value (or negative if it's the opponent).
-                score = (self.ROWS * self.COLS + 1) if is_root else -(self.ROWS * self.COLS + 1)
-                # Undo
-                board[r][col] = self.EMPTY
-                return score, col
+    # --------------------------------------------------------------------- #
+    # Public interface                                                       #
+    # --------------------------------------------------------------------- #
 
-            # Recurse – note the colour flip (negamax trick)
-            sub_score, _ = self._negamax(board, depth - 1, -beta, -alpha, False)
-            sub_score = -sub_score   # because we swapped players
+    def make_move(self, board):
+        """
+        Choose a column (0‑6) for the next disc.
+        The engine guarantees this method is called with a correct board
+        representation and will enforce a 1 s CPU time limit.
+        """
+        start_time = time.time()
 
-            # Undo move
-            board[r][col] = self.EMPTY
+        # 1️⃣  Immediate win?
+        for col in self._valid_columns(board):
+            trial = self._drop(board, col, self.symbol)
+            if self._winner(trial) == self.symbol:
+                return col
 
-            if sub_score > best_score:
-                best_score = sub_score
-                best_col = col
-            alpha = max(alpha, best_score)
-            if alpha >= beta:
-                # Cut‑off
-                break
+        # 2️⃣  Block opponent's immediate win?
+        for col in self._valid_columns(board):
+            trial = self._drop(board, col, self.opponent)
+            if self._winner(trial) == self.opponent:
+                return col
 
-        return best_score, best_col
+        # 3️⃣  Minimax decision
+        _, best = self._minimax(board, self.search_depth,
+                               -math.inf, math.inf, True)
+
+        # Fallback – should never happen, but keep engine safe
+        if best is None:
+            best = random.choice(self._valid_columns(board))
+
+        # Ensure we respect the time budget (engine will replace invalid moves)
+        if time.time() - start_time > 0.9:
+            # Very close to timeout – pick a safe random column
+            best = random.choice(self._valid_columns(board))
+
+        return best

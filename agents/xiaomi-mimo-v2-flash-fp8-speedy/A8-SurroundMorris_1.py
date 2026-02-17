@@ -1,8 +1,8 @@
 """
 Agent Code: A8-SurroundMorris
-Model: xiaomi/mimo-v2-flash
+Model: xiaomi/mimo-v2-flash@preset/fp8-speedy
 Run: 1
-Generated: 2026-02-10 22:38:58
+Generated: 2026-02-17 14:26:05
 """
 
 
@@ -11,213 +11,257 @@ import random
 
 class SurroundMorrisAgent:
     """
-    Agent for Surround Morris that uses a heuristic evaluation of moves.
-    - Placement phase: Prefers central spots and avoids immediate suicide.
-    - Movement phase: Evaluates moves based on net piece capture and positional safety.
-    - Considers repetition draws when ahead.
+    Agent for Surround Morris game.
+    Uses heuristic evaluation with lookahead for both placement and movement phases.
     """
     def __init__(self, name: str, color: str):
         self.name = name
         self.color = color
-
+        self.opponent_color = 'B' if color == 'W' else 'W'
+        
     def make_move(self, state: dict, feedback: dict | None = None):
         board = state["board"]
         phase = state["phase"]
         color = state["your_color"]
         opp = state["opponent_color"]
-        pieces_in_hand = state["pieces_in_hand"]
-        pieces_on_board = state["pieces_on_board"]
-        history = state["history"]
         
-        # Adjacency graph (global variable provided by the game engine)
-        ADJACENCY = {
-            0: [1, 9], 1: [0, 2, 4], 2: [1, 14],
-            3: [4, 10], 4: [1, 3, 5, 7], 5: [4, 13],
-            6: [7, 11], 7: [4, 6, 8], 8: [7, 12],
-            9: [0, 10, 21], 10: [3, 9, 11, 18], 11: [6, 10, 15],
-            12: [8, 13, 17], 13: [5, 12, 14, 20], 14: [2, 13, 23],
-            15: [11, 16], 16: [15, 17, 19], 17: [12, 16],
-            18: [10, 19], 19: [16, 18, 20, 22], 20: [13, 19],
-            21: [9, 22], 22: [19, 21, 23], 23: [14, 22]
-        }
-
-        def is_captured(board, spot, piece_color):
-            """Check if a piece at `spot` of `piece_color` is captured."""
-            if board[spot] != piece_color:
-                return False
-            opp_color = 'B' if piece_color == 'W' else 'W'
-            neighbors = ADJACENCY[spot]
-            empty = 0
-            friendly = 0
-            opponent = 0
-            for n in neighbors:
-                if board[n] == '':
-                    empty += 1
-                elif board[n] == piece_color:
-                    friendly += 1
-                elif board[n] == opp_color:
-                    opponent += 1
-            return (empty == 0) and (opponent > friendly)
-
-        def simulate_capture(board, mover_color):
-            """Simulate the capture process after a move, returning the final board."""
-            opp_color = 'B' if mover_color == 'W' else 'W'
-            new_board = board[:]
-            # Step 1: Check active piece (if any) - handled outside this function
-            # Step 2a: Remove overwhelmed friendlies iteratively
-            changed = True
-            while changed:
-                changed = False
-                to_remove = []
-                for i in range(24):
-                    if new_board[i] == mover_color and is_captured(new_board, i, mover_color):
-                        to_remove.append(i)
-                        changed = True
-                for i in to_remove:
-                    new_board[i] = ''
-            # Step 2b: Remove overwhelmed enemies iteratively
-            changed = True
-            while changed:
-                changed = False
-                to_remove = []
-                for i in range(24):
-                    if new_board[i] == opp_color and is_captured(new_board, i, opp_color):
-                        to_remove.append(i)
-                        changed = True
-                for i in to_remove:
-                    new_board[i] = ''
-            return new_board
-
-        def evaluate_move(new_board, mover_color, opp_color, pieces_on_board_before, pieces_in_hand_before, is_placement):
-            """Evaluate the move based on piece capture and win/loss conditions."""
-            # Count pieces after move and captures
-            our_pieces_after = sum(1 for x in new_board if x == mover_color)
-            opp_pieces_after = sum(1 for x in new_board if x == opp_color)
-            
-            # Check win/loss conditions
-            if is_placement:
-                our_hand_after = pieces_in_hand_before[mover_color] - 1
-                if our_pieces_after == 0 and our_hand_after == 0:
-                    return -1000  # We lose
-                opp_hand_after = pieces_in_hand_before[opp_color]
-                if opp_pieces_after == 0 and opp_hand_after == 0:
-                    return 1000   # We win
-            else:  # movement phase
-                if opp_pieces_after == 0:
-                    return 1000   # We win
-                if our_pieces_after == 0:
-                    return -1000  # We lose
-            
-            # Calculate net capture
-            enemy_captured = pieces_on_board_before[opp_color] - opp_pieces_after
-            if is_placement:
-                our_captured = (pieces_on_board_before[mover_color] + 1) - our_pieces_after
-            else:
-                our_captured = pieces_on_board_before[mover_color] - our_pieces_after
-            net_capture = enemy_captured - our_captured
-            
-            # Positional bonus for central spots (only in placement)
-            positional_bonus = 0
-            if is_placement and isinstance(move, int):
-                central_spots = [4, 10, 13, 19]
-                if move in central_spots:
-                    positional_bonus = 0.1
-            
-            # Check for repetition draw risk
-            repetition_penalty = 0
-            next_player = opp_color
-            new_state = (tuple(new_board), next_player)
-            if new_state in history:
-                count = history.count(new_state)
-                if count >= 2:  # This move would cause 3-fold repetition
-                    if net_capture + positional_bonus > 0:  # We are winning
-                        repetition_penalty = -10  # Avoid draw
-                    else:
-                        repetition_penalty = 5   # Prefer draw if losing
-            
-            return net_capture + positional_bonus + repetition_penalty
-
-        # Placement Phase
         if phase == "placement":
-            empty_spots = [i for i in range(24) if board[i] == '']
-            if not empty_spots:
-                return 0  # Fallback
-            
-            best_score = float('-inf')
-            best_move = empty_spots[0]
-            
-            for spot in empty_spots:
-                # Simulate placement
-                new_board = board[:]
-                new_board[spot] = color
-                # Check active piece capture
-                if is_captured(new_board, spot, color):
-                    # Active piece dies immediately -> no capture
-                    our_pieces_after = pieces_on_board[color]  # Piece is placed then removed
-                    opp_pieces_after = pieces_on_board[opp]
-                    # Check loss condition
-                    our_hand_after = pieces_in_hand[color] - 1
-                    if our_pieces_after == 0 and our_hand_after == 0:
-                        score = -1000
-                    else:
-                        score = -1  # Bad move: loses a piece without capturing
-                else:
-                    # Active piece survives, do sweep
-                    new_board = simulate_capture(new_board, color)
-                    score = evaluate_move(new_board, color, opp, pieces_on_board, pieces_in_hand, True)
-                
-                if score > best_score:
-                    best_score = score
-                    best_move = spot
-            
-            return best_move
-
-        # Movement Phase
+            return self._placement_move(board, state)
         else:
-            # Generate all legal moves
-            moves = []
-            for from_spot in range(24):
-                if board[from_spot] != color:
-                    continue
-                for to_spot in ADJACENCY[from_spot]:
-                    if board[to_spot] == '':
-                        moves.append((from_spot, to_spot))
-            
-            if not moves:
-                # Should not happen as the engine handles mate, but return a dummy move
-                return (0, 1)
-            
-            best_score = float('-inf')
-            best_move = moves[0]
-            
-            for move in moves:
-                from_spot, to_spot = move
-                # Simulate movement
-                new_board = board[:]
-                new_board[from_spot] = ''
-                new_board[to_spot] = color
-                # Check active piece capture
-                if is_captured(new_board, to_spot, color):
-                    # Active piece dies immediately
-                    new_board[to_spot] = ''  # Remove it
-                    # Then no sweep (since active piece died)
-                    our_pieces_after = sum(1 for x in new_board if x == color)
-                    opp_pieces_after = sum(1 for x in new_board if x == opp)
-                    if opp_pieces_after == 0:
-                        score = 1000
-                    elif our_pieces_after == 0:
-                        score = -1000
-                    else:
-                        enemy_captured = pieces_on_board[opp] - opp_pieces_after
-                        our_captured = pieces_on_board[color] - our_pieces_after
-                        score = enemy_captured - our_captured
-                else:
-                    # Active piece survives, do sweep
-                    new_board = simulate_capture(new_board, color)
-                    score = evaluate_move(new_board, color, opp, pieces_on_board, pieces_in_hand, False)
-                
-                if score > best_score:
-                    best_score = score
-                    best_move = move
-            
-            return best_move
+            return self._movement_move(board, state)
+    
+    def _placement_move(self, board, state):
+        """Choose a placement spot using heuristic evaluation."""
+        empty_spots = [i for i in range(24) if board[i] == '']
+        if not empty_spots:
+            return 0  # Should never happen in valid game state
+        
+        # Evaluate each empty spot
+        best_score = float('-inf')
+        best_spot = random.choice(empty_spots)  # Default random
+        
+        for spot in empty_spots:
+            score = self._evaluate_placement(board, spot, state)
+            if score > best_score:
+                best_score = score
+                best_spot = spot
+        
+        return best_spot
+    
+    def _movement_move(self, board, state):
+        """Choose a movement using heuristic evaluation with lookahead."""
+        legal_moves = self._get_legal_moves(board, self.color)
+        if not legal_moves:
+            # No legal moves - we are mated, but must return something
+            return (0, 1)  # Will be invalid, but engine will handle
+        
+        # Evaluate each move
+        best_score = float('-inf')
+        best_move = random.choice(legal_moves)
+        
+        for move in legal_moves:
+            score = self._evaluate_move(board, move, state)
+            if score > best_score:
+                best_score = score
+                best_move = move
+        
+        return best_move
+    
+    def _evaluate_placement(self, board, spot, state):
+        """Evaluate a placement spot."""
+        score = 0
+        
+        # 1. Position value (central spots are better)
+        central_spots = [4, 10, 13, 19]  # Crossroads (4 neighbors)
+        t_junctions = [1, 3, 5, 7, 8, 11, 12, 14, 15, 17, 18, 20, 21, 22]  # T-junctions (3 neighbors)
+        corners = [0, 2, 6, 9, 15, 17, 21, 23]  # Actually 2 neighbors, but let's use this list
+        
+        if spot in central_spots:
+            score += 10
+        elif spot in t_junctions:
+            score += 5
+        elif spot in corners:
+            score += 2
+        
+        # 2. Check for immediate suicide (bad)
+        if self._is_suicide_placement(board, spot, self.color):
+            score -= 100  # Strongly discourage suicide
+        
+        # 3. Check if placement captures opponent pieces
+        temp_board = board.copy()
+        temp_board[spot] = self.color
+        captured = self._get_captured_pieces(temp_board, spot, self.color)
+        score += len([p for p in captured if temp_board[p] == self.opponent_color]) * 15
+        
+        # 4. Check if placement blocks opponent's potential captures
+        # (simplified: count opponent pieces near this spot)
+        opponent_nearby = 0
+        for neighbor in ADJACENCY[spot]:
+            if board[neighbor] == self.opponent_color:
+                opponent_nearby += 1
+        score += opponent_nearby * 3  # Blocking opponent is good
+        
+        # 5. Check if placement creates friendly clusters (but avoid over-clustering)
+        friendly_nearby = 0
+        for neighbor in ADJACENCY[spot]:
+            if board[neighbor] == self.color:
+                friendly_nearby += 1
+        score += friendly_nearby * 2  # Slight bonus for friendly neighbors
+        
+        return score
+    
+    def _evaluate_move(self, board, move, state):
+        """Evaluate a movement with lookahead."""
+        from_spot, to_spot = move
+        
+        # 1. Basic move evaluation
+        score = 0
+        
+        # Move towards center is generally good
+        if to_spot in [4, 10, 13, 19]:
+            score += 5
+        elif to_spot in ADJACENCY[4] + ADJACENCY[10] + ADJACENCY[13] + ADJACENCY[19]:
+            score += 3
+        
+        # 2. Simulate the move and evaluate resulting state
+        temp_board = board.copy()
+        temp_board[from_spot] = ''
+        temp_board[to_spot] = self.color
+        
+        # 3. Check captures that would happen
+        captured = self._get_captured_pieces(temp_board, to_spot, self.color)
+        
+        # Count captures (prioritize capturing opponent pieces)
+        opp_captured = len([p for p in captured if temp_board[p] == self.opponent_color])
+        friendly_captured = len([p for p in captured if temp_board[p] == self.color])
+        
+        score += opp_captured * 20  # Capturing opponent is very good
+        score -= friendly_captured * 25  # Losing own pieces is bad
+        
+        # 4. Check if move creates threats for opponent
+        threat_score = self._evaluate_threats(temp_board, to_spot)
+        score += threat_score
+        
+        # 5. Mobility: ensure we don't reduce our own mobility too much
+        current_mobility = len(self._get_legal_moves(board, self.color))
+        new_mobility = len(self._get_legal_moves(temp_board, self.color))
+        mobility_diff = new_mobility - current_mobility
+        score += mobility_diff * 2
+        
+        # 6. Check for repetition avoidance
+        if self._would_cause_repetition(temp_board, state):
+            score -= 50  # Avoid repeating positions
+        
+        return score
+    
+    def _is_suicide_placement(self, board, spot, color):
+        """Check if placing at spot would cause immediate suicide."""
+        # Temporarily place the piece
+        temp_board = board.copy()
+        temp_board[spot] = color
+        
+        # Check if the placed piece would be captured immediately
+        return self._is_captured(spot, temp_board, color)
+    
+    def _get_captured_pieces(self, board, active_spot, mover_color):
+        """Get all pieces that would be captured after a move."""
+        captured = []
+        
+        # Step 1: Check active piece
+        if self._is_captured(active_spot, board, mover_color):
+            captured.append(active_spot)
+            return captured  # Active piece dies, no further captures
+        
+        # Step 2: Check all friendly pieces (self-harm priority)
+        opp_color = self.opponent_color if mover_color == self.color else self.color
+        friendly_captured = []
+        for spot in range(24):
+            if board[spot] == mover_color and self._is_captured(spot, board, mover_color):
+                friendly_captured.append(spot)
+        
+        # Remove friendly pieces first
+        temp_board = board.copy()
+        for spot in friendly_captured:
+            temp_board[spot] = ''
+        
+        # Step 3: Check enemy pieces after friendly removal
+        enemy_captured = []
+        for spot in range(24):
+            if temp_board[spot] == opp_color and self._is_captured(spot, temp_board, opp_color):
+                enemy_captured.append(spot)
+        
+        return friendly_captured + enemy_captured
+    
+    def _is_captured(self, spot, board, color):
+        """Check if a piece at spot would be captured."""
+        if board[spot] == '':
+            return False
+        
+        empty_neighbors = 0
+        friendly_neighbors = 0
+        opponent_neighbors = 0
+        
+        for neighbor in ADJACENCY[spot]:
+            if board[neighbor] == '':
+                empty_neighbors += 1
+            elif board[neighbor] == color:
+                friendly_neighbors += 1
+            else:
+                opponent_neighbors += 1
+        
+        return (empty_neighbors == 0) and (opponent_neighbors > friendly_neighbors)
+    
+    def _get_legal_moves(self, board, color):
+        """Get all legal moves for a color."""
+        moves = []
+        for spot in range(24):
+            if board[spot] != color:
+                continue
+            for neighbor in ADJACENCY[spot]:
+                if board[neighbor] == '':
+                    moves.append((spot, neighbor))
+        return moves
+    
+    def _evaluate_threats(self, board, moved_spot):
+        """Evaluate threats created by the move."""
+        score = 0
+        
+        # Check if the moved piece threatens opponent pieces
+        for neighbor in ADJACENCY[moved_spot]:
+            if board[neighbor] == self.opponent_color:
+                # Check if this opponent piece is now in danger
+                if self._is_captured(neighbor, board, self.opponent_color):
+                    score += 10  # Direct threat
+        
+        # Check if we blocked opponent's escape routes
+        for spot in range(24):
+            if board[spot] == self.opponent_color:
+                empty_neighbors = 0
+                for neighbor in ADJACENCY[spot]:
+                    if board[neighbor] == '':
+                        empty_neighbors += 1
+                if empty_neighbors == 1:  # About to be trapped
+                    score += 5
+        
+        return score
+    
+    def _would_cause_repetition(self, new_board, state):
+        """Check if the move would cause a 3-fold repetition."""
+        # Create new state tuple
+        new_state_tuple = (tuple(new_board), self.opponent_color)  # Next player is opponent
+        
+        # Count occurrences in history
+        count = state['history'].count(new_state_tuple)
+        return count >= 2  # Would be 3rd occurrence
+
+# Global adjacency dictionary (provided by the game engine)
+ADJACENCY = {
+    0: [1, 9],       1: [0, 2, 4],     2: [1, 14],
+    3: [4, 10],      4: [1, 3, 5, 7],  5: [4, 13],
+    6: [7, 11],      7: [4, 6, 8],     8: [7, 12],
+    9: [0, 10, 21],  10: [3, 9, 11, 18], 11: [6, 10, 15],
+    12: [8, 13, 17], 13: [5, 12, 14, 20], 14: [2, 13, 23],
+    15: [11, 16],    16: [15, 17, 19],  17: [12, 16],
+    18: [10, 19],    19: [16, 18, 20, 22], 20: [13, 19],
+    21: [9, 22],     22: [19, 21, 23],  23: [14, 22],
+}

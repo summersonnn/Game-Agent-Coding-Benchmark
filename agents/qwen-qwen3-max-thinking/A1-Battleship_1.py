@@ -6,23 +6,14 @@ Generated: 2026-02-13 14:03:41
 """
 
 import random
-from collections import deque
 
 class BattleshipAgent:
-    """
-    Smart Battleship agent with strategic ship placement and efficient bombing logic.
-    """
     def __init__(self, name, board_size, ships):
         self.name = name
         self.board_size = board_size
-        self.ships = sorted(ships, reverse=True)  # [5, 4, 3]
-        
-        # Bombing phase state tracking
-        self.shots_taken = set()      # All coordinates already shot at
-        self.hit_locations = []       # Chronological list of hit coordinates
-        self.hunt_queue = deque()     # Priority targets around known hits
-        self.search_pattern = None    # Precomputed efficient search pattern
-    
+        self.ships = ships
+        self.target_stack = None  # Stack for target mode in bombing phase (list used as LIFO stack)
+
     def make_move(self, state, feedback):
         if state['phase'] == 'placement':
             return self._place_ship(state)
@@ -30,198 +21,118 @@ class BattleshipAgent:
             return self._bomb_target(state)
     
     def _place_ship(self, state):
-        """Strategically place ships with spacing to avoid adjacency vulnerabilities."""
         ship_length = state['ships_to_place'][0]
         my_board = state['my_board']
+        valid_placements = []
         
-        # Generate all valid placements with spacing preference
-        candidates = []
-        
-        # Horizontal placements
+        # Generate all valid horizontal placements
         for row in range(self.board_size):
             for col in range(self.board_size - ship_length + 1):
-                if self._is_valid_placement(my_board, ship_length, (row, col), 'horizontal'):
-                    score = self._placement_score(my_board, ship_length, (row, col), 'horizontal')
-                    candidates.append((score, (row, col), 'horizontal'))
+                if all(my_board[row][col + k] == 'O' for k in range(ship_length)):
+                    valid_placements.append(((row, col), 'horizontal'))
         
-        # Vertical placements
+        # Generate all valid vertical placements
         for row in range(self.board_size - ship_length + 1):
             for col in range(self.board_size):
-                if self._is_valid_placement(my_board, ship_length, (row, col), 'vertical'):
-                    score = self._placement_score(my_board, ship_length, (row, col), 'vertical')
-                    candidates.append((score, (row, col), 'vertical'))
+                if all(my_board[row + k][col] == 'O' for k in range(ship_length)):
+                    valid_placements.append(((row, col), 'vertical'))
         
-        # Select highest scoring placement (or random if none found)
-        if candidates:
-            candidates.sort(reverse=True)  # Higher score first
-            _, start, orientation = candidates[0]
-        else:
-            # Fallback to random valid placement
-            orientation = random.choice(['horizontal', 'vertical'])
-            if orientation == 'horizontal':
-                row = random.randint(0, self.board_size - 1)
-                col = random.randint(0, self.board_size - ship_length)
-                while not self._is_valid_placement(my_board, ship_length, (row, col), 'horizontal'):
-                    row = random.randint(0, self.board_size - 1)
-                    col = random.randint(0, self.board_size - ship_length)
-            else:
-                row = random.randint(0, self.board_size - ship_length)
-                col = random.randint(0, self.board_size - 1)
-                while not self._is_valid_placement(my_board, ship_length, (row, col), 'vertical'):
-                    row = random.randint(0, self.board_size - ship_length)
-                    col = random.randint(0, self.board_size - 1)
-            start = (row, col)
+        # If ships already placed, prefer non-adjacent placements (including diagonally)
+        if state['ships_placed'] > 0 and valid_placements:
+            non_adjacent = []
+            for (start, orient) in valid_placements:
+                cells = []
+                r0, c0 = start
+                if orient == 'horizontal':
+                    cells = [(r0, c0 + k) for k in range(ship_length)]
+                else:
+                    cells = [(r0 + k, c0) for k in range(ship_length)]
+                
+                # Check 8-direction adjacency to existing ships ('S')
+                has_adjacency = False
+                for r, c in cells:
+                    for dr in (-1, 0, 1):
+                        for dc in (-1, 0, 1):
+                            if dr == 0 and dc == 0:
+                                continue
+                            nr, nc = r + dr, c + dc
+                            if 0 <= nr < self.board_size and 0 <= nc < self.board_size:
+                                if my_board[nr][nc] == 'S':
+                                    has_adjacency = True
+                                    break
+                        if has_adjacency:
+                            break
+                    if has_adjacency:
+                        break
+                
+                if not has_adjacency:
+                    non_adjacent.append((start, orient))
+            
+            if non_adjacent:
+                valid_placements = non_adjacent
         
+        # Select random valid placement (guaranteed non-empty per game rules)
+        start, orient = random.choice(valid_placements)
         return {
             'ship_length': ship_length,
             'start': start,
-            'orientation': orientation
+            'orientation': orient
         }
     
-    def _is_valid_placement(self, board, length, start, orientation):
-        """Check if ship placement is valid (within bounds, no overlap)."""
-        row, col = start
-        if orientation == 'horizontal':
-            if col + length > self.board_size:
-                return False
-            for c in range(col, col + length):
-                if board[row][c] != 'O':
-                    return False
-        else:  # vertical
-            if row + length > self.board_size:
-                return False
-            for r in range(row, row + length):
-                if board[r][col] != 'O':
-                    return False
-        return True
-    
-    def _placement_score(self, board, length, start, orientation):
-        """
-        Score placement based on:
-        1. Distance from existing ships (prefer spacing)
-        2. Edge proximity (smaller ships prefer edges)
-        3. Center avoidance for large ships
-        """
-        row, col = start
-        score = 0
-        
-        # Calculate minimum distance to existing ships (including diagonals)
-        min_dist = float('inf')
-        for r in range(self.board_size):
-            for c in range(self.board_size):
-                if board[r][c] == 'S':
-                    # Chebyshev distance (covers diagonal adjacency)
-                    dist = max(abs(r - (row if orientation == 'vertical' else r)), 
-                              abs(c - (col if orientation == 'horizontal' else c)))
-                    # More precisely: check distance to any ship segment
-                    if orientation == 'horizontal':
-                        for dc in range(length):
-                            ship_r, ship_c = row, col + dc
-                            dist = max(abs(r - ship_r), abs(c - ship_c))
-                            min_dist = min(min_dist, dist)
-                    else:
-                        for dr in range(length):
-                            ship_r, ship_c = row + dr, col
-                            dist = max(abs(r - ship_r), abs(c - ship_c))
-                            min_dist = min(min_dist, dist)
-        
-        if min_dist == float('inf'):  # First ship placement
-            min_dist = 5  # High default score
-        
-        # Prefer spacing (higher min_dist = better)
-        score += min_dist * 10
-        
-        # Edge preference for smaller ships
-        edge_dist = min(row, col, self.board_size - 1 - row, self.board_size - 1 - col)
-        if length <= 3:
-            score += (3 - edge_dist) * 5  # Prefer edges for small ships
-        
-        # Center avoidance for large ships
-        if length >= 4:
-            center_dist = abs(row + (length//2 if orientation == 'vertical' else 0) - self.board_size//2) + \
-                         abs(col + (length//2 if orientation == 'horizontal' else 0) - self.board_size//2)
-            score += center_dist * 3
-        
-        return score
-    
     def _bomb_target(self, state):
-        """Smart bombing strategy: hunt around hits first, then systematic search."""
-        # Initialize search pattern on first bombing turn
-        if self.search_pattern is None:
-            self._initialize_search_pattern()
+        # Initialize bombing state on first call
+        if self.target_stack is None:
+            self.target_stack = []
         
-        # Process last shot result to update hunt queue
-        if state['last_shot_coord'] is not None:
-            coord = state['last_shot_coord']
-            self.shots_taken.add(coord)
-            
-            if state['last_shot_result'] == 'HIT':
-                self.hit_locations.append(coord)
-                # Add adjacent unshot cells to hunt queue (prioritize completing ships)
-                self._add_adjacent_targets(coord)
+        # Rebuild opponent grid from shot history (authoritative source)
+        grid = [['U'] * self.board_size for _ in range(self.board_size)]
+        for shot in state['shot_history']:
+            r, c = shot['coord']
+            grid[r][c] = 'H' if shot['result'] == 'HIT' else 'M'
         
-        # Clear hunt queue of already-shot targets
-        while self.hunt_queue and self.hunt_queue[0] in self.shots_taken:
-            self.hunt_queue.popleft()
+        # Clean stack: remove already-known cells
+        self.target_stack = [
+            (r, c) for (r, c) in self.target_stack 
+            if 0 <= r < self.board_size and 0 <= c < self.board_size and grid[r][c] == 'U'
+        ]
         
-        # Priority 1: Hunt around known hits (if we have queued targets)
-        if self.hunt_queue:
-            target = self.hunt_queue.popleft()
-            while target in self.shots_taken and self.hunt_queue:
-                target = self.hunt_queue.popleft()
-            if target not in self.shots_taken:
-                self.shots_taken.add(target)
-                return {'target': target}
+        # Process target stack (LIFO for depth-first targeting)
+        while self.target_stack:
+            r, c = self.target_stack.pop()
+            if grid[r][c] == 'U':
+                return {'target': (r, c)}
         
-        # Priority 2: Systematic search using parity optimization
-        # (Checkerboard pattern guarantees hitting all ships of length >= 2)
-        for cell in self.search_pattern:
-            if cell not in self.shots_taken:
-                self.shots_taken.add(cell)
-                return {'target': cell}
+        # Generate new targets from unresolved hits (hits with unknown neighbors)
+        new_targets = set()
+        for i in range(self.board_size):
+            for j in range(self.board_size):
+                if grid[i][j] == 'H':
+                    for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
+                        ni, nj = i + dr, j + dc
+                        if 0 <= ni < self.board_size and 0 <= nj < self.board_size and grid[ni][nj] == 'U':
+                            new_targets.add((ni, nj))
         
-        # Fallback: Any remaining unshot cell (should rarely happen)
-        for r in range(self.board_size):
-            for c in range(self.board_size):
-                if (r, c) not in self.shots_taken:
-                    self.shots_taken.add((r, c))
+        if new_targets:
+            new_targets = list(new_targets)
+            random.shuffle(new_targets)  # Avoid deterministic patterns
+            self.target_stack = new_targets
+            while self.target_stack:
+                r, c = self.target_stack.pop()
+                if grid[r][c] == 'U':
                     return {'target': (r, c)}
         
-        # Final fallback (should never reach here)
-        return {'target': (0, 0)}
-    
-    def _initialize_search_pattern(self):
-        """Create efficient search pattern using checkerboard parity optimization."""
-        # Phase 1: Target cells where (row + col) is even (covers all ships efficiently)
-        phase1 = [(r, c) for r in range(self.board_size) 
-                          for c in range(self.board_size) 
-                          if (r + c) % 2 == 0]
-        # Phase 2: Remaining cells
-        phase2 = [(r, c) for r in range(self.board_size) 
-                          for c in range(self.board_size) 
-                          if (r + c) % 2 == 1]
+        # Hunt mode: prioritize parity pattern for efficiency (covers all ships ≥ length 3)
+        candidates = []
+        for i in range(self.board_size):
+            for j in range(self.board_size):
+                if grid[i][j] == 'U' and (i + j) % 2 == 0:
+                    candidates.append((i, j))
         
-        # Shuffle within phases for unpredictability while maintaining efficiency
-        random.shuffle(phase1)
-        random.shuffle(phase2)
-        self.search_pattern = phase1 + phase2
-    
-    def _add_adjacent_targets(self, hit_coord):
-        """Add orthogonal neighbors of a hit to hunt queue (prioritize ship completion)."""
-        row, col = hit_coord
-        directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # Right, Down, Left, Up
+        if not candidates:  # Fallback to all unknown cells if parity exhausted
+            for i in range(self.board_size):
+                for j in range(self.board_size):
+                    if grid[i][j] == 'U':
+                        candidates.append((i, j))
         
-        # Prioritize directions that extend existing hit lines
-        # Check for horizontal line
-        if (row, col - 1) in self.hit_locations or (row, col + 1) in self.hit_locations:
-            directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]  # Prioritize horizontal
-        # Check for vertical line
-        elif (row - 1, col) in self.hit_locations or (row + 1, col) in self.hit_locations:
-            directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]  # Prioritize vertical
-        
-        for dr, dc in directions:
-            nr, nc = row + dr, col + dc
-            if 0 <= nr < self.board_size and 0 <= nc < self.board_size:
-                neighbor = (nr, nc)
-                if neighbor not in self.shots_taken and neighbor not in self.hunt_queue:
-                    self.hunt_queue.append(neighbor)
+        # Random selection avoids predictability
+        return {'target': random.choice(candidates)} if candidates else {'target': (0, 0)}

@@ -6,107 +6,95 @@ Generated: 2026-02-12 09:31:57
 """
 
 import random
-from collections import defaultdict
 
 class WordFinderAgent:
     def __init__(self, name):
         self.name = name
         self.dictionary = load_words()
-        self.letter_set = defaultdict(set)
-        self.start_freq = defaultdict(int)
-        self.end_freq = defaultdict(int)
-        for w in self.dictionary:
-            if w:
-                self.start_freq[w[0]] += 1
-                self.end_freq[w[-1]] += 1
-            for ch in set(w):
-                if 'a' <= ch <= 'z':
-                    self.letter_set[ch].add(w)
-        self.all_words_list = list(self.dictionary)
-
-    def _score_word(self, w, req1, req2=None):
-        base = len(w)
-        points = base / 2.0 if '-' in w else float(base)
-        if req2 is not None and req1 != req2:
-            if (req1 + req2) in w or (req2 + req1) in w:
-                points *= 2.0
-        return points
-
-    def _difficulty(self, w):
-        return self.start_freq.get(w[0], 0) + self.end_freq.get(w[-1], 0)
-
+        self.words_containing = {}
+        for word in self.dictionary:
+            unique_letters = set()
+            for char in word:
+                if 'a' <= char <= 'z':
+                    unique_letters.add(char)
+            for char in unique_letters:
+                if char not in self.words_containing:
+                    self.words_containing[char] = set()
+                self.words_containing[char].add(word)
+    
     def make_move(self, current_word, word_history):
-        cw = current_word.lower()
-        first = cw[0]
-        last = cw[-1]
-        prev_len = len(cw)
-        used_lower = {w.lower() for w in word_history}
-
-        if first != last:
-            cand_set = self.letter_set[first] & self.letter_set[last]
-            valid = []
-            for w in cand_set:
-                if w in used_lower or len(w) == prev_len:
-                    continue
-                if w[0] in (first, last) or w[-1] in (first, last):
-                    continue
-                if first not in w or last not in w:
-                    continue
-                valid.append(w)
-
-            if valid:
-                valid.sort(key=lambda w: (-self._score_word(w, first, last),
-                                          self._difficulty(w),
-                                          -len(w)))
-                return valid[0]
-
-            partial = []
-            for w in self.letter_set[first]:
-                if last in w:
-                    continue
-                if w in used_lower or len(w) == prev_len:
-                    continue
-                if w[0] == first or w[-1] == first:
-                    continue
-                partial.append(w)
-            for w in self.letter_set[last]:
-                if first in w:
-                    continue
-                if w in used_lower or len(w) == prev_len:
-                    continue
-                if w[0] == last or w[-1] == last:
-                    continue
-                partial.append(w)
-
-            if partial:
-                partial.sort(key=lambda w: (len(w), self._difficulty(w)))
-                return partial[0]
-
-            for w in self.all_words_list:
-                if w not in used_lower:
-                    return w
-            return "a"
-
-        else:
-            req = first
-            cand_set = self.letter_set[req]
-            valid = []
-            for w in cand_set:
-                if w in used_lower or len(w) == prev_len:
-                    continue
-                if w[0] == req or w[-1] == req:
-                    continue
-                if req not in w:
-                    continue
-                valid.append(w)
-
-            if valid:
-                valid.sort(key=lambda w: (-self._score_word(w, req),
-                                          self._difficulty(w),
-                                          -len(w)))
-                return valid[0]
-
-            for w in self.all_words_list:
-                if w not in used_lower:
-                    return w
-            return "a"
+        current_word_lower = current_word.lower().strip()
+        if not current_word_lower or len(current_word_lower) == 0:
+            unused = [w for w in self.dictionary if w not in word_history]
+            return random.choice(unused) if unused else "a"
+        
+        req1 = current_word_lower[0]
+        req2 = current_word_lower[-1]
+        current_len = len(current_word_lower)
+        
+        # Search for full moves (contain both required letters)
+        set1 = self.words_containing.get(req1, set())
+        set2 = self.words_containing.get(req2, set())
+        candidates_full = set1 & set2
+        candidates_full = candidates_full - word_history
+        
+        valid_full = []
+        for word in candidates_full:
+            if len(word) == current_len:
+                continue
+            if word[0] == req1 or word[0] == req2 or word[-1] == req1 or word[-1] == req2:
+                continue
+            valid_full.append(word)
+        
+        if valid_full:
+            best_word = None
+            best_score = -10**18
+            for word in valid_full:
+                score = len(word)
+                if '-' in word:
+                    score /= 2.0
+                if (req1 + req2) in word or (req2 + req1) in word:
+                    score *= 2
+                if score > best_score:
+                    best_score = score
+                    best_word = word
+            return best_word
+        
+        # Search for partial moves (exactly one required letter)
+        set_req1_only = set()
+        if req1 in self.words_containing:
+            set_req1_only = self.words_containing[req1] - word_history
+            if req2 in self.words_containing:
+                set_req1_only -= self.words_containing[req2]
+        
+        set_req2_only = set()
+        if req2 in self.words_containing:
+            set_req2_only = self.words_containing[req2] - word_history
+            if req1 in self.words_containing:
+                set_req2_only -= self.words_containing[req1]
+        
+        candidates_partial = set_req1_only | set_req2_only
+        valid_partial = []
+        
+        for word in candidates_partial:
+            if len(word) == current_len:
+                continue
+            if req1 in word:
+                if word[0] != req1 and word[-1] != req1:
+                    valid_partial.append(word)
+            elif req2 in word:
+                if word[0] != req2 and word[-1] != req2:
+                    valid_partial.append(word)
+        
+        if valid_partial:
+            return min(valid_partial, key=len)
+        
+        # Fallback: any unused word with different length
+        for word in self.dictionary:
+            if word not in word_history and len(word) != current_len:
+                return word
+        # Last resort: any unused word
+        for word in self.dictionary:
+            if word not in word_history:
+                return word
+        return "a"

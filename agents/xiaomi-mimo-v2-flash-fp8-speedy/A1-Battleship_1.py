@@ -2,7 +2,7 @@
 Agent Code: A1-Battleship
 Model: xiaomi/mimo-v2-flash@preset/fp8-speedy
 Run: 1
-Generated: 2026-02-14 16:15:50
+Generated: 2026-02-17 12:25:21
 """
 
 from collections import deque
@@ -14,69 +14,20 @@ class BattleshipAgent:
     def __init__(self, name, board_size, ships):
         self.name = name
         self.board_size = board_size
-        self.ships = sorted(ships, reverse=True)  # Sort ships by length descending
-        self.shots = set()
-        self.hits = set()
-        self.misses = set()
-        self.sunk_ships = []  # Track lengths of sunk ships
-        self.target_queue = deque()
-        self.last_hit = None
-        self.hunt_pattern = self._generate_hunt_pattern()
-        
-    def _generate_hunt_pattern(self):
-        """Generate a hunt pattern that covers the board efficiently."""
-        pattern = []
-        # Use a checkerboard pattern to cover half the board
-        for row in range(self.board_size):
-            for col in range(self.board_size):
-                if (row + col) % 2 == 0:  # Even parity cells
-                    pattern.append((row, col))
-        # If we need more coverage, add odd parity cells
-        if len(pattern) < self.board_size * self.board_size // 2:
-            for row in range(self.board_size):
-                for col in range(self.board_size):
-                    if (row + col) % 2 == 1:  # Odd parity cells
-                        pattern.append((row, col))
-        return pattern
-    
-    def _is_valid_placement(self, board, start, length, orientation):
-        """Check if a ship placement is valid."""
-        row, col = start
-        if orientation == 'horizontal':
-            if col + length > self.board_size:
-                return False
-            for i in range(length):
-                if board[row][col + i] != 'O':
-                    return False
-        else:  # vertical
-            if row + length > self.board_size:
-                return False
-            for i in range(length):
-                if board[row + i][col] != 'O':
-                    return False
-        return True
-    
-    def _get_adjacent_cells(self, coord):
-        """Get valid adjacent cells for targeting."""
-        row, col = coord
-        adjacent = []
-        for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-            nr, nc = row + dr, col + dc
-            if 0 <= nr < self.board_size and 0 <= nc < self.board_size:
-                adjacent.append((nr, nc))
-        return adjacent
-    
-    def _estimate_remaining_ships(self):
-        """Estimate remaining ship lengths based on hits and known sunk ships."""
-        total_hits = len(self.hits)
-        sunk_lengths = sum(self.sunk_ships)
-        remaining_hits = total_hits - sunk_lengths
-        
-        # Known ship lengths that haven't been sunk yet
-        remaining_ships = [s for s in self.ships if s not in self.sunk_ships]
-        
-        # If we have clustered hits, they might belong to the same ship
-        return remaining_ships, remaining_hits
+        self.ships = ships
+        # For bombing phase
+        self.target_list = deque()
+        self.hunt_mode = True
+        self.shot_cells = set()
+        self.even_parity = set()
+        self.odd_parity = set()
+        # Initialize parity sets for hunting
+        for r in range(self.board_size):
+            for c in range(self.board_size):
+                if (r + c) % 2 == 0:
+                    self.even_parity.add((r, c))
+                else:
+                    self.odd_parity.add((r, c))
     
     def make_move(self, state, feedback):
         if state['phase'] == 'placement':
@@ -85,142 +36,159 @@ class BattleshipAgent:
             return self._handle_bombing(state)
     
     def _handle_placement(self, state):
-        """Smart ship placement strategy."""
-        board = state['my_board']
-        ships_to_place = state['ships_to_place']
+        ship_length = state['ships_to_place'][0]
+        current_board = state['my_board']
+        placements = self._generate_valid_placements(ship_length, current_board)
         
-        if not ships_to_place:
-            return None
-        
-        ship_length = ships_to_place[0]
-        
-        # Strategy: Place ships along edges and corners to avoid common hunt patterns
-        # Try different strategies in order of preference
-        placements = []
-        
-        # 1. Try corners first (most defensive)
-        corners = [
-            (0, 0, 'horizontal'), (0, 0, 'vertical'),
-            (0, self.board_size - ship_length, 'horizontal'),
-            (self.board_size - ship_length, 0, 'vertical'),
-            (self.board_size - 1, self.board_size - ship_length, 'horizontal'),
-            (self.board_size - ship_length, self.board_size - 1, 'vertical')
-        ]
-        
-        for row, col, orientation in corners:
-            if self._is_valid_placement(board, (row, col), ship_length, orientation):
-                placements.append(((row, col), orientation))
-        
-        # 2. Try edges
         if not placements:
-            for row in [0, self.board_size - 1]:  # Top and bottom edges
-                for col in range(self.board_size - ship_length + 1):
-                    if self._is_valid_placement(board, (row, col), ship_length, 'horizontal'):
-                        placements.append(((row, col), 'horizontal'))
-            
-            for col in [0, self.board_size - 1]:  # Left and right edges
-                for row in range(self.board_size - ship_length + 1):
-                    if self._is_valid_placement(board, (row, col), ship_length, 'vertical'):
-                        placements.append(((row, col), 'vertical'))
-        
-        # 3. Try interior positions (avoiding center if possible)
-        if not placements:
-            # Prefer positions away from the center
-            center = self.board_size // 2
-            for row in range(self.board_size):
-                for col in range(self.board_size - ship_length + 1):
-                    # Avoid the exact center area for the largest ships
-                    if ship_length >= 4 and abs(row - center) <= 1 and col >= center - 2 and col <= center + 2:
-                        continue
-                    if self._is_valid_placement(board, (row, col), ship_length, 'horizontal'):
-                        placements.append(((row, col), 'horizontal'))
-            
-            for row in range(self.board_size - ship_length + 1):
-                for col in range(self.board_size):
-                    if ship_length >= 4 and abs(col - center) <= 1 and row >= center - 2 and row <= center + 2:
-                        continue
-                    if self._is_valid_placement(board, (row, col), ship_length, 'vertical'):
-                        placements.append(((row, col), 'vertical'))
-        
-        # If we found valid placements, choose one strategically
-        if placements:
-            # Prefer placements that are more spread out from existing ships
-            # For simplicity, choose the first valid placement
-            (row, col), orientation = placements[0]
+            # Fallback: random placement (should not happen if we generate correctly)
+            orientation = random.choice(['horizontal', 'vertical'])
+            if orientation == 'horizontal':
+                row = random.randint(0, self.board_size - 1)
+                col = random.randint(0, self.board_size - ship_length)
+            else:
+                row = random.randint(0, self.board_size - ship_length)
+                col = random.randint(0, self.board_size - 1)
             return {
                 'ship_length': ship_length,
                 'start': (row, col),
                 'orientation': orientation
             }
         
-        # Fallback: random placement (should rarely happen with proper logic)
-        orientation = random.choice(['horizontal', 'vertical'])
-        if orientation == 'horizontal':
-            row = random.randint(0, self.board_size - 1)
-            col = random.randint(0, self.board_size - ship_length)
-        else:
-            row = random.randint(0, self.board_size - ship_length)
-            col = random.randint(0, self.board_size - 1)
+        # Define center area (avoid center for placement)
+        center_start = self.board_size // 4
+        center_end = (3 * self.board_size) // 4 - 1
         
+        # Helper to get cells of a placement
+        def get_cells(start, orientation):
+            row, col = start
+            cells = []
+            if orientation == 'horizontal':
+                for i in range(ship_length):
+                    cells.append((row, col + i))
+            else:
+                for i in range(ship_length):
+                    cells.append((row + i, col))
+            return cells
+        
+        # Helper to check if placement is adjacent to existing ships
+        def is_adjacent(start, orientation):
+            cells = get_cells(start, orientation)
+            for r, c in cells:
+                for dr, dc in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < self.board_size and 0 <= nc < self.board_size:
+                        if current_board[nr][nc] == 'S':
+                            return True
+            return False
+        
+        # Helper to check if placement is in center
+        def is_in_center(start, orientation):
+            cells = get_cells(start, orientation)
+            for r, c in cells:
+                if center_start <= r <= center_end and center_start <= c <= center_end:
+                    return True
+            return False
+        
+        # Three-tiered selection
+        # Tier 1: non-adjacent and non-center
+        for start, orientation in placements:
+            if not is_adjacent(start, orientation) and not is_in_center(start, orientation):
+                return {
+                    'ship_length': ship_length,
+                    'start': start,
+                    'orientation': orientation
+                }
+        
+        # Tier 2: non-adjacent
+        for start, orientation in placements:
+            if not is_adjacent(start, orientation):
+                return {
+                    'ship_length': ship_length,
+                    'start': start,
+                    'orientation': orientation
+                }
+        
+        # Tier 3: non-center
+        for start, orientation in placements:
+            if not is_in_center(start, orientation):
+                return {
+                    'ship_length': ship_length,
+                    'start': start,
+                    'orientation': orientation
+                }
+        
+        # Tier 4: any valid placement
+        start, orientation = placements[0]
         return {
             'ship_length': ship_length,
-            'start': (row, col),
+            'start': start,
             'orientation': orientation
         }
     
-    def _handle_bombing(self, state):
-        """Smart bombing strategy with hunt and target modes."""
-        # Update shot history
-        self.shots = set()
-        self.hits = set()
-        self.misses = set()
-        
-        for shot in state['shot_history']:
-            coord = shot['coord']
-            self.shots.add(coord)
-            if shot['result'] == 'HIT':
-                self.hits.add(coord)
-            else:
-                self.misses.add(coord)
-        
-        # Update target queue based on last shot
-        if state['last_shot_result'] == 'HIT' and state['last_shot_coord']:
-            self.last_hit = state['last_shot_coord']
-            # Add adjacent cells to target queue
-            adjacent = self._get_adjacent_cells(state['last_shot_coord'])
-            for cell in adjacent:
-                if cell not in self.shots and cell not in self.target_queue:
-                    self.target_queue.append(cell)
-        
-        # If we have targets in queue, process them
-        if self.target_queue:
-            target = self.target_queue.popleft()
-            if target not in self.shots:
-                return {'target': target}
-            else:
-                # If already shot, get next target
-                return self._handle_bombing(state)
-        
-        # Hunt mode: Use parity pattern or random from remaining cells
-        remaining_cells = []
+    def _generate_valid_placements(self, ship_length, board):
+        placements = []
+        # Horizontal
         for row in range(self.board_size):
+            for col in range(self.board_size - ship_length + 1):
+                valid = True
+                for i in range(ship_length):
+                    if board[row][col + i] != 'O':
+                        valid = False
+                        break
+                if valid:
+                    placements.append(((row, col), 'horizontal'))
+        # Vertical
+        for row in range(self.board_size - ship_length + 1):
             for col in range(self.board_size):
-                if (row, col) not in self.shots:
-                    remaining_cells.append((row, col))
+                valid = True
+                for i in range(ship_length):
+                    if board[row + i][col] != 'O':
+                        valid = False
+                        break
+                if valid:
+                    placements.append(((row, col), 'vertical'))
+        return placements
+    
+    def _handle_bombing(self, state):
+        # Update shot cells from history
+        self.shot_cells = {shot['coord'] for shot in state['shot_history']}
         
-        if not remaining_cells:
-            # Should not happen, but fallback
-            row, col = random.randint(0, self.board_size - 1), random.randint(0, self.board_size - 1)
-            return {'target': (row, col)}
+        # Update parity sets by removing shot cells
+        self.even_parity -= self.shot_cells
+        self.odd_parity -= self.shot_cells
         
-        # Use hunt pattern if available
-        available_pattern = [cell for cell in self.hunt_pattern if cell in remaining_cells]
+        # If we just got a hit and turn continues, add adjacent cells to target list
+        if state['last_shot_result'] == 'HIT' and state['turn_continues']:
+            last_shot = state['last_shot_coord']
+            for dr, dc in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                nr, nc = last_shot[0] + dr, last_shot[1] + dc
+                if 0 <= nr < self.board_size and 0 <= nc < self.board_size:
+                    if (nr, nc) not in self.shot_cells:
+                        self.target_list.append((nr, nc))
         
-        if available_pattern:
-            # Choose a cell from the hunt pattern
-            target = random.choice(available_pattern)
+        # If target list has valid targets, use them
+        if self.target_list:
+            # Clean up any already shot targets
+            while self.target_list and self.target_list[0] in self.shot_cells:
+                self.target_list.popleft()
+            if self.target_list:
+                target = self.target_list.popleft()
+                return {'target': target}
+        
+        # Hunt mode: use parity pattern
+        if self.even_parity:
+            target = random.choice(list(self.even_parity))
+        elif self.odd_parity:
+            target = random.choice(list(self.odd_parity))
         else:
-            # Fallback: choose randomly from remaining cells
-            target = random.choice(remaining_cells)
+            # Fallback: random unshot cell (should not happen if we track correctly)
+            all_cells = set((r, c) for r in range(self.board_size) for c in range(self.board_size))
+            unshot = all_cells - self.shot_cells
+            if unshot:
+                target = random.choice(list(unshot))
+            else:
+                # Should never happen in valid game
+                target = (0, 0)
         
         return {'target': target}

@@ -1,8 +1,8 @@
 """
 Agent Code: A1-Battleship
-Model: qwen/qwen3-coder-next
+Model: qwen/qwen3-coder-next@preset/fp8
 Run: 2
-Generated: 2026-02-11 19:24:56
+Generated: 2026-02-17 12:25:21
 """
 
 from collections import deque
@@ -11,115 +11,141 @@ import random
 from collections import deque
 
 class BattleshipAgent:
+    """
+    Your agent implementation goes here.
+    Implements smart placement and bombing logic.
+    """
     def __init__(self, name, board_size, ships):
         self.name = name
         self.board_size = board_size
         self.ships = ships
-        self.my_board = None
-        self.enemy_ships = []  # Track enemy ship placements (if we get feedback)
-        self.bombing_state = {
-            'last_shot_result': None,
-            'last_shot_coord': None,
-            'turn_continues': False,
-            'shot_history': [],
-            'hit_stack': deque(),  # For hunt mode: coordinates to investigate after a hit
-            'target_mode': False,  # True when in target mode (after a hit)
-            'prob_board': None,
-            'possible_ship_positions': None,
-            'known_hits': set(),  # Coordinates we know are hits (from feedback)
-            'known_misses': set(),  # Coordinates we know are misses
-            'possible_orientations': {}  # For each hit, store possible orientations
-        }
+        # Placement state tracking
+        self.placed_ships = []
+        # Bombing state tracking
+        self.target_queue = deque()
+        self.hunt_mode = False
+        self.last_hit = None
+        self.potential_targets = set()
+        self.shot_history = set()
+        # Precompute all possible ship positions for probability tracking
+        self._precompute_probabilities = None
+        self._opponent_board_state = None
 
     def make_move(self, state, feedback):
         if state['phase'] == 'placement':
-            return self._place_ships(state)
+            return self._smart_placement(state)
         else:  # bombing phase
-            return self._make_bombing_move(state)
+            return self._smart_bombing(state)
 
-    def _place_ships(self, state):
-        """Strategic ship placement: avoid corners initially, ensure ships are spaced."""
+    def _smart_placement(self, state):
+        """Place ships smartly with a bias toward central and asymmetric patterns."""
         board = [row[:] for row in state['my_board']]  # Copy board
-        ships_to_place = state['ships_to_place'].copy()
-        placed_ships = []
+        ships_to_place = state['ships_to_place']
+        if not ships_to_place:
+            # Shouldn't happen, but fallback
+            return self._random_placement(state)
         
-        # Try to place ships with spacing to avoid clustering
-        for ship_len in ships_to_place:
-            placed = False
-            attempts = 0
-            max_attempts = 100
+        ship_length = ships_to_place[0]
+        
+        # Try to place in a way that avoids symmetry and clusters ships on one side
+        # Prefer corners and edges to leave center open for flexibility
+        orientations = ['horizontal', 'vertical']
+        
+        # Try a few strategic positions first
+        for orientation in orientations:
+            # Try to place near edges
+            edge_attempts = []
+            if orientation == 'horizontal':
+                edge_attempts.extend([
+                    (0, 0), (0, self.board_size - ship_length),
+                    (self.board_size - 1, 0), (self.board_size - 1, self.board_size - ship_length)
+                ])
+            else:
+                edge_attempts.extend([
+                    (0, 0), (self.board_size - ship_length, 0),
+                    (0, self.board_size - 1), (self.board_size - ship_length, self.board_size - 1)
+                ])
             
-            while not placed and attempts < max_attempts:
-                attempts += 1
-                orientation = random.choice(['horizontal', 'vertical'])
-                
-                # Prefer center areas for placement
-                if orientation == 'horizontal':
-                    row = random.randint(1, self.board_size - 2)
-                    col = random.randint(0, self.board_size - ship_len)
-                else:
-                    row = random.randint(0, self.board_size - ship_len)
-                    col = random.randint(1, self.board_size - 2)
-                
-                start = (row, col)
-                
-                # Check validity
-                if self._is_valid_placement(board, start, ship_len, orientation):
-                    # Place ship
-                    self._place_ship_on_board(board, start, ship_len, orientation)
-                    placed_ships.append({
-                        'length': ship_len,
-                        'start': start,
+            # Add center-ish positions
+            center_row = self.board_size // 2
+            center_col = self.board_size // 2
+            if orientation == 'horizontal':
+                edge_attempts.append((center_row, max(0, center_col - ship_length // 2)))
+            else:
+                edge_attempts.append((max(0, center_row - ship_length // 2), center_col))
+            
+            for row, col in edge_attempts:
+                if self._can_place_ship(board, row, col, ship_length, orientation):
+                    # Place the ship
+                    new_board = [r[:] for r in board]
+                    self._place_ship_on_board(new_board, row, col, ship_length, orientation)
+                    self.placed_ships.append({
+                        'length': ship_length,
+                        'start': (row, col),
                         'orientation': orientation
                     })
-                    placed = True
+                    return {
+                        'ship_length': ship_length,
+                        'start': (row, col),
+                        'orientation': orientation
+                    }
+        
+        # If strategic placements failed, try random placement (will be accepted if valid)
+        return self._random_placement(state)
+
+    def _random_placement(self, state):
+        """Fallback to random placement if strategic placement fails."""
+        board = [row[:] for row in state['my_board']]
+        ship_length = state['ships_to_place'][0]
+        
+        for _ in range(200):  # Try up to 200 random positions
+            orientation = random.choice(['horizontal', 'vertical'])
+            if orientation == 'horizontal':
+                row = random.randint(0, self.board_size - 1)
+                col = random.randint(0, self.board_size - ship_length)
+            else:
+                row = random.randint(0, self.board_size - ship_length)
+                col = random.randint(0, self.board_size - 1)
             
-            if not placed:
-                # Fallback: random placement (will be corrected by game engine if invalid)
-                orientation = random.choice(['horizontal', 'vertical'])
-                if orientation == 'horizontal':
-                    row = random.randint(0, self.board_size - 1)
-                    col = random.randint(0, self.board_size - ship_len)
-                else:
-                    row = random.randint(0, self.board_size - ship_len)
-                    col = random.randint(0, self.board_size - 1)
+            if self._can_place_ship(board, row, col, ship_length, orientation):
+                new_board = [r[:] for r in board]
+                self._place_ship_on_board(new_board, row, col, ship_length, orientation)
+                self.placed_ships.append({
+                    'length': ship_length,
+                    'start': (row, col),
+                    'orientation': orientation
+                })
                 return {
-                    'ship_length': ship_len,
+                    'ship_length': ship_length,
                     'start': (row, col),
                     'orientation': orientation
                 }
         
-        # Now we know placement is valid, return first ship placement
-        first_ship = placed_ships[0]
+        # Final fallback: just return something (engine will handle invalid placement)
         return {
-            'ship_length': first_ship['length'],
-            'start': first_ship['start'],
-            'orientation': first_ship['orientation']
+            'ship_length': ship_length,
+            'start': (0, 0),
+            'orientation': 'horizontal'
         }
 
-    def _is_valid_placement(self, board, start, length, orientation):
-        """Check if a ship placement is valid."""
-        row, col = start
-        
+    def _can_place_ship(self, board, row, col, length, orientation):
+        """Check if a ship can be placed at the given position."""
         if orientation == 'horizontal':
-            # Check boundaries and overlap
             if col + length > self.board_size:
                 return False
             for c in range(col, col + length):
                 if board[row][c] != 'O':
                     return False
-        else:  # vertical
+        else:
             if row + length > self.board_size:
                 return False
             for r in range(row, row + length):
                 if board[r][col] != 'O':
                     return False
-        
         return True
 
-    def _place_ship_on_board(self, board, start, length, orientation):
-        """Place a ship on the board (modifies board in-place)."""
-        row, col = start
+    def _place_ship_on_board(self, board, row, col, length, orientation):
+        """Place a ship on the board."""
         if orientation == 'horizontal':
             for c in range(col, col + length):
                 board[row][c] = 'S'
@@ -127,234 +153,137 @@ class BattleshipAgent:
             for r in range(row, row + length):
                 board[r][col] = 'S'
 
-    def _make_bombing_move(self, state):
-        """Smart bombing strategy: Hunt and Target mode with probability weighting."""
+    def _smart_bombing(self, state):
+        """Implement probability-based and hunt-and-target bombing strategy."""
+        board_size = state['board_size']
+        last_shot_result = state['last_shot_result']
+        last_shot_coord = state['last_shot_coord']
+        turn_continues = state['turn_continues']
+        shot_history = state['shot_history']
+        
         # Update internal state
-        self._update_bombing_state(state)
+        if last_shot_coord is not None:
+            self.shot_history.add(last_shot_coord)
+            if last_shot_result == 'HIT':
+                if not self.hunt_mode:
+                    # Start hunt mode
+                    self.hunt_mode = True
+                    self.last_hit = last_shot_coord
+                    self._add_adjacent_targets(last_shot_coord)
+                else:
+                    # Continue building on current hit
+                    self._add_adjacent_targets(last_shot_coord)
+            elif last_shot_result == 'MISS':
+                if self.hunt_mode and turn_continues:
+                    # This shouldn't happen on turn_continues, but handle gracefully
+                    pass
+                elif self.hunt_mode and not turn_continues:
+                    # Hunt mode ended without sinking; reset
+                    self.hunt_mode = False
+                    self.last_hit = None
+                    self.potential_targets.clear()
         
-        # Initialize probability board if needed
-        if self.bombing_state['prob_board'] is None:
-            self._init_probability_board()
+        # If we're in hunt mode, use the target queue
+        if self.hunt_mode and self.potential_targets:
+            # Get next target from queue
+            while self.target_queue:
+                target = self.target_queue.popleft()
+                if target not in self.shot_history:
+                    return {'target': target}
+            
+            # Queue was empty but we still have potential targets
+            # Rebuild queue with priority (prefer adjacent to last hit)
+            if self.last_hit:
+                row, col = self.last_hit
+                # Prioritize cells adjacent to last hit
+                adjacent = [
+                    (row-1, col), (row+1, col),
+                    (row, col-1), (row, col+1)
+                ]
+                for t in adjacent:
+                    if (0 <= t[0] < board_size and 0 <= t[1] < board_size and 
+                        t not in self.shot_history and t in self.potential_targets):
+                        return {'target': t}
+            
+            # Fallback to any potential target
+            for t in sorted(self.potential_targets):
+                if t not in self.shot_history:
+                    return {'target': t}
         
-        # Use Hunt and Target mode
-        if self.bombing_state['target_mode'] and self.bombing_state['hit_stack']:
-            # Target mode: use hit_stack to find adjacent cells to try
-            target = self._get_next_target_from_stack()
-            if target:
-                return {'target': target}
+        # If not in hunt mode, use probability-based targeting
+        # Build probability map based on remaining ships and known misses
+        if self._precompute_probabilities is None:
+            self._precompute_probabilities = self._build_probability_map()
         
-        # If not in target mode or stack is empty, use hunt mode with probability
-        target = self._get_best_hunt_target()
-        if target:
-            return {'target': target}
+        # Get best unshot cell from probability map
+        best_target = self._get_best_probability_target()
+        if best_target:
+            return {'target': best_target}
         
-        # Fallback: random valid move (shouldn't happen often)
-        all_coords = [(r, c) for r in range(self.board_size) for c in range(self.board_size)]
-        valid_coords = [(r, c) for r, c in all_coords 
-                        if (r, c) not in self.bombing_state['known_hits'] 
-                        and (r, c) not in self.bombing_state['known_misses']]
-        if valid_coords:
-            return {'target': random.choice(valid_coords)}
-        else:
-            # Very unlikely fallback
-            return {'target': (random.randint(0, self.board_size-1), random.randint(0, self.board_size-1))}
+        # Fallback to random unshot cell
+        while True:
+            row = random.randint(0, board_size - 1)
+            col = random.randint(0, board_size - 1)
+            if (row, col) not in self.shot_history:
+                return {'target': (row, col)}
 
-    def _update_bombing_state(self, state):
-        """Update internal state with new information."""
-        last_shot_result = state.get('last_shot_result')
-        last_shot_coord = state.get('last_shot_coord')
-        turn_continues = state.get('turn_continues', False)
-        shot_history = state.get('shot_history', [])
-        
-        # Update shot history
-        if shot_history:
-            self.bombing_state['shot_history'] = shot_history
-            # Extract latest shot info
-            if last_shot_coord:
-                if last_shot_result == 'HIT':
-                    self.bombing_state['known_hits'].add(last_shot_coord)
-                    # Add to hit stack for target mode
-                    self.bombing_state['hit_stack'].append(last_shot_coord)
-                    self.bombing_state['target_mode'] = True
-                elif last_shot_result == 'MISS':
-                    self.bombing_state['known_misses'].add(last_shot_coord)
-        
-        # Update known hits/misses from history if needed
-        for entry in shot_history:
-            coord = entry['coord']
-            result = entry['result']
-            if result == 'HIT':
-                self.bombing_state['known_hits'].add(coord)
-            elif result == 'MISS':
-                self.bombing_state['known_misses'].add(coord)
-        
-        # Reset target mode if we missed after a hit (turn_continues=False after a hit means ship sunk)
-        if last_shot_result == 'MISS' and self.bombing_state['target_mode']:
-            # If we had a hit stack and missed, that hit might be part of a sunk ship
-            # Check if we should clear the stack
-            pass  # We'll keep it for now and let the stack handle it
+    def _add_adjacent_targets(self, hit_coord):
+        """Add adjacent cells to target queue when in hunt mode."""
+        row, col = hit_coord
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # up, down, left, right
+        for dr, dc in directions:
+            new_row, new_col = row + dr, col + dc
+            if (0 <= new_row < self.board_size and 
+                0 <= new_col < self.board_size and
+                (new_row, new_col) not in self.shot_history):
+                self.potential_targets.add((new_row, new_col))
+                self.target_queue.append((new_row, new_col))
 
-    def _init_probability_board(self):
-        """Initialize probability board based on remaining ships."""
-        self.bombing_state['prob_board'] = [[0.0] * self.board_size for _ in range(self.board_size)]
-        self.bombing_state['possible_ship_positions'] = []
+    def _build_probability_map(self):
+        """Precompute how often each cell is likely to contain a ship."""
+        # Initialize probability grid with zeros
+        prob_grid = [[0] * self.board_size for _ in range(self.board_size)]
         
-        # Get remaining ships (we know the full set, but need to track what's been sunk)
-        # For simplicity, assume all ships are still in play initially
-        remaining_ships = self.ships.copy()
-        
-        # Update based on known misses (can't place ships there)
-        for r in range(self.board_size):
-            for c in range(self.board_size):
-                if (r, c) in self.bombing_state['known_misses']:
-                    self.bombing_state['prob_board'][r][c] = -1.0  # Mark as impossible
-        
-        # Calculate possible positions for each remaining ship
-        for ship_len in remaining_ships:
-            self._add_possible_positions(ship_len)
-        
-        # Update probabilities
-        self._update_probabilities()
-
-    def _add_possible_positions(self, ship_len):
-        """Add all possible positions for a ship of given length."""
-        for r in range(self.board_size):
-            for c in range(self.board_size):
-                # Horizontal
-                if c + ship_len <= self.board_size:
-                    positions = [(r, c + i) for i in range(ship_len)]
-                    # Skip if any position is a known miss
-                    if not any(pos in self.bombing_state['known_misses'] for pos in positions):
-                        self.bombing_state['possible_ship_positions'].append(positions)
-                
-                # Vertical
-                if r + ship_len <= self.board_size:
-                    positions = [(r + i, c) for i in range(ship_len)]
-                    if not any(pos in self.bombing_state['known_misses'] for pos in positions):
-                        self.bombing_state['possible_ship_positions'].append(positions)
-
-    def _update_probabilities(self):
-        """Update probability board based on possible ship positions."""
-        if self.bombing_state['prob_board'] is None:
-            return
-        
-        # Reset probabilities
-        for r in range(self.board_size):
-            for c in range(self.board_size):
-                if (r, c) not in self.bombing_state['known_misses']:
-                    self.bombing_state['prob_board'][r][c] = 0.0
-        
-        # Count how many possible positions include each cell
-        for positions in self.bombing_state['possible_ship_positions']:
-            for r, c in positions:
-                if (r, c) not in self.bombing_state['known_hits']:
-                    self.bombing_state['prob_board'][r][c] += 1.0
-        
-        # Normalize probabilities (optional but helps with comparison)
-        max_prob = max(max(row) for row in self.bombing_state['prob_board']) if any(any(row) for row in self.bombing_state['prob_board']) else 1.0
-        if max_prob > 0:
+        # For each ship length
+        for ship_len in self.ships:
+            # Try all horizontal placements
             for r in range(self.board_size):
+                for c in range(self.board_size - ship_len + 1):
+                    valid = True
+                    for i in range(ship_len):
+                        if (r, c + i) in self.shot_history:
+                            valid = False
+                            break
+                    if valid:
+                        for i in range(ship_len):
+                            prob_grid[r][c + i] += 1
+            
+            # Try all vertical placements
+            for r in range(self.board_size - ship_len + 1):
                 for c in range(self.board_size):
-                    if (r, c) not in self.bombing_state['known_hits'] and (r, c) not in self.bombing_state['known_misses']:
-                        self.bombing_state['prob_board'][r][c] /= max_prob
-
-    def _get_best_hunt_target(self):
-        """Find the best target in hunt mode (highest probability)."""
-        best_coord = None
-        best_prob = -1.0
+                    valid = True
+                    for i in range(ship_len):
+                        if (r + i, c) in self.shot_history:
+                            valid = False
+                            break
+                    if valid:
+                        for i in range(ship_len):
+                            prob_grid[r + i][c] += 1
         
-        for r in range(self.board_size):
-            for c in range(self.board_size):
-                if (r, c) not in self.bombing_state['known_hits'] and (r, c) not in self.bombing_state['known_misses']:
-                    prob = self.bombing_state['prob_board'][r][c] if self.bombing_state['prob_board'] else 1.0
-                    # Add small random factor to break ties
-                    prob += random.random() * 0.01
-                    if prob > best_prob:
-                        best_prob = prob
-                        best_coord = (r, c)
-        
-        return best_coord
+        return prob_grid
 
-    def _get_next_target_from_stack(self):
-        """Get next target from hit stack, considering adjacency and known info."""
-        if not self.bombing_state['hit_stack']:
+    def _get_best_probability_target(self):
+        """Get the cell with highest probability of containing a ship."""
+        if not self._precompute_probabilities:
             return None
         
-        # Get the most recent hit
-        hit = self.bombing_state['hit_stack'][-1]
-        r, c = hit
+        best_target = None
+        best_prob = -1
         
-        # Determine adjacent cells to try
-        adjacent = [(r-1, c), (r+1, c), (r, c-1), (r, c+1)]
+        for r in range(self.board_size):
+            for c in range(self.board_size):
+                if (r, c) not in self.shot_history and self._precompute_probabilities[r][c] > best_prob:
+                    best_prob = self._precompute_probabilities[r][c]
+                    best_target = (r, c)
         
-        # Filter to valid, untried coordinates
-        for coord in adjacent:
-            nr, nc = coord
-            if (0 <= nr < self.board_size and 0 <= nc < self.board_size and
-                coord not in self.bombing_state['known_hits'] and
-                coord not in self.bombing_state['known_misses']):
-                return coord
-        
-        # If all adjacent are tried, pop from stack and try next
-        self.bombing_state['hit_stack'].pop()
-        return self._get_next_target_from_stack()
-
-    def _place_ships(self, state):
-        """Optimized ship placement using a greedy algorithm with spacing."""
-        board = [row[:] for row in state['my_board']]  # Copy board
-        ships_to_place = state['ships_to_place'].copy()
-        placed_ships = []
-        
-        # Try to place ships with spacing to avoid clustering
-        for ship_len in ships_to_place:
-            placed = False
-            attempts = 0
-            max_attempts = 200
-            
-            while not placed and attempts < max_attempts:
-                attempts += 1
-                orientation = random.choice(['horizontal', 'vertical'])
-                
-                # Prefer center areas for placement
-                if orientation == 'horizontal':
-                    row = random.randint(1, self.board_size - 2)
-                    col = random.randint(0, self.board_size - ship_len)
-                else:
-                    row = random.randint(0, self.board_size - ship_len)
-                    col = random.randint(1, self.board_size - 2)
-                
-                start = (row, col)
-                
-                # Check validity
-                if self._is_valid_placement(board, start, ship_len, orientation):
-                    # Place ship
-                    self._place_ship_on_board(board, start, ship_len, orientation)
-                    placed_ships.append({
-                        'length': ship_len,
-                        'start': start,
-                        'orientation': orientation
-                    })
-                    placed = True
-            
-            if not placed:
-                # Fallback: random placement
-                orientation = random.choice(['horizontal', 'vertical'])
-                if orientation == 'horizontal':
-                    row = random.randint(0, self.board_size - 1)
-                    col = random.randint(0, self.board_size - ship_len)
-                else:
-                    row = random.randint(0, self.board_size - ship_len)
-                    col = random.randint(0, self.board_size - 1)
-                return {
-                    'ship_length': ship_len,
-                    'start': (row, col),
-                    'orientation': orientation
-                }
-        
-        # Now we know placement is valid, return first ship placement
-        first_ship = placed_ships[0]
-        return {
-            'ship_length': first_ship['length'],
-            'start': first_ship['start'],
-            'orientation': first_ship['orientation']
-        }
+        return best_target

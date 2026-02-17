@@ -6,150 +6,149 @@ Generated: 2026-02-13 14:53:21
 """
 
 
+import random
+import time
 
 class TicTacToeAgent:
+    WIN_CONDITIONS = []
+    
+    @staticmethod
+    def _build_wins():
+        wc = []
+        for r in range(5):
+            for c in range(3):
+                s = r * 5 + c
+                wc.append((s, s+1, s+2))
+        for c in range(5):
+            for r in range(3):
+                s = r * 5 + c
+                wc.append((s, s+5, s+10))
+        for r in range(3):
+            for c in range(3):
+                s = r * 5 + c
+                wc.append((s, s+6, s+12))
+        for r in range(3):
+            for c in range(2, 5):
+                s = r * 5 + c
+                wc.append((s, s+4, s+8))
+        return wc
+
     def __init__(self, name, symbol):
         self.name = name
         self.symbol = symbol
-        self.opponent = 'O' if symbol == 'X' else 'X'
-        self.win_lines = self._generate_win_lines()
-    
-    def _generate_win_lines(self):
-        """Generate all possible winning combinations (3 in a row)."""
-        lines = []
-        # Rows
-        for r in range(5):
-            for c in range(3):
-                start = r * 5 + c
-                lines.append([start, start + 1, start + 2])
-        # Columns
-        for c in range(5):
-            for r in range(3):
-                start = r * 5 + c
-                lines.append([start, start + 5, start + 10])
-        # Diagonals (down-right)
-        for r in range(3):
-            for c in range(3):
-                start = r * 5 + c
-                lines.append([start, start + 6, start + 12])
-        # Diagonals (down-left)
-        for r in range(3):
-            for c in range(2, 5):
-                start = r * 5 + c
-                lines.append([start, start + 4, start + 8])
-        return lines
-    
-    def make_move(self, board):
-        available = [i for i in range(25) if board[i] == ' ']
-        if not available:
-            return 0
-        
-        # Priority 1: Win immediately if possible
-        win_move = self._find_winning_move(board, self.symbol)
-        if win_move is not None:
-            return win_move
-        
-        # Priority 2: Block opponent's winning move
-        block_move = self._find_winning_move(board, self.opponent)
-        if block_move is not None:
-            return block_move
-        
-        # Priority 3: Create a fork (multiple threats)
-        fork_move = self._find_fork_move(board, self.symbol)
-        if fork_move is not None:
-            return fork_move
-        
-        # Priority 4: Block opponent's fork
-        opponent_fork = self._find_fork_move(board, self.opponent)
-        if opponent_fork is not None:
-            return opponent_fork
-        
-        # Priority 5: Make the best strategic move
-        return self._find_best_strategic_move(board, available)
-    
-    def _find_winning_move(self, board, symbol):
-        """Find a move that completes 3-in-a-row for the given symbol."""
-        for line in self.win_lines:
-            cells = [board[i] for i in line]
-            if cells.count(symbol) == 2 and cells.count(' ') == 1:
-                for i in line:
-                    if board[i] == ' ':
-                        return i
+        self.opp = 'O' if symbol == 'X' else 'X'
+        if not TicTacToeAgent.WIN_CONDITIONS:
+            TicTacToeAgent.WIN_CONDITIONS = self._build_wins()
+        # cell value map for 5x5
+        self.cell_value = [0]*25
+        for i in range(25):
+            r, c = divmod(i, 5)
+            # count win conditions this cell participates in
+            cnt = sum(1 for wc in self.WIN_CONDITIONS if i in wc)
+            self.cell_value[i] = cnt
+
+    def _check_winner(self, board):
+        for a, b, c in self.WIN_CONDITIONS:
+            if board[a] == board[b] == board[c] != ' ':
+                return board[a]
+        if ' ' not in board:
+            return 'DRAW'
         return None
-    
-    def _find_fork_move(self, board, symbol):
-        """Find a move that creates two or more winning threats."""
-        for move in range(25):
-            if board[move] != ' ':
-                continue
-            
-            # Simulate the move
-            test_board = board[:]
-            test_board[move] = symbol
-            
-            # Count how many winning threats this creates
-            threats = 0
-            for line in self.win_lines:
-                cells = [test_board[i] for i in line]
-                # A threat is 2 of our symbols with 1 empty
-                if cells.count(symbol) == 2 and cells.count(' ') == 1:
-                    threats += 1
-            
-            # Fork = 2 or more threats
-            if threats >= 2:
-                return move
-        
-        return None
-    
-    def _find_best_strategic_move(self, board, available):
-        """Evaluate all available moves and choose the best one."""
-        best_score = -999999
-        best_moves = []
-        
-        for move in available:
-            score = self._evaluate_move(board, move)
-            if score > best_score:
-                best_score = score
-                best_moves = [move]
-            elif score == best_score:
-                best_moves.append(move)
-        
-        return random.choice(best_moves) if best_moves else available[0]
-    
-    def _evaluate_move(self, board, move):
-        """Score a move based on strategic value."""
+
+    def _score_board(self, board, symbol):
+        opp = 'O' if symbol == 'X' else 'X'
         score = 0
-        test_board = board[:]
-        test_board[move] = self.symbol
-        
-        # Analyze impact on all winning lines
-        for line in self.win_lines:
-            if move not in line:
-                continue
-            
-            orig_cells = [board[i] for i in line]
-            new_cells = [test_board[i] for i in line]
-            
-            # Reward creating threats (2 in a row)
-            if new_cells.count(self.symbol) == 2 and new_cells.count(' ') == 1:
-                score += 50
-            # Reward building potential (1 in a row with 2 empty)
-            elif new_cells.count(self.symbol) == 1 and new_cells.count(' ') == 2:
-                score += 10
-            
-            # Reward blocking opponent's threats
-            if orig_cells.count(self.opponent) == 2 and orig_cells.count(' ') == 1:
-                score += 40
-            elif orig_cells.count(self.opponent) == 1 and orig_cells.count(' ') == 2:
-                score += 5
-        
-        # Positional bonuses
-        if move == 12:  # Center position
-            score += 15
-        
-        # Favor positions closer to center
-        row, col = move // 5, move % 5
-        center_distance = abs(row - 2) + abs(col - 2)
-        score += (4 - center_distance) * 3
-        
+        for a, b, c in self.WIN_CONDITIONS:
+            line = [board[a], board[b], board[c]]
+            mine = line.count(symbol)
+            their = line.count(opp)
+            if their == 0:
+                if mine == 2: score += 10
+                elif mine == 1: score += 1
+            elif mine == 0:
+                if their == 2: score -= 10
+                elif their == 1: score -= 1
         return score
+
+    def _minimax(self, board, depth, alpha, beta, maximizing, start_time, time_limit):
+        if time.time() - start_time > time_limit:
+            raise TimeoutError()
+        
+        winner = self._check_winner(board)
+        if winner == self.symbol:
+            return 100 + depth, None
+        if winner == self.opp:
+            return -100 - depth, None
+        if winner == 'DRAW':
+            return 0, None
+        
+        moves = [i for i in range(25) if board[i] == ' ']
+        
+        if depth == 0:
+            return self._score_board(board, self.symbol), None
+        
+        # Order moves by cell value for better pruning
+        moves.sort(key=lambda x: self.cell_value[x], reverse=True)
+        
+        best_move = moves[0]
+        if maximizing:
+            best_val = -999
+            sym = self.symbol
+        else:
+            best_val = 999
+            sym = self.opp
+            
+        for m in moves:
+            board[m] = sym
+            val, _ = self._minimax(board, depth-1, alpha, beta, not maximizing, start_time, time_limit)
+            board[m] = ' '
+            if maximizing:
+                if val > best_val:
+                    best_val, best_move = val, m
+                alpha = max(alpha, val)
+            else:
+                if val < best_val:
+                    best_val, best_move = val, m
+                beta = min(beta, val)
+            if beta <= alpha:
+                break
+        return best_val, best_move
+
+    def make_move(self, board):
+        board = list(board)
+        moves = [i for i in range(25) if board[i] == ' ']
+        if not moves:
+            return None
+        
+        # Immediate win
+        for m in moves:
+            board[m] = self.symbol
+            if self._check_winner(board) == self.symbol:
+                board[m] = ' '
+                return m
+            board[m] = ' '
+        
+        # Immediate block
+        for m in moves:
+            board[m] = self.opp
+            if self._check_winner(board) == self.opp:
+                board[m] = ' '
+                return m
+            board[m] = ' '
+        
+        # Iterative deepening minimax
+        start = time.time()
+        time_limit = 0.85
+        best_move = max(moves, key=lambda x: self.cell_value[x])
+        
+        try:
+            for depth in range(1, 10):
+                val, move = self._minimax(board, depth, -999, 999, True, start, time_limit)
+                if move is not None:
+                    best_move = move
+                if abs(val) >= 100:
+                    break
+        except TimeoutError:
+            pass
+        
+        return best_move

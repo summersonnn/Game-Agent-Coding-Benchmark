@@ -6,183 +6,199 @@ Generated: 2026-02-13 14:53:21
 """
 
 import random
+import time
 
 class TicTacToeAgent:
-    """Agent for 5x5 Tic Tac Toe (three in a row). Uses minimax with alpha-beta pruning."""
+    """Agent that plays 5x5 Tic Tac Toe (three in a row) using minimax with alpha-beta pruning
+    and a heuristic evaluation function.  It also checks for immediate win/block before searching.
+    """
 
-    def __init__(self, name, symbol):
+    def __init__(self, name: str, symbol: str):
         self.name = name
         self.symbol = symbol          # 'X' or 'O'
         self.opponent = 'O' if symbol == 'X' else 'X'
-        self.EMPTY = ' '
 
-        # Precompute all 48 winning lines (three consecutive cells)
-        self.win_lines = []
+        # ---- Precompute all 48 winning lines ----
+        self.lines = []
         # rows
         for r in range(5):
             for c in range(3):
-                start = r * 5 + c
-                self.win_lines.append((start, start + 1, start + 2))
+                self.lines.append((r*5 + c, r*5 + c+1, r*5 + c+2))
         # columns
         for c in range(5):
             for r in range(3):
-                start = r * 5 + c
-                self.win_lines.append((start, start + 5, start + 10))
+                self.lines.append((r*5 + c, (r+1)*5 + c, (r+2)*5 + c))
         # diagonals down-right
         for r in range(3):
             for c in range(3):
-                start = r * 5 + c
-                self.win_lines.append((start, start + 6, start + 12))
+                self.lines.append((r*5 + c, (r+1)*5 + c+1, (r+2)*5 + c+2))
         # diagonals down-left
         for r in range(3):
             for c in range(2, 5):
-                start = r * 5 + c
-                self.win_lines.append((start, start + 4, start + 8))
+                self.lines.append((r*5 + c, (r+1)*5 + c-1, (r+2)*5 + c-2))
 
+        # ---- Static move ordering: cells that belong to more lines are tried first ----
+        self.cell_weight = [0] * 25
+        for line in self.lines:
+            for idx in line:
+                self.cell_weight[idx] += 1
+
+    # ----------------------------------------------------------------------
+    # Public method required by the game engine
+    # ----------------------------------------------------------------------
     def make_move(self, board):
-        """Return the index (0-24) of the chosen move."""
-        # 1. Immediate win
-        for move in self._empty_cells(board):
+        """Return the index (0‑24) of the cell to mark."""
+        empty = [i for i, c in enumerate(board) if c == ' ']
+        # If only one move is possible, take it immediately
+        if len(empty) == 1:
+            return empty[0]
+
+        # 1) Immediate win
+        for move in empty:
             if self._is_winning_move(board, move, self.symbol):
                 return move
 
-        # 2. Block opponent's immediate win
-        for move in self._empty_cells(board):
+        # 2) Block opponent's immediate win
+        for move in empty:
             if self._is_winning_move(board, move, self.opponent):
                 return move
 
-        # 3. Search with minimax
-        empty_count = len(self._empty_cells(board))
-        # Depth adapts to remaining empty cells (shallow early, deeper late)
-        if empty_count > 15:
-            depth = 2
-        elif empty_count > 10:
-            depth = 3
-        elif empty_count > 5:
-            depth = 4
-        else:
-            depth = 5
-
+        # 3) Deeper search with iterative deepening alpha‑beta
+        start_time = time.time()
+        time_limit = 0.9          # seconds
         best_move = None
-        best_score = -float('inf')
-        alpha = -float('inf')
-        beta = float('inf')
+        depth = 1
+        max_depth = len(empty)    # no need to go deeper than remaining moves
 
-        for move in self._order_moves(board):
-            # play move
-            board[move] = self.symbol
-            if self._is_winning_move(board, move, self.symbol):
-                # immediate win – no need to search deeper
-                board[move] = self.EMPTY
-                return move
-            score = self._minimax(board, depth - 1, alpha, beta, False)
-            board[move] = self.EMPTY
-
-            if score > best_score:
-                best_score = score
+        while depth <= max_depth:
+            move, _ = self._alpha_beta_root(board, depth, start_time, time_limit)
+            if move is not None:
                 best_move = move
-            alpha = max(alpha, best_score)
+            # If time is running out, stop deepening
+            if time.time() - start_time > time_limit * 0.8:
+                break
+            depth += 1
 
-        # Fallback (should never happen if there are legal moves)
+        # Fallback (should never happen)
         if best_move is None:
-            best_move = random.choice(self._empty_cells(board))
+            best_move = random.choice(empty)
         return best_move
 
-    def _minimax(self, board, depth, alpha, beta, maximizing):
-        """Minimax with alpha-beta pruning."""
-        empty = self._empty_cells(board)
-        if depth == 0 or not empty:
+    # ----------------------------------------------------------------------
+    # Helper methods
+    # ----------------------------------------------------------------------
+    def _is_winning_move(self, board, move, player):
+        """Test whether playing `player` at `move` creates a three‑in‑a‑row."""
+        # Simulate the move
+        temp = board[:]
+        temp[move] = player
+        return self._check_win(temp, player)
+
+    def _check_win(self, board, player):
+        """Return True iff `player` has three in a row on the board."""
+        for (a, b, c) in self.lines:
+            if board[a] == board[b] == board[c] == player:
+                return True
+        return False
+
+    def _evaluate(self, board):
+        """Heuristic score from the perspective of `self.symbol`.
+        Positive = good for us, negative = good for opponent.
+        """
+        score = 0
+        for (a, b, c) in self.lines:
+            cnt_us = 0
+            cnt_them = 0
+            for idx in (a, b, c):
+                if board[idx] == self.symbol:
+                    cnt_us += 1
+                elif board[idx] == self.opponent:
+                    cnt_them += 1
+            # A line containing both symbols is dead – ignore it
+            if cnt_us and cnt_them:
+                continue
+            if cnt_us:
+                if cnt_us == 3:
+                    score += 10000
+                elif cnt_us == 2:
+                    score += 100
+                elif cnt_us == 1:
+                    score += 10
+            elif cnt_them:
+                if cnt_them == 3:
+                    score -= 10000
+                elif cnt_them == 2:
+                    score -= 100
+                elif cnt_them == 1:
+                    score -= 10
+            # all empty contributes nothing
+        return score
+
+    # ----------------------------------------------------------------------
+    # Alpha‑beta search
+    # ----------------------------------------------------------------------
+    def _alpha_beta_root(self, board, depth, start_time, time_limit):
+        """Root call for the maximizing player (our agent).  Returns (best_move, value)."""
+        best_move = None
+        alpha = -float('inf')
+        beta = float('inf')
+        empty = [i for i, c in enumerate(board) if c == ' ']
+
+        # Order moves: cells in more lines first (static heuristic)
+        empty.sort(key=lambda m: self.cell_weight[m], reverse=True)
+
+        for move in empty:
+            if time.time() - start_time > time_limit:
+                return None, None   # timeout
+
+            new_board = board[:]
+            new_board[move] = self.symbol
+            value = self._alpha_beta(new_board, depth - 1, alpha, beta,
+                                     False, start_time, time_limit)
+            if value > alpha:
+                alpha = value
+                best_move = move
+        return best_move, alpha
+
+    def _alpha_beta(self, board, depth, alpha, beta, maximizing, start_time, time_limit):
+        """Recursive alpha‑beta."""
+        # Terminal conditions
+        if self._check_win(board, self.symbol):
+            return 100000
+        if self._check_win(board, self.opponent):
+            return -100000
+        if ' ' not in board:          # draw
+            return 0
+        if depth == 0:
             return self._evaluate(board)
+
+        # Timeout – return evaluation (heuristic)
+        if time.time() - start_time > time_limit:
+            return self._evaluate(board)
+
+        empty = [i for i, c in enumerate(board) if c == ' ']
+        # Use same static move ordering
+        empty.sort(key=lambda m: self.cell_weight[m], reverse=True)
 
         if maximizing:
             value = -float('inf')
-            for move in self._order_moves(board):
-                board[move] = self.symbol
-                if self._is_winning_move(board, move, self.symbol):
-                    # winning move – give high score (sooner wins better)
-                    value = max(value, 10000 + depth)
-                else:
-                    value = max(value, self._minimax(board, depth - 1, alpha, beta, False))
-                board[move] = self.EMPTY
+            for move in empty:
+                new_board = board[:]
+                new_board[move] = self.symbol
+                value = max(value, self._alpha_beta(new_board, depth - 1, alpha, beta,
+                                                    False, start_time, time_limit))
                 alpha = max(alpha, value)
                 if alpha >= beta:
                     break
             return value
         else:
             value = float('inf')
-            for move in self._order_moves(board):
-                board[move] = self.opponent
-                if self._is_winning_move(board, move, self.opponent):
-                    value = min(value, -10000 - depth)
-                else:
-                    value = min(value, self._minimax(board, depth - 1, alpha, beta, True))
-                board[move] = self.EMPTY
+            for move in empty:
+                new_board = board[:]
+                new_board[move] = self.opponent
+                value = min(value, self._alpha_beta(new_board, depth - 1, alpha, beta,
+                                                    True, start_time, time_limit))
                 beta = min(beta, value)
-                if alpha >= beta:
+                if beta <= alpha:
                     break
             return value
-
-    def _evaluate(self, board):
-        """Heuristic evaluation from the agent's perspective."""
-        score = 0
-        for line in self.win_lines:
-            ours = 0
-            theirs = 0
-            for idx in line:
-                if board[idx] == self.symbol:
-                    ours += 1
-                elif board[idx] == self.opponent:
-                    theirs += 1
-            # Mixed lines are dead – ignore
-            if ours and theirs:
-                continue
-            if ours:
-                if ours == 1:
-                    score += 1
-                elif ours == 2:
-                    score += 10
-                elif ours == 3:
-                    score += 1000   # should have been caught earlier
-            elif theirs:
-                if theirs == 1:
-                    score -= 1
-                elif theirs == 2:
-                    score -= 10
-                elif theirs == 3:
-                    score -= 1000
-        # small bonus for centre control
-        centre = 12
-        if board[centre] == self.symbol:
-            score += 5
-        elif board[centre] == self.opponent:
-            score -= 5
-        return score
-
-    def _is_winning_move(self, board, move, player):
-        """Check if placing `player` at `move` creates a three‑in‑a‑row."""
-        board[move] = player
-        win = False
-        for line in self.win_lines:
-            if move in line and all(board[i] == player for i in line):
-                win = True
-                break
-        board[move] = self.EMPTY
-        return win
-
-    def _empty_cells(self, board):
-        """Return list of indices of empty cells."""
-        return [i for i, c in enumerate(board) if c == self.EMPTY]
-
-    def _order_moves(self, board):
-        """Static move ordering: centre, corners, edges."""
-        empty = self._empty_cells(board)
-        # priority groups: centre (0), corners (1), near‑centre (2), rest (3)
-        def priority(cell):
-            if cell == 12:
-                return 0
-            if cell in (0, 4, 20, 24):
-                return 1
-            if cell in (2, 10, 14, 22):   # approximate edge centres
-                return 2
-            return 3
-        return sorted(empty, key=priority)
