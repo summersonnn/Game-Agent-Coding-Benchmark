@@ -2,11 +2,14 @@
 
 Benchmarking framework for evaluating LLMs in competitive multi-agent game environments. Generates agent implementations via OpenRouter API and orchestrates head-to-head/multiplayer matches.
 
+Models produce code that can play games rather than playing the games themselves. Their sole interaction occurs at the stage of code creation. As a result, this benchmark is hybrid in nature, combining elements of both code generation and reasoning.
+
 The live league standings can be accessed at [gameagentcodingleague.com](https://gameagentcodingleague.com/).
 
 ## Features
 
 - **5 Competitive Games**: Battleship, TicTacToe, WordFinder, Connect4, SurroundMorris.
+- **3 Coming Soon** *(not yet ready)*: Wizard, WordMatrix, 2x8 Mini Chess.
 - **Model-Agnostic**: OpenRouter integration supports any available LLM.
 - **Persistent Agents**: Generated code stored per-model for reuse and analysis.
 - **Football-Style Scoring**: Win = 3 pts, Draw = 1 pt, Loss = 0 pts with goal-difference tiebreaker.
