@@ -56,19 +56,19 @@ Edit `config/models.txt` — one model ID per line. Prefix with `!` to disable a
 
 ```bash
 # All active models, all games
-uv run python utils/populate_agents.py --all
+uv run utils/populate_agents.py --all
 
 # Specific models by substring or index from models.txt
-uv run python utils/populate_agents.py --model mistral deepseek
+uv run utils/populate_agents.py --model mistral deepseek
 
 # Filter to specific games
-uv run python utils/populate_agents.py --games A1,A8
+uv run utils/populate_agents.py --games A1,A8
 
 # Override run count (adds to existing runs, does not overwrite)
-uv run python utils/populate_agents.py --all --runs 2
+uv run utils/populate_agents.py --all --runs 2
 
 # Interactive model selection (no args)
-uv run python utils/populate_agents.py
+uv run utils/populate_agents.py
 ```
 
 **Model selection rules:**
@@ -106,12 +106,12 @@ All match scripts require `--agent` for agent-vs-agent mode. Human play modes ar
 
 ```bash
 # Agent vs agent
-uv run python game_scripts/A1-battleship_match.py --agent model1:1 model2:1
+uv run game_scripts/A1-battleship_match.py --agent model1:1 model2:1
 
 # Human modes
-uv run python game_scripts/A1-battleship_match.py --humanvsbot
-uv run python game_scripts/A1-battleship_match.py --humanvshuman
-uv run python game_scripts/A1-battleship_match.py --humanvsagent --agent model:1
+uv run game_scripts/A1-battleship_match.py --humanvsbot
+uv run game_scripts/A1-battleship_match.py --humanvshuman
+uv run game_scripts/A1-battleship_match.py --humanvsagent --agent model:1
 ```
 
 > **Note:** Running matches directly like this does **not** affect scoreboards. The `--update-scoreboard` flag defaults to `false`, so this is safe to use for testing agents without polluting the leaderboard.
@@ -124,16 +124,16 @@ uv run python game_scripts/A1-battleship_match.py --humanvsagent --agent model:1
 
 ```bash
 # Full tournament for SurroundMorris, each cross-model pair plays 4 times
-uv run python game_scripts/matchmaker.py --game A8 --same_opponent_match 4
+uv run game_scripts/matchmaker.py --game A8 --same_opponent_match 4
 
 # Preview fixtures without executing
-uv run python game_scripts/matchmaker.py --game A8 --dry-run
+uv run game_scripts/matchmaker.py --game A8 --dry-run
 
 # Only run matches involving newly added models (incremental update)
-uv run python game_scripts/matchmaker.py --game A8 --new-model model-folder-name
+uv run game_scripts/matchmaker.py --game A8 --new-model model-folder-name
 
 # Verify agent syntax before running
-uv run python game_scripts/matchmaker.py --game A8 --health
+uv run game_scripts/matchmaker.py --game A8 --health
 ```
 
 ### Matchmaker Arguments
@@ -156,7 +156,7 @@ Every cross-model agent pair plays a direct match `N` times. Example: 20 models 
 When you add new models and regenerate agents, use `--new-model` to avoid replaying all existing cross-model pairs. Only fixtures involving the specified model folders are scheduled.
 
 ```bash
-uv run python game_scripts/matchmaker.py --game A8 --new-model new-gpt-model,new-claude-model
+uv run game_scripts/matchmaker.py --game A8 --new-model new-gpt-model,new-claude-model
 ```
 
 ### Agent Health Checks (`--health`)
