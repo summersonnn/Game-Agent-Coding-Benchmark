@@ -1,14 +1,15 @@
 # Scans all scoreboard files and reports same-model agents with divergent rankings.
 # An "inconsistency" is when two runs of the same model differ in rank by more than 10.
-# Run explicitly: uv run python spot_inconsistent_performances.py [--game A1]
+# Run explicitly: uv run python tools/spot_inconsistent_performances.py [--game A1]
 
 from __future__ import annotations
 
 import argparse
 import re
+from collections import defaultdict
 from pathlib import Path
 
-SCOREBOARD_DIR = Path(__file__).parent / "scoreboard"
+SCOREBOARD_DIR = Path(__file__).parent.parent / "scoreboard"
 MIN_RANK_DIFF = 10
 
 
@@ -43,8 +44,6 @@ def find_inconsistencies(
     Group agents by model, then find all pairs whose rank differs by > MIN_RANK_DIFF.
     Returns list of (model, agent_a, rank_a, agent_b, rank_b, diff), sorted by diff desc.
     """
-    from collections import defaultdict
-
     by_model: dict[str, list[tuple[str, int]]] = defaultdict(list)
     for agent, rank in rankings.items():
         by_model[model_name(agent)].append((agent, rank))

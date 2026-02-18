@@ -197,6 +197,7 @@ agents/           # Generated agent code (organized by model name)
 config/           # models.txt, max_tokens.txt
 games/            # Game prompts/rules for agent generation
 game_scripts/     # Match runners (*_match.py) and matchmaker.py
+tools/            # One-off diagnostic and analysis scripts (not part of the main pipeline)
 utils/            # Core logic: API client, agent generation, scoreboard, logging
 results/          # Match logs and outcomes per game
 scoreboard/       # Per-game leaderboard files
@@ -212,6 +213,8 @@ scoreboard/       # Per-game leaderboard files
 | `utils/logging_config.py` | Centralized logging setup |
 | `game_scripts/*_match.py` | Game-specific match orchestrators |
 | `game_scripts/matchmaker.py` | Round-robin tournament scheduler |
+| `tools/debug_syntax.py` | Validates agent code merging for syntax errors (mirrors match runner injection logic) |
+| `tools/spot_inconsistent_performances.py` | Reports same-model agents with divergent scoreboard rankings |
 
 ### `config/models.txt`
 

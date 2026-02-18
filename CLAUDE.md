@@ -9,7 +9,22 @@ agents/           # Generated agent code (organized by model name)
 config/           # Configuration: models.txt, max_tokens.txt
 games/            # Game prompts/rules (A1-Battleship, A2-TicTacToe, A3-Wizard, A4-WordFinder)
 results/          # Match logs and outcomes
+tools/            # One-off diagnostic and analysis scripts (not part of the main pipeline)
 utils/            # Core logic - API client, match runners, agent generation
+```
+
+## Tools
+
+Ad-hoc scripts for investigating data or debugging match infrastructure. These are not invoked by the main pipeline; run them manually as needed.
+
+| Script | Purpose |
+|--------|---------|
+| `debug_syntax.py` | Validates that two agent files can be merged into a single game script without syntax errors; mirrors the code-injection logic used by match runners |
+| `spot_inconsistent_performances.py` | Scans scoreboard files and reports same-model agents whose ranks diverge by more than 10 positions, flagging potentially inconsistent runs |
+
+```bash
+uv run python tools/spot_inconsistent_performances.py          # all games
+uv run python tools/spot_inconsistent_performances.py --game A5
 ```
 
 ## Entry Points
