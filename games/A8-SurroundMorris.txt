@@ -235,8 +235,10 @@ class SurroundMorrisAgent:
 ### Agent Coding Requirements
 - **No Internal Imports**: Do not import any game engine files, match runners, or project-specific modules. Use only standard library imports.
 - **Isolation**: Your agent must be completely self-contained. Do not assume any specific file structure or directory hierarchy.
+- **Single Class Implementation**: Do not implement any class other than the one provided in the starter code.
 - **Class-Only Output**: Output ONLY the agent class and necessary standard imports. Do not include testing code, game logic outside the class, or example usage.
 - **No Broad Exception Handlers**: Do not wrap the body of `make_move()` in a broad exception handler such as `except Exception:`, `except BaseException:`, or a bare `except:`. The engine uses `signal.alarm` to enforce move time limits; broad catches will swallow the timeout exception and cause the match to hang.
+
 
 
 **IMPORTANT**: Output ONLY the `SurroundMorrisAgent` class definition and any additional imports you need (`random` is already available). Do NOT output the entire game code. The `ADJACENCY` dict is available as a global variable at runtime.

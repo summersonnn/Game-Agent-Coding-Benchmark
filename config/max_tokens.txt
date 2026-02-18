@@ -7,6 +7,6 @@ A2-TicTacToe: 2
 A3-Wizard: 5
 A4-WordFinder: 3
 A5-Connect4RandomStart: 2
-A6-WordMatrixGame: 4
+A6-WordMatrixGame: 5
 A7-TwoByEightChess: 4
 A8-SurroundMorris: 3

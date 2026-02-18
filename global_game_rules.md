@@ -409,5 +409,6 @@ To ensure agents are portable and compatible with the dynamic extraction process
 
 *   **No Internal Imports:** Agents must not import the game engine, match scripts, or any internal project modules.
 *   **Zero Structural Dependency:** Code must not make assumptions regarding the project's file or directory hierarchy.
+*   **Single Class Implementation:** Models must not implement any other class than the class present in the given code piece.
 *   **Class-Only Focus:** The agent file should be restricted to the agent class definition and its necessary standard library imports. The runner extracts the class text for isolated execution.
 
