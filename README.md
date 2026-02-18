@@ -46,7 +46,7 @@ NUM_RUNS=4
 NUM_OF_GAMES_IN_A_MATCH=100
 ```
 
-Edit `config/models.txt` — one model ID per line. Prefix with `!` to disable a model without removing it.
+Edit `config/models.txt` — one model ID per line.
 
 ---
 
@@ -74,7 +74,7 @@ uv run utils/populate_agents.py
 **Model selection rules:**
 - `--model mistral` matches any model name containing "mistral" (case-insensitive).
 - `--model 0` selects the model at index 0 in `models.txt`.
-- Disabled models (prefixed `!`) can still be selected by substring or index.
+
 - If a substring matches multiple models, an interactive prompt resolves the ambiguity.
 
 **Output:** `agents/<sanitized_model_name>/<game_id>_<run>.py`
@@ -215,7 +215,7 @@ scoreboard/       # Per-game leaderboard files
 
 ### `config/models.txt`
 
-One model ID per line. Lines starting with `!` are disabled (excluded from `--all` but still selectable by name/index in `populate_agents.py`).
+One model ID per line.
 
 ### `config/max_tokens.txt`
 

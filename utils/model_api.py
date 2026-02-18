@@ -45,8 +45,7 @@ class ModelAPI:
                     stripped = line.strip()
                     if stripped:
                         self.all_models.append(stripped)
-                        if not stripped.startswith("!"):
-                            self.models.append(stripped)
+                        self.models.append(stripped)
         
         # Common parameters
         try:

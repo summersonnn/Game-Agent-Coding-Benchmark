@@ -336,7 +336,7 @@ Generated: {timestamp}
 
 def select_models_interactive(api: ModelAPI) -> list[str]:
     """Interactive model selection using substring matching."""
-    print("\nAvailable models (including disabled ones marked with !):")
+    print("\nAvailable models:")
     for i, model in enumerate(api.all_models):
         print(f"  [{i}] {model}")
     
@@ -355,7 +355,7 @@ def select_models_interactive(api: ModelAPI) -> list[str]:
             idx = int(query)
             if 0 <= idx < len(api.all_models):
                 model = api.all_models[idx]
-                selected_models.append(model.lstrip("!"))
+                selected_models.append(model)
             else:
                 print(f"WARNING: Model index {idx} out of range, skipping")
             continue
@@ -369,9 +369,9 @@ def select_models_interactive(api: ModelAPI) -> list[str]:
         if len(matches) > 1:
             selected_model = api.resolve_model_interactive(query, matches)
             if selected_model:
-                selected_models.append(selected_model.lstrip("!"))
+                selected_models.append(selected_model)
         else:
-            selected_models.append(matches[0].lstrip("!"))
+            selected_models.append(matches[0])
     
     return list(dict.fromkeys(selected_models)) # Preserve order, remove duplicates
 
@@ -424,7 +424,7 @@ def main():
                 idx = int(query)
                 if 0 <= idx < len(api.all_models):
                     model = api.all_models[idx]
-                    models.append(model.lstrip("!"))
+                    models.append(model)
                 else:
                     print(f"WARNING: Model index {idx} out of range, skipping")
                 continue
@@ -438,9 +438,9 @@ def main():
             if len(matches) > 1:
                 selected_model = api.resolve_model_interactive(query, matches)
                 if selected_model:
-                    models.append(selected_model.lstrip("!"))
+                    models.append(selected_model)
             else:
-                models.append(matches[0].lstrip("!"))
+                models.append(matches[0])
         
         # Remove duplicates while preserving order
         models = list(dict.fromkeys(models))
