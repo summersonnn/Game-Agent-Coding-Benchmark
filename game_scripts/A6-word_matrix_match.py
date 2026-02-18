@@ -991,7 +991,7 @@ async def main_async():
             agent1_code=agent1_code,
             agent2_code=agent2_code,
             extra_imports=agent_imports,
-            num_games=10,
+            num_games=1,
             move_timeout=99999,
             words_file_path=str(WORDS_FILE),
             game_mode=human_mode,
