@@ -325,7 +325,8 @@ def play_game(game_num, match_stats):
     global total_turns
     game = SurroundMorrisGame()
 
-    if random.random() < 0.5:
+    # Alternate who goes first each game (Black moves first)
+    if game_num % 2 == 1:
         b_agent_class = SurroundMorrisAgent_1
         w_agent_class = SurroundMorrisAgent_2
         b_name = "Agent-1"

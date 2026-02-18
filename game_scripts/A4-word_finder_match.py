@@ -318,8 +318,8 @@ def play_game(game_num, match_stats, Agent1Class, Agent2Class, dictionary):
 
     agents = {"Agent-1": agent1, "Agent-2": agent2}
 
-    # Randomize who goes first
-    if random.random() < 0.5:
+    # Alternate who goes first each game
+    if game_num % 2 == 1:
         turn_order = ["Agent-1", "Agent-2"]
     else:
         turn_order = ["Agent-2", "Agent-1"]

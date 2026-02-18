@@ -84,6 +84,20 @@ MOVE_TIMEOUT = float(os.getenv("MOVE_TIME_LIMIT", 1.0))
 
 ---
 
+### 2.1 Turn Order Alternation
+
+In games where players take turns, the starting player **must alternate** each game within a match. Specifically, Agent-1 goes first in odd-numbered games (1, 3, 5, …) and Agent-2 goes first in even-numbered games (2, 4, 6, …). This ensures both agents get an equal number of first-move advantages over the course of a match.
+
+```python
+# Alternate who goes first each game
+if game_num % 2 == 1:
+    a1_class, a2_class = class_1, class_2
+else:
+    a1_class, a2_class = class_2, class_1
+```
+
+---
+
 ## 3. Error Handling & Robustness
 
 Agents must never cause the match runner to crash. The runner must implement comprehensive exception handling to distinguish between different failure modes.

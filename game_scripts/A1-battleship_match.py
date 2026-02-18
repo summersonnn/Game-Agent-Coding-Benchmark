@@ -296,8 +296,8 @@ def play_game(game_num, match_stats):
 
     # Try to initialize agents
     if GAME_MODE == "humanvsbot":
-        # Randomly assign Human to Agent-1 or Agent-2
-        if random.random() < 0.5:
+        # Alternate Human assignment each game
+        if game_num % 2 == 1:
              try:
                 agent1 = HumanAgent(AGENT1_NAME, BOARD_SIZE, SHIPS)
              except Exception as e:
@@ -328,8 +328,8 @@ def play_game(game_num, match_stats):
 
     elif GAME_MODE == "humanvsagent":
          # One agent is human, other is loaded from file (BattleshipAgent_1)
-         # Randomly assign
-         if random.random() < 0.5:
+         # Alternate assignment each game
+         if game_num % 2 == 1:
               try:
                  agent1 = HumanAgent(AGENT1_NAME, BOARD_SIZE, SHIPS)
               except Exception as e:
@@ -460,8 +460,8 @@ def play_game(game_num, match_stats):
         }}
     }}
 
-    # Randomly assign starting agent
-    if random.random() < 0.5:
+    # Alternate who shoots first each game
+    if game_num % 2 == 1:
         current_agent, opponent_agent = agent1, agent2
     else:
         current_agent, opponent_agent = agent2, agent1

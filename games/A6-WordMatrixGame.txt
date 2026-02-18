@@ -76,6 +76,8 @@ Each turn is **one-shot**. There are no retries.
 | Move Timeout         | -10 penalty; turn ends.                               | timeout           |
 | Invalid Move         | -10 penalty; turn ends.                               | invalid           |
 
+> **Game-Specific Override:** Unlike the global standard which generates a random fallback move on crash/timeout/invalid, WordMatrixGame applies a -10 point penalty and ends the turn. Generating a valid random move requires a dictionary search for a word matching a random path, which is computationally non-trivial and produces meaningless gameplay. The board remains unchanged on any error.
+
 ---
 
 ## Board Update Mechanics

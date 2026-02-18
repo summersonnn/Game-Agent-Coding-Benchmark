@@ -329,8 +329,8 @@ def play_game(game_num, match_stats):
     else:
         class_1, class_2 = WordMatrixAgent_1, WordMatrixAgent_2
 
-    # Randomize who goes first
-    if random.random() < 0.5:
+    # Alternate who goes first each game
+    if game_num % 2 == 1:
         a1_class, a2_class = class_1, class_2
     else:
         a1_class, a2_class = class_2, class_1
@@ -580,7 +580,7 @@ def main():
     print("=" * 60)
     print(f"Agent-1: {AGENT1_NAME}")
     print(f"Agent-2: {AGENT2_NAME}")
-    print(f"RESULT:Agent-1={match_stats['Agent-1']['points']},Agent-2={match_stats['Agent-2']['points']}")
+    print(f"RESULT:Agent-1={float(match_stats['Agent-1']['points'])},Agent-2={float(match_stats['Agent-2']['points'])}")
     print(f"SCORE:Agent-1={match_stats['Agent-1']['score']},Agent-2={match_stats['Agent-2']['score']}")
     print(f"WINS:Agent-1={match_stats['Agent-1']['wins']},Agent-2={match_stats['Agent-2']['wins']}")
     print(f"DRAWS:{match_stats['Agent-1']['draws']}")
@@ -598,6 +598,7 @@ def main():
     print(f"Agent-2 Timeouts: {match_stats['Agent-2']['timeout']}")
     print(f"Agent-1 Invalid: {match_stats['Agent-1']['invalid']}")
     print(f"Agent-2 Invalid: {match_stats['Agent-2']['invalid']}")
+    print("-" * 60)
 
 
 if __name__ == "__main__":
@@ -1036,10 +1037,6 @@ async def main_async():
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    agent_suffix = f"{folder1}_vs_{folder2}"
-    log_f = RESULTS_DIR / f"{ts}_{agent_suffix}_match.txt"
-
     match_tasks = []
 
     for i in range(num_matches):
@@ -1072,44 +1069,48 @@ async def main_async():
     print(f"\nRunning {len(match_tasks)} matches in parallel...")
     results = await asyncio.gather(*match_tasks)
 
-    # Process results and write log
+    # Process results and write individual log files (one per match)
     total1, total2 = 0.0, 0.0
     total_pts1, total_pts2 = 0, 0
 
-    with open(log_f, "w") as f:
-        f.write("Match Contenders:\n")
-        if num_matches > 0:
-            f.write(f"{folder1}:{runs1[0]}\n")
-            f.write(f"{folder2}:{runs2[0]}\n\n")
+    for result in sorted(results, key=lambda x: x["match_id"]):
+        match_id = result["match_id"]
+        run1 = result["agent1_run_id"]
+        run2 = result["agent2_run_id"]
+        p1, p2 = 0, 0
 
-        for result in sorted(results, key=lambda x: x["match_id"]):
-            match_id = result["match_id"]
-            p1, p2 = 0, 0
+        if result["success"]:
+            s1, s2 = result["agent1_score"], result["agent2_score"]
+            p1 = result.get("agent1_points", 0)
+            p2 = result.get("agent2_points", 0)
+            total1 += s1
+            total2 += s2
+            total_pts1 += p1
+            total_pts2 += p2
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        log_f = RESULTS_DIR / f"{ts}_{folder1}:{run1}_vs_{folder2}:{run2}_match.txt"
+
+        with open(log_f, "w") as f:
+            f.write("Match Contenders:\n")
+            f.write(f"{folder1}:{run1}\n")
+            f.write(f"{folder2}:{run2}\n\n")
+
             if result["success"]:
-                s1, s2 = result["agent1_score"], result["agent2_score"]
-                p1 = result.get("agent1_points", 0)
-                p2 = result.get("agent2_points", 0)
-                total1 += s1
-                total2 += s2
-                total_pts1 += p1
-                total_pts2 += p2
-
-                status = "Result:\n"
-                status += f"{folder1}:{result['agent1_run_id']} : Pts: {p1} - Score: {s1:.1f}\n"
-                status += f"{folder2}:{result['agent2_run_id']} : Pts: {p2} - Score: {s2:.1f}\n"
+                f.write("Result:\n")
+                f.write(f"{folder1}:{run1} : Pts: {p1} - Score: {s1:.1f}\n")
+                f.write(f"{folder2}:{run2} : Pts: {p2} - Score: {s2:.1f}\n\n")
 
                 game_log = result.get("log", "")
                 if game_log:
-                    status += f"\n{game_log}\n"
+                    f.write(f"{game_log}\n")
                 if result.get("stats_block"):
-                    status += f"\n--- MATCH STATISTICS ---\n{result['stats_block']}\n"
+                    f.write(f"\n--- MATCH STATISTICS ---\n{result['stats_block']}\n")
+                f.write("\n" + "-" * 60 + "\n")
             else:
-                status = f"FAILED: {result.get('error', 'Unknown')}"
+                f.write(f"FAILED: {result.get('error', 'Unknown')}\n")
 
-            print(f"Match {match_id} Completed. Pts {p1}-{p2}")
-
-            f.write(f"{status}\n")
-            f.write("-" * 60 + "\n\n")
+        print(f"Match {match_id} Completed. Pts {p1}-{p2}")
 
     # Update global scoreboard
     for result in results:
@@ -1146,7 +1147,7 @@ async def main_async():
     print("\nFINAL RESULTS:")
     print(f"  {folder1}:{runs1_str}: Pts {total_pts1}, Score {total1:.1f}")
     print(f"  {folder2}:{runs2_str}: Pts {total_pts2}, Score {total2:.1f}")
-    print(f"\nLogs saved to: {log_f}")
+    print(f"\nLogs saved to: {RESULTS_DIR}")
     if args.update_scoreboard:
         print(f"Scoreboard updated: {SCOREBOARD_PATH}")
 
