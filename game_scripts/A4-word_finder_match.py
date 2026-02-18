@@ -329,6 +329,7 @@ def play_game(game_num, match_stats, Agent1Class, Agent2Class, dictionary):
     print(f"Game {game_num}")
     print(f"Agent-1: {AGENT1_NAME}")
     print(f"Agent-2: {AGENT2_NAME}")
+    print(f"Starting Player: {turn_order[0]}")
     print("-" * 60)
 
     # Start game

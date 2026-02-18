@@ -329,22 +329,27 @@ def play_game(game_num, match_stats):
     else:
         class_1, class_2 = WordMatrixAgent_1, WordMatrixAgent_2
 
-    # Alternate who goes first each game
+    # Determine agent labels and starting order
+    # Agent-1 is always class_1 (Model 1), Agent-2 is always class_2 (Model 2)
+    # Turn order alternates based on game_num
     if game_num % 2 == 1:
         a1_class, a2_class = class_1, class_2
+        turn_order = ["Agent-1", "Agent-2"]
     else:
-        a1_class, a2_class = class_2, class_1
+        a1_class, a2_class = class_1, class_2
+        turn_order = ["Agent-2", "Agent-1"]
 
     print()
     print("=" * 60)
     print(f"Game {game_num}")
     print(f"Agent-1: {AGENT1_NAME}")
     print(f"Agent-2: {AGENT2_NAME}")
+    print(f"Starting Player: {turn_order[0]}")
     print("-" * 60)
 
     # --- Initialize agents (other_crash on failure = forfeit) ---
     try:
-        agent1 = a1_class("Agent-1")
+        agent1 = class_1("Agent-1")
     except Exception as e:
         print(f"Agent-1 init crash: {e}")
         match_stats["Agent-1"]["other_crash"] += 1
@@ -369,7 +374,7 @@ def play_game(game_num, match_stats):
         return "Agent-2"
 
     try:
-        agent2 = a2_class("Agent-2")
+        agent2 = class_2("Agent-2")
     except Exception as e:
         print(f"Agent-2 init crash: {e}")
         match_stats["Agent-2"]["other_crash"] += 1
@@ -394,7 +399,6 @@ def play_game(game_num, match_stats):
         return "Agent-1"
 
     agents = {"Agent-1": agent1, "Agent-2": agent2}
-    turn_order = ["Agent-1", "Agent-2"]
     current_idx = 0
 
     game.display_board()

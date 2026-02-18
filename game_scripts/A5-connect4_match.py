@@ -196,11 +196,11 @@ def play_game(game_num, match_stats):
     print(f"============================================================")
     print(f"Game {{game_num}}")
     if red_name == "Agent-1":
-        print(f"Agent-1: {{AGENT1_NAME}} (RED - has random start)")
+        print(f"Agent-1: {{AGENT1_NAME}} (RED - moves first)")
         print(f"Agent-2: {{AGENT2_NAME}} (YELLOW)")
     else:
         print(f"Agent-1: {{AGENT1_NAME}} (YELLOW)")
-        print(f"Agent-2: {{AGENT2_NAME}} (RED - has random start)")
+        print(f"Agent-2: {{AGENT2_NAME}} (RED - moves first)")
     print("------------------------------------------------------------")
 
     # --- Initialize Agents ---
