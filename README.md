@@ -175,6 +175,39 @@ The matchmaker is a scheduler only. Each subprocess call to a match runner handl
 
 ---
 
+## Step 4: Enhance Agents
+
+`utils/try_enhancing_agents.py` improves agent quality over time. For each selected model/game combo, it generates one new agent, benchmarks it against existing same-model agents in extended matches (10x the base game count), and prunes the worst performer.
+
+```bash
+# Enhance a specific model on a specific game
+uv run utils/try_enhancing_agents.py --model mistral --game A4
+
+# Enhance multiple models across multiple games
+uv run utils/try_enhancing_agents.py --model mistral minimax --game A1,A4
+
+# Enhance all models on all 2-player games
+uv run utils/try_enhancing_agents.py --model all --game all
+```
+
+### How It Works
+
+1. **Populate** — generates 1 new agent per combo (same as `populate_agents.py`).
+2. **Match** — runs the new agent against every existing same-model agent with 10x games (e.g. 1000 instead of 100).
+3. **Evaluate** — determines the worst agent by comparing match points.
+4. **Prune** — deletes the worst agent and renames if needed to keep run IDs contiguous.
+
+All combos run concurrently: API calls fire in parallel and each combo's matches begin as soon as its agent is generated — even while other combos are still populating. Match subprocess concurrency is capped at 24.
+
+> **Biweekly Enhancement Cycle:** Every two weeks, all models across all games are put through the enhancement process. This accounts for upstream API model updates (e.g. weight changes, quantization tweaks) and eliminates the luck effect from one-shot code generation.
+
+### Exclusions
+
+- **6-player games** (A3) are not supported and are automatically skipped.
+- Each model/game combo must have **at least 2 existing agents** to proceed.
+
+---
+
 ## Scoreboard
 
 Each game maintains a scoreboard at `scoreboard/<game-id>-scoreboard.txt`.

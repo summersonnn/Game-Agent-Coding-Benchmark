@@ -58,12 +58,20 @@ uv run python game_scripts/matchmaker.py --game A8 --dry-run
 uv run python game_scripts/matchmaker.py --game A8 --new-model new-model-folder --health
 ```
 
+**Agent Enhancement:**
+```bash
+uv run utils/try_enhancing_agents.py --model mistral --game A4        # Single model, single game
+uv run utils/try_enhancing_agents.py --model mistral minimax --game A1,A4  # Multiple
+uv run utils/try_enhancing_agents.py --model all --game all           # All 2-player combos
+```
+
 ## Key Modules
 
 | File | Purpose |
 |------|---------|
 | `utils/model_api.py` | Async OpenRouter API client with token multipliers |
 | `utils/populate_agents.py` | LLM-based agent code generation |
+| `utils/try_enhancing_agents.py` | Agent quality improvement via same-model benchmarking |
 | `game_scripts/*_match.py` | Game-specific match orchestrators |
 | `game_scripts/matchmaker.py` | Round-robin tournament scheduler |
 | `utils/logging_config.py` | Centralized logging setup |
@@ -507,6 +515,29 @@ This controls how many times every cross-model agent pair is guaranteed to encou
 **Game-count scaling:** A4, A5, and A8 match runners divide `NUM_OF_GAMES_IN_A_MATCH` by 10 internally, yielding 10 games per match by default rather than 100. This compensates for slower per-game execution (3s move timeout in A4; complex board evaluation in A8).
 
 **Timeout:** 900 seconds per match subprocess. Timed-out matches are killed and recorded as failures.
+
+## Agent Enhancement
+
+`utils/try_enhancing_agents.py` automates iterative improvement of agent quality. For each selected model/game combo, it:
+
+1. Generates 1 new agent (using the same `prompt_model` / `extract_agent_code` pipeline as `populate_agents.py`)
+2. Runs same-model matches with 10x the base game count (e.g. 1000 games instead of 100)
+3. Evaluates performance based on match points
+4. Prunes the worst agent (new or existing) and renames files to keep run IDs contiguous
+
+**Architecture:** Fully pipelined. All combos run concurrently via `asyncio.gather`. Each combo independently populates → matches → evaluates → prunes. API calls share a semaphore (`MAX_WORKERS`). Match subprocesses share a separate semaphore (capped at 24).
+
+**Worst agent determination:**
+- New agent lost to all existing → delete new agent
+- New agent beat all existing → run additional old-vs-old matches to find worst existing
+- Mixed results → worst is the agent that lost to the new agent with fewest points
+
+**Constraints:**
+- Only 2-player games (A3/6-player is excluded automatically)
+- Requires ≥ 2 existing agents per model/game combo
+- Enhancement matches do not update scoreboards (`--update-scoreboard` is not passed)
+
+**Biweekly cycle:** Every two weeks, all models across all games go through enhancement. This accounts for upstream API model changes (weight updates, quantization tweaks) and eliminates luck from one-shot code generation.
 
 ## Development Notes
 
