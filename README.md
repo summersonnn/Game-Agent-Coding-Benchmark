@@ -2,9 +2,11 @@
 
 Benchmarking framework for evaluating LLMs in competitive multi-agent game environments. Generates agent implementations via OpenRouter API and orchestrates head-to-head/multiplayer matches.
 
+The live league standings can be accessed at [gameagentcodingleague.com](https://gameagentcodingleague.com/).
+
 ## Features
 
-- **8 Competitive Games**: Battleship, TicTacToe, Wizard, WordFinder, Connect4, WordMatrix, 2x8Chess, SurroundMorris.
+- **5 Competitive Games**: Battleship, TicTacToe, WordFinder, Connect4, SurroundMorris.
 - **Model-Agnostic**: OpenRouter integration supports any available LLM.
 - **Persistent Agents**: Generated code stored per-model for reuse and analysis.
 - **Football-Style Scoring**: Win = 3 pts, Draw = 1 pt, Loss = 0 pts with goal-difference tiebreaker.
@@ -109,105 +111,7 @@ uv run python game_scripts/A1-battleship_match.py --humanvshuman
 uv run python game_scripts/A1-battleship_match.py --humanvsagent --agent model:1
 ```
 
----
-
-### A2: TicTacToe
-
-2-player, 5x5 board. First-move assignment alternates across games.
-
-```bash
-uv run python game_scripts/A2-tictactoe_match.py --agent model1:1 model2:1
-uv run python game_scripts/A2-tictactoe_match.py --humanvsbot
-uv run python game_scripts/A2-tictactoe_match.py --humanvshuman
-uv run python game_scripts/A2-tictactoe_match.py --humanvsagent --agent model:1
-```
-
----
-
-### A3: Wizard
-
-6-player trick-taking card game. 10 rounds, players bid on tricks won.
-
-Requires agents from at least 6 different models (total agent count must be a multiple of 6).
-
-```bash
-# Use all runs from 6+ models
-uv run python game_scripts/A3-wizard_match.py --agent modelA modelB modelC modelD modelE modelF
-
-# Specific runs
-uv run python game_scripts/A3-wizard_match.py --agent a:1:2:3 b:1:2:3 c:1 d:1 e:1 f:1
-
-# Debug mode (interactive, detailed output)
-uv run python game_scripts/A3-wizard_match.py --agent model:1 --debug
-
-# Human vs 5 random bots
-uv run python game_scripts/A3-wizard_match.py --human
-```
-
----
-
-### A4: WordFinder
-
-2-player word chain game. Each word must start/end with letters from the previous word.
-
-```bash
-uv run python game_scripts/A4-word_finder_match.py --agent model1:1 model2:1
-uv run python game_scripts/A4-word_finder_match.py --humanvsbot
-uv run python game_scripts/A4-word_finder_match.py --humanvshuman
-uv run python game_scripts/A4-word_finder_match.py --humanvsagent --agent model:1
-```
-
----
-
-### A5: Connect4 (Random Start)
-
-2-player, 6x7 board. One disc is pre-placed randomly at match start.
-
-```bash
-uv run python game_scripts/A5-connect4_match.py --agent model1:1 model2:1
-
-# Human vs random bot
-uv run python game_scripts/A5-connect4_match.py --human
-```
-
----
-
-### A6: WordMatrixGame
-
-2-player, 4x4 letter grid. Players trace paths through adjacent cells to form words.
-
-```bash
-uv run python game_scripts/A6-word_matrix_match.py --agent model1:1 model2:1
-uv run python game_scripts/A6-word_matrix_match.py --humanvsbot
-uv run python game_scripts/A6-word_matrix_match.py --humanvshuman
-uv run python game_scripts/A6-word_matrix_match.py --humanvsagent --agent model:1
-```
-
----
-
-### A7: 2x8 Mini Chess
-
-2-player, 2x8 board. Each side has K, N, R, P. Pawns promote to Rook.
-
-```bash
-uv run python game_scripts/A7-twobyeight_chess_match.py --agent model1:1 model2:1
-
-# Human vs random bot
-uv run python game_scripts/A7-twobyeight_chess_match.py --human
-```
-
----
-
-### A8: SurroundMorris
-
-2-player, Nine Men's Morris variant. Capture by surrounding (overwhelm rule) instead of mills.
-
-```bash
-uv run python game_scripts/A8-surround_morris_match.py --agent model1:1 model2:1
-uv run python game_scripts/A8-surround_morris_match.py --humanvsbot
-uv run python game_scripts/A8-surround_morris_match.py --humanvshuman
-uv run python game_scripts/A8-surround_morris_match.py --humanvsagent --agent model:1
-```
+> **Note:** Running matches directly like this does **not** affect scoreboards. The `--update-scoreboard` flag defaults to `false`, so this is safe to use for testing agents without polluting the leaderboard.
 
 ---
 
@@ -222,9 +126,6 @@ uv run python game_scripts/matchmaker.py --game A8 --same_opponent_match 4
 # Preview fixtures without executing
 uv run python game_scripts/matchmaker.py --game A8 --dry-run
 
-# Wizard tournament with 8 concurrent workers
-uv run python game_scripts/matchmaker.py --game A3 --same_opponent_match 2 --workers 8
-
 # Only run matches involving newly added models (incremental update)
 uv run python game_scripts/matchmaker.py --game A8 --new-model model-folder-name
 
@@ -236,7 +137,7 @@ uv run python game_scripts/matchmaker.py --game A8 --health
 
 | Argument | Type | Default | Description |
 |---|---|---|---|
-| `--game` | str | required | Game ID: A1 through A8 |
+| `--game` | str | required | Game ID: A1, A2, A4, A5, A8 |
 | `--same_opponent_match` | int | 2 | Minimum times each cross-model pair must meet |
 | `--workers` | int | 16 | Max concurrent match subprocesses |
 | `--dry-run` | flag | false | Print fixture list without executing |
@@ -245,9 +146,7 @@ uv run python game_scripts/matchmaker.py --game A8 --health
 
 ### How `--same_opponent_match` Works
 
-**2-player games (A1, A2, A4–A8):** Every cross-model agent pair plays a direct match `N` times. Example: 20 models × 2 runs = 40 agents → 760 cross-model pairs → `--same_opponent_match 4` = 3040 matches.
-
-**6-player games (A3 Wizard):** No direct head-to-head; 6 agents from different models share each table. A greedy pairwise-coverage algorithm generates groups ensuring every cross-model pair co-occurs in at least `N` games.
+Every cross-model agent pair plays a direct match `N` times. Example: 20 models × 2 runs = 40 agents → 760 cross-model pairs → `--same_opponent_match 4` = 3040 matches.
 
 ### Incremental Tournaments (`--new-model`)
 
