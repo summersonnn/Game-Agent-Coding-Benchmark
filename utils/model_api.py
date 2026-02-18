@@ -49,9 +49,9 @@ class ModelAPI:
         
         # Common parameters
         try:
-            self.max_tokens = int(os.getenv("MODEL_MAX_TOKENS", "8196"))
+            self.max_tokens = int(os.getenv("MODEL_MAX_TOKENS", "8192"))
         except (ValueError, TypeError):
-            self.max_tokens = 8196
+            self.max_tokens = 8192
             
         try:
             self.temperature = float(os.getenv("MODEL_TEMPERATURE", "0.7"))

@@ -7,7 +7,7 @@ Benchmarking framework for evaluating LLMs in competitive multi-agent game envir
 ```
 agents/           # Generated agent code (organized by model name)
 config/           # Configuration: models.txt, max_tokens.txt
-games/            # Game prompts/rules (A1-Battleship, A2-TicTacToe, A3-Wizard, A4-WordFinder)
+games/            # Game prompts/rules (A1-Battleship, A2-TicTacToe, A4-WordFinder, ...)
 results/          # Match logs and outcomes
 tools/            # One-off diagnostic and analysis scripts (not part of the main pipeline)
 utils/            # Core logic - API client, match runners, agent generation
@@ -21,10 +21,12 @@ Ad-hoc scripts for investigating data or debugging match infrastructure. These a
 |--------|---------|
 | `debug_syntax.py` | Validates that two agent files can be merged into a single game script without syntax errors; mirrors the code-injection logic used by match runners |
 | `spot_inconsistent_performances.py` | Scans scoreboard files and reports same-model agents whose ranks diverge by more than 10 positions, flagging potentially inconsistent runs |
+| `filter_words.py` | Regenerates `game_scripts/words_small.txt` from `game_scripts/words.txt`; filters to 3–8 char alphabetic words with no triple-identical consecutive letters. Run this if `words_small.txt` is missing or corrupted. |
 
 ```bash
 uv run python tools/spot_inconsistent_performances.py          # all games
 uv run python tools/spot_inconsistent_performances.py --game A5
+uv run python tools/filter_words.py
 ```
 
 ## Entry Points
@@ -33,14 +35,13 @@ uv run python tools/spot_inconsistent_performances.py --game A5
 ```bash
 uv run python utils/populate_agents.py --all                    # All models, all games
 uv run python utils/populate_agents.py --model mistral gpt      # Specific models
-uv run python utils/populate_agents.py --games A1,A3 --runs 3   # Specific games
+uv run python utils/populate_agents.py --games A1,A2 --runs 3   # Specific games
 ```
 
 **Running Individual Matches:**
 ```bash
 uv run python game_scripts/A1-battleship_match.py --agent model1:1 model2:1
 uv run python game_scripts/A2-tictactoe_match.py --agent model1:1 model2:1
-uv run python game_scripts/A3-wizard_match.py --agent model1:1 model2:1 model3:1 model4:1 model5:1 model6:1
 uv run python game_scripts/A4-word_finder_match.py --agent model1:1 model2:1
 uv run python game_scripts/A5-connect4_match.py --agent model1:1 model2:1
 uv run python game_scripts/A6-word_matrix_match.py --agent model1:1 model2:1
@@ -48,11 +49,12 @@ uv run python game_scripts/A7-twobyeight_chess_match.py --agent model1:1 model2:
 uv run python game_scripts/A8-surround_morris_match.py --agent model1:1 model2:1
 ```
 
+> Individual match runners also accept `--update-scoreboard` to persist results to the scoreboard file. Omit it for ad-hoc test matches; the matchmaker appends it automatically for tournament runs.
+
 **Running Tournaments (Matchmaker):**
 ```bash
 uv run python game_scripts/matchmaker.py --game A8 --same_opponent_match 4
 uv run python game_scripts/matchmaker.py --game A8 --dry-run
-uv run python game_scripts/matchmaker.py --game A3 --same_opponent_match 2 --workers 8
 uv run python game_scripts/matchmaker.py --game A8 --new-model new-model-folder --health
 ```
 
@@ -65,21 +67,23 @@ uv run python game_scripts/matchmaker.py --game A8 --new-model new-model-folder 
 | `game_scripts/*_match.py` | Game-specific match orchestrators |
 | `game_scripts/matchmaker.py` | Round-robin tournament scheduler |
 | `utils/logging_config.py` | Centralized logging setup |
+| `global_game_rules.md` | Canonical specification for all match runners: scoring system, output format, error taxonomy, log format, agent coding standards |
 
 ## Configuration
 
 **.env Variables:**
 - `MODEL_API_BASE_URL` - OpenRouter endpoint
 - `MODEL_API_KEY` - API key
-- `MODEL_MAX_TOKENS` - Base token limit (16384)
+- `MODEL_MAX_TOKENS` - Base token limit (8192)
 - `MODEL_TEMPERATURE` - Sampling temperature (0.7)
+- `MODEL_API_TIMEOUT` - Per-request timeout for OpenRouter API calls in seconds (600)
 - `MAX_WORKERS` - Concurrency limit for agent generation
 - `NUM_RUNS` - Default agent runs per model/game
 - `NUM_OF_GAMES_IN_A_MATCH` - Games per match pairing
 
-**config/models.txt:** One model per line. Prefix with `!` to disable.
+**config/models.txt:** One model per line. All non-empty lines are treated as active models. (The `!` prefix to disable models was removed; see commit `27748a8`.)
 
-**config/max_tokens.txt:** Token multipliers per game (e.g., `A1: 4` = 4x base tokens).
+**config/max_tokens.txt:** Token multipliers per game (e.g., `A1: 4` = 4x base tokens). Lookup uses a 3-tier fallback: exact game name (e.g., `A1-Battleship`) → game ID prefix (e.g., `A1`) → `DEFAULT` key. Set `DEFAULT: 2` to apply a blanket multiplier to all games not explicitly listed.
 
 ## Games Overview
 
@@ -87,7 +91,7 @@ uv run python game_scripts/matchmaker.py --game A8 --new-model new-model-folder 
 |----|------|---------|--------|
 | A1 | Battleship | 2 | Playable |
 | A2 | TicTacToe | 2 | Playable |
-| A3 | Wizard | 6 | Playable |
+| A3 | Wizard | 6 | Not ready |
 | A4 | WordFinder | 2 | Playable |
 | A5 | Connect4RandomStart | 2 | Playable |
 | A6 | WordMatrixGame | 2 | Playable |
@@ -198,7 +202,7 @@ Agent | Games | Wins | Losses | Draws | Points | Score
 
 **Sorting:** Primary by Points (descending), tiebreaker by Score (descending)
 
-**Update Logic:** Atomic file-locking via `utils/scoreboard.py:update_scoreboard()`. Backward-compatible with legacy 6-column format (points default to 0).
+**Update Logic:** Atomic file-locking via `utils/scoreboard.py:update_scoreboard()` using `fcntl.flock`. A sibling `.lock` file (e.g., `A8-scoreboard.lock`) is created during writes and persists if a process crashes — safe to delete manually if no matches are running. Backward-compatible with legacy 6-column format; missing Points column defaults to 0.
 
 #### Code Architecture
 
@@ -274,7 +278,7 @@ class SurroundMorrisAgent:
 #### Constants and Configuration
 
 **Environment Variables:**
-- `NUM_OF_GAMES_IN_A_MATCH` (default: 100) — Games per match pairing
+- `NUM_OF_GAMES_IN_A_MATCH` (default: 100) — Base games per match pairing; A8 divides this by 10 (effective default: 10 games per match) to keep match durations reasonable given board evaluation overhead
 - `MAX_TURNS_PER_GAME` (default: 200) — Movement phase turn limit
 - `MOVE_TIME_LIMIT` (default: 1.0s) — Per-move timeout
 
@@ -292,7 +296,7 @@ class SurroundMorrisAgent:
 #### File Locations
 
 **Results:**
-- Match logs: `results/surround_morris/game_logs/<timestamp>_match.txt`
+- Match logs: `results/surround_morris/<timestamp>_<agent1>_vs_<agent2>_match.txt`
 - Global scoreboard: `scoreboard/A8-scoreboard.txt`
 
 **Agents:**
@@ -375,20 +379,7 @@ Total Turns: <count>
 
 ### A3: Wizard
 
-**Type:** 6-player trick-taking card game
-**Match File:** `game_scripts/A3-wizard_match.py`
-**Game Prompt:** `games/A3-Wizard.txt`
-**Scoreboard:** `scoreboard/A3-scoreboard.txt`
-
-**Overview:** 10-round trick-taking game. Each round players bid on how many tricks they will win, then play cards. Scoring: +20 per round for exact bid + 10 per trick won; -10 per missed trick. Hook rule: last bidder cannot make total bids equal the number of tricks.
-
-**Agent count:** Must be a multiple of 6 (one per seat). All 6 seats must be from different model folders.
-
-**Agent Interface:** `class WizardAgent` with `make_bid(state)` returning an integer and `play_card(state, feedback)` returning a card identifier.
-
-**Debug mode:** `--debug` enables interactive per-trick pausing useful for development.
-
-**Human mode:** `--human` places a human at one seat against 5 random bots.
+**Status: Not ready.** The 6-player infrastructure required by this game is not yet supported by the matchmaker.
 
 ---
 
@@ -403,9 +394,11 @@ Total Turns: <count>
 
 **Agent Interface:** `class WordFinderAgent` with `make_move(state, feedback)` returning a word string.
 
-**Scoring:** Base points per word + bonuses. Forfeit score: 12. 10 games per match (reduced for performance).
+**Scoring:** Base points per word + bonuses. Forfeit score: 12.
 
 **Move timeout:** 3 seconds (extended vs other games).
+
+**Game count:** Loads `NUM_OF_GAMES_IN_A_MATCH` from the environment and divides by 10. Effective default: 10 games per match. The reduction accounts for the 3s per-move timeout making each game significantly slower than other titles.
 
 **Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
 
@@ -422,7 +415,9 @@ Total Turns: <count>
 
 **Agent Interface:** `class Connect4Agent` with `make_move(state, feedback)` returning a column index (0–6).
 
-**Scoring:** Score = empty cells remaining at win (min 3). Forfeit score: 41 cells. 10 games per match.
+**Scoring:** Score = empty cells remaining at win (min 3). Forfeit score: 41 cells.
+
+**Game count:** Loads `NUM_OF_GAMES_IN_A_MATCH` from the environment and divides by 10. Effective default: 10 games per match.
 
 **Human mode:** `--human` plays interactively against a random bot.
 
@@ -468,6 +463,18 @@ Generated agents saved to: `agents/<sanitized_model_name>/<game_id>_<run_id>.py`
 
 Example: `agents/openai-gpt-5-mini/A1-Battleship_1.py`
 
+**Model name sanitization** (`utils/populate_agents.py:sanitize_model_name()`): Converts an OpenRouter model ID into a valid folder name.
+1. Strip everything after `@` (preset/flavor suffix removed)
+2. If the third path segment exists and is not already part of the base name, append it with a hyphen
+3. Replace `/` with `-`
+4. Replace remaining invalid filesystem characters with `_`
+
+Example: `deepseek/deepseek-v3@preset/fp8` → `deepseek-deepseek-v3-fp8`
+
+**Run ID collision avoidance**: `get_next_run_ids()` scans existing files for the highest run number already present and allocates from `max + 1` onward. Re-running `populate_agents.py` for a model that already has runs will never overwrite them.
+
+**Interactive model resolution**: When `--model <substring>` matches multiple entries in `models.txt`, the CLI presents a numbered menu and prompts the user to select. The command does not silently pick one or fail.
+
 ## Matchmaker (Tournament Scheduler)
 
 `game_scripts/matchmaker.py` automates full round-robin tournament execution across all agents for a given game. It discovers agents, generates cross-model fixtures, and runs them concurrently as subprocesses — each delegated to the appropriate game match runner.
@@ -485,11 +492,7 @@ Example: `agents/openai-gpt-5-mini/A1-Battleship_1.py`
 
 **How `--same_opponent_match` works:**
 
-This controls how many times every cross-model agent pair is guaranteed to encounter each other.
-
-- **2-player games (A1, A2, A4-A8):** Each cross-model pair plays a head-to-head match `same_opponent_match` times. With 20 models x 2 runs = 40 agents, there are 760 cross-model pairs, so `--same_opponent_match 4` produces 3040 matches.
-
-- **6-player games (A3 Wizard):** There is no head-to-head; instead, 6 agents from 6 different models share a table. The matchmaker uses a greedy pairwise-coverage algorithm to generate groups such that every cross-model agent pair co-occurs in at least `same_opponent_match` games. This ensures sufficient statistical signal to compare any two models even in a multiplayer setting.
+This controls how many times every cross-model agent pair is guaranteed to encounter each other. Each cross-model pair plays a head-to-head match `same_opponent_match` times. With 20 models x 2 runs = 40 agents, there are 760 cross-model pairs, so `--same_opponent_match 4` produces 3040 matches.
 
 **Incremental tournaments (`--new-model`):** When new models are added, pass their folder names (comma-separated) to generate only the fixtures where at least one side is a new model. Avoids replaying all existing cross-model pairs.
 
@@ -500,6 +503,8 @@ This controls how many times every cross-model agent pair is guaranteed to encou
 **Agent discovery:** Scans `agents/*/` for files matching `{game_name}_{run}.py`. Only cross-model pairings are generated — agents from the same model folder never face each other.
 
 **Execution:** Each match is a subprocess calling the game's match runner with `--update-scoreboard` appended automatically. The match runner handles game execution, result parsing, scoreboard updates, and log writing internally. The matchmaker only orchestrates scheduling and reports success/failure counts.
+
+**Game-count scaling:** A4, A5, and A8 match runners divide `NUM_OF_GAMES_IN_A_MATCH` by 10 internally, yielding 10 games per match by default rather than 100. This compensates for slower per-game execution (3s move timeout in A4; complex board evaluation in A8).
 
 **Timeout:** 900 seconds per match subprocess. Timed-out matches are killed and recorded as failures.
 
