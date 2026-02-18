@@ -96,7 +96,7 @@ model_pattern[:run1:run2:...]
 - `model_pattern`: substring matched against folder names inside `agents/`.
 - `run1:run2...`: optional, specific run numbers. If omitted, all available runs are used.
 
-All match scripts require `--agent` for agent-vs-agent mode. Human play modes are available in most scripts (see per-game details below).
+All match scripts require `--agent` for agent-vs-agent mode. Human play modes (`--humanvsbot`, `--humanvshuman`, `--humanvsagent`) are available in most scripts but not all games support them — check the per-game details below.
 
 ---
 
@@ -184,7 +184,7 @@ Each game maintains a scoreboard at `scoreboard/<game-id>-scoreboard.txt`.
 Agent | Games | Wins | Losses | Draws | Points | Score
 ```
 
-**Sorting:** Primary by Points (descending), tiebreaker by Score (descending).
+**Sorting:** Primary by Points (descending), tiebreaker by Score (descending). Score only affects ranking when two agents are tied on Points. How Score is accumulated varies by game (e.g. pieces remaining, cells cleared) — it acts as a goal-difference equivalent rather than a win condition.
 
 Scoreboards are updated atomically via file-locking after each match. Match runners only update the scoreboard when called with `--update-scoreboard` (added automatically by the matchmaker).
 
