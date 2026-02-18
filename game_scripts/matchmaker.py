@@ -525,13 +525,13 @@ def main() -> None:
     parser.add_argument(
         "--same_opponent_match",
         type=int,
-        default=2,
+        default=4,
         help="Times each cross-model agent pair faces each other (default: 1)",
     )
     parser.add_argument(
         "--workers",
         type=int,
-        default=16,
+        default=24,
         help="Max concurrent match subprocesses (default: 16)",
     )
     parser.add_argument(
