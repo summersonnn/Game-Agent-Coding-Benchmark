@@ -444,15 +444,8 @@ async def run_tournament(
         print(f"Workers: {workers}")
 
     if dry_run:
-        print("\n--- DRY RUN (no matches executed) ---\n")
-        if players == 2:
-            for i, (a, b) in enumerate(fixtures_2p, 1):
-                print(f"  {i:>5}. {a[0]}:{a[1]} vs {b[0]}:{b[1]}")
-        else:
-            for i, group in enumerate(fixtures_6p, 1):
-                specs = " ".join(f"{f}:{r}" for f, r in group)
-                print(f"  {i:>5}. {specs}")
-        print(f"\nTotal: {total_matches} matches")
+        print("\n--- DRY RUN (no matches executed) ---")
+        print(f"Total Matches: {total_matches}")
         return
 
     # Build subprocess commands
