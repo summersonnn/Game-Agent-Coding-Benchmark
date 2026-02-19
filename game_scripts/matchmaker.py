@@ -43,7 +43,7 @@ GAME_REGISTRY: dict[str, dict] = {
     },
 }
 
-MATCH_TIMEOUT = 900  # seconds per subprocess
+
 
 
 # ---------------------------------------------------------------------------
@@ -225,9 +225,7 @@ async def run_match_subprocess(
                 stderr=asyncio.subprocess.PIPE,
             )
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=MATCH_TIMEOUT
-                )
+                stdout, stderr = await proc.communicate()
             except asyncio.TimeoutError:
                 proc.kill()
                 await proc.communicate()

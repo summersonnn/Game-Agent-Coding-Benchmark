@@ -62,6 +62,7 @@ All scripts must respect the following configuration parameters, which should be
 | :--- | :--- | :--- |
 | `NUM_OF_GAMES_IN_A_MATCH` | `100` | Number of games to play in a single match execution. |
 | `MOVE_TIME_LIMIT` | `1.0` | Maximum time (seconds) allowed for an agent to return a move. |
+| `MATCH_TIME_LIMIT` | `900` | Maximum time (seconds) allowed for a single match execution. If specific game runner does not finish within this time, it must timeout itself and report error. **Note**: Matchmaker does not enforce this timeout, game runner must do it. |
 
 Note that "match" means two agents playing against eachother such as mistral:1 vs opus:1
 A "game" is a single unit of game between them. A match usually has many games in it.
@@ -80,6 +81,7 @@ load_dotenv()
 # These are the true values that are being used in the match runner.
 NUM_GAMES = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", 100))
 MOVE_TIMEOUT = float(os.getenv("MOVE_TIME_LIMIT", 1.0))
+MATCH_TIMEOUT = int(os.getenv("MATCH_TIME_LIMIT", 900))
 ```
 
 ---
@@ -149,6 +151,9 @@ Implementation Logic for Stats:
 for agent in ["Agent-1", "Agent-2"]:
     match_stats[agent]['crash'] = match_stats[agent]['make_move_crash'] + match_stats[agent]['other_crash']
 
+### 4.1 Stats Block Extraction
+The match runner must extract a human-readable "stats block" from the final section of the subprocess output (if present). This block provides a breakdown of all errors (timeouts, crashes, invalid moves) for both agents. In the structured return dict from `run_match`, this is stored under the `stats_block` key and must be included in the final log file.
+
 ---
 
 ## 5. Resource Management
@@ -198,12 +203,22 @@ update_scoreboard(
 
 ## 7. Agent Loading & Execution
 
-*   **Discovery:** Load agents from `agents/{model_folder}/{game}_{run}.py`.
-*   **Isolation:** Extract only the agent class text.
-*   **Renaming:** Rename class to `Agent_1` / `Agent_2` dynamically to avoid name collisions in the generated script.
-*   **Imports:** Cleanly extract and merge imports from both agents.
+Match runners follow a standardized modular pattern for loading agents and assembling the final executable game script.
 
-See **Section 14: Agent Coding Standards** for detailed requirements on agent implementation.
+### 7.1 Standardized Agent Extraction (`load_stored_agent`)
+To ensure isolation and compatibility with renaming, agents are not loaded via standard Python imports. Instead, a `load_stored_agent` utility function is used to:
+1.  Read the agent file from the file system.
+2.  Extract only the **class definition** and the **required imports**. 
+3.  Discard any top-level executable code, `if __name__ == "__main__":` blocks, or initialization logic that relies on the local environment.
+
+### 7.2 Standardized Script Assembly (`build_game_code`)
+Every match runner must use a `build_game_code` function to assemble the temporary execution script. This function combines five distinct string components:
+1.  **`GAME_ENGINE_CODE`**: The core logic of the game (shared with the human mode code).
+2.  **`extra_imports`**: Combined and deduplicated imports from both agents.
+3.  **`Agent-1 Code`** and **`Agent-2 Code`**: The extracted and renamed agent classes.
+4.  **`MATCH_RUNNER_CODE`**: The script block that instantiates the agents and runs the loops/rounds defined by `NUM_GAMES_PER_MATCH`.
+
+This separation ensures that game logic is never duplicated and that agent code is strictly isolated from the match management logic.
 
 ---
 
@@ -245,13 +260,7 @@ Rule: When injecting agent code into the template, all occurrences of the base c
 Imports: Duplicate imports must be merged and deduplicated before being placed in the {extra_imports} slot.
 
 
-## 11. Log Filtering & Extraction
-
-To prevent disk bloat and ensure logs remain readable for both humans and analysis tools, the runner must implement a strict output filter. Instead of saving the entire raw stream from the subprocess, the runner must selectively preserve only lines that provide meaningful progression and outcome data. This includes all agent-specific actions (prefixed with Agent-1: or Agent-2:), game state markers (such as GAME, Turn, or Winner:), and essential session dividers.
-
-Critically, the logs must preserve central system data (such as RESULT, SCORE, and CRASH counts) and the final game state. To ensure the final board or position is not stripped by the filter, the runner should prefix these lines with BOARD: or FINAL STATE:. Any line containing the word ENDED or empty lines used for visual spacing should also be kept. All other repetitive debug data, intermediate UI frames, or non-essential agent chatter should be discarded before the final write to the results directory.
-
-### 11.1 Per-Game Log Format
+## 11. Per-Game Log Format
 Every game match runner must print the final board position in the logs of each game. The standardized per-game log block format is:
 
 ```text

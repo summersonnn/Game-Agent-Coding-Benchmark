@@ -40,6 +40,11 @@ try:
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
+try:
+    MATCH_TIME_LIMIT = int(os.getenv("MATCH_TIME_LIMIT", "900"))
+except (ValueError, TypeError):
+    MATCH_TIME_LIMIT = 900
+
 BASE_DIR = Path(__file__).parent.parent
 RESULTS_DIR = BASE_DIR / "results" / "word_matrix"
 SCOREBOARD_PATH = BASE_DIR / "scoreboard" / "A6-scoreboard.txt"
@@ -614,6 +619,13 @@ if __name__ == "__main__":
 # Outer layer: agent loading, subprocess orchestration, logging
 # ============================================================
 
+def load_prompt() -> str:
+    prompt_path = Path(__file__).parent.parent / "games" / "A6-WordMatrixGame.txt"
+    if not prompt_path.exists():
+        raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
+    return prompt_path.read_text()
+
+
 def find_model_folder(pattern: str) -> str | None:
     """Find a model folder matching the given pattern."""
     if not AGENTS_DIR.exists():
@@ -780,7 +792,7 @@ def build_game_code(
 
 
 def run_match(
-    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = 900
+    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = MATCH_TIME_LIMIT
 ) -> dict:
     """Execute a match subprocess, parse results, and return structured dict."""
     temp_id = uuid.uuid4().hex[:8]
@@ -833,19 +845,6 @@ def run_match(
             agent1_score = float(score_match.group(1)) if score_match else 0.0
             agent2_score = float(score_match.group(2)) if score_match else 0.0
 
-            # Log filtering: keep only meaningful lines
-            log_lines = []
-            for line in result.stdout.splitlines():
-                stripped = line.lstrip()
-                if stripped.startswith((
-                    "Agent-1:", "Agent-2:", "Game ",
-                    "=====", "----",
-                    "Final", "Scores:", "Points:",
-                    "BOARD:",
-                    "CRASH", "RESULT", "SCORE", "WINS", "DRAWS", "STATS",
-                )) or line.strip() == "":
-                    log_lines.append(line)
-
             return {
                 "match_id": match_id,
                 "agent1_run_id": run_ids[0],
@@ -860,7 +859,7 @@ def run_match(
                 "draws": draws,
                 "error": None,
                 "stats_block": stats_block,
-                "log": "\n".join(log_lines),
+                "log": result.stdout,
             }
 
         return {
@@ -1116,21 +1115,12 @@ async def main_async():
 
         print(f"Match {match_id} Completed. Pts {p1}-{p2}")
 
-    # Update global scoreboard
-    for result in results:
-        if not result["success"]:
-            continue
-
-        run1 = result["agent1_run_id"]
-        run2 = result["agent2_run_id"]
-        agent1_key = f"{folder1}:{run1}"
-        agent2_key = f"{folder2}:{run2}"
-
-        a1_wins = result.get("agent1_wins", 0)
-        a2_wins = result.get("agent2_wins", 0)
-        match_draws = result.get("draws", 0)
-
-        if args.update_scoreboard:
+        if result["success"] and args.update_scoreboard:
+            agent1_key = f"{folder1}:{run1}"
+            agent2_key = f"{folder2}:{run2}"
+            a1_wins = result.get("agent1_wins", 0)
+            a2_wins = result.get("agent2_wins", 0)
+            match_draws = result.get("draws", 0)
             update_scoreboard(
                 SCOREBOARD_PATH, agent1_key,
                 games_played=NUM_GAMES_PER_MATCH,
@@ -1152,8 +1142,6 @@ async def main_async():
     print(f"  {folder1}:{runs1_str}: Pts {total_pts1}, Score {total1:.1f}")
     print(f"  {folder2}:{runs2_str}: Pts {total_pts2}, Score {total2:.1f}")
     print(f"\nLogs saved to: {RESULTS_DIR}")
-    if args.update_scoreboard:
-        print(f"Scoreboard updated: {SCOREBOARD_PATH}")
 
 
 if __name__ == "__main__":

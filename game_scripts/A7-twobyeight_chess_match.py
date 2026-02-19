@@ -40,6 +40,11 @@ try:
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
+try:
+    MATCH_TIME_LIMIT = int(os.getenv("MATCH_TIME_LIMIT", "900"))
+except (ValueError, TypeError):
+    MATCH_TIME_LIMIT = 900
+
 MAX_MOVES_PER_GAME = 200
 
 # Paths
@@ -1218,8 +1223,10 @@ def get_available_runs(model_folder: str, game: str) -> list[int]:
     return sorted(runs)
 
 
-def load_stored_agent(model_folder: str, game: str, run: int, agent_idx: int) -> tuple[str, str]:
-    """Load agent code from a stored file and rename the class."""
+def load_stored_agent(
+    model_folder: str, game: str, run: int, agent_idx: int
+) -> tuple[str, str]:
+    """Load agent code from a stored file and extract ONLY the agent class."""
     agent_file = AGENTS_DIR / model_folder / f"{game}_{run}.py"
 
     if not agent_file.exists():
@@ -1242,18 +1249,54 @@ def load_stored_agent(model_folder: str, game: str, run: int, agent_idx: int) ->
 
     code_lines = lines[code_start:]
 
-    # Extract imports
+    # Extract imports before the class
     imports = []
-    for line in code_lines:
+    class_start_idx = None
+
+    for i, line in enumerate(code_lines):
         stripped = line.strip()
+
+        if stripped.startswith("class TwoByEightChessAgent"):
+            class_start_idx = i
+            break
+
         if stripped.startswith("import ") or stripped.startswith("from "):
             if "random" not in stripped:
                 imports.append(stripped)
 
-    code = "\n".join(code_lines)
-    code = re.sub(r"class\s+TwoByEightChessAgent\b", f"class TwoByEightChessAgent_{agent_idx}", code)
+    if class_start_idx is None:
+        logger.error("No TwoByEightChessAgent class found in %s", agent_file)
+        return "", ""
 
-    return code.strip(), "\n".join(imports)
+    # Extract ONLY the TwoByEightChessAgent class
+    class_lines = []
+    base_indent = 0
+
+    for i in range(class_start_idx, len(code_lines)):
+        line = code_lines[i]
+        stripped = line.strip()
+
+        if i == class_start_idx:
+            class_lines.append(line)
+            base_indent = len(line) - len(line.lstrip())
+            continue
+
+        if not stripped or stripped.startswith("#"):
+            class_lines.append(line)
+            continue
+
+        current_indent = len(line) - len(line.lstrip())
+        if current_indent <= base_indent:
+            break
+
+        class_lines.append(line)
+
+    agent_code = "\n".join(class_lines)
+    agent_code = re.sub(
+        r"\bTwoByEightChessAgent\b", f"TwoByEightChessAgent_{agent_idx}", agent_code
+    )
+
+    return agent_code.strip(), "\n".join(imports)
 
 
 def parse_agent_spec(spec: str) -> tuple[str, list[int]]:
@@ -1298,7 +1341,7 @@ def build_game_code(
 
 
 def run_match(
-    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = 600
+    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = MATCH_TIME_LIMIT
 ) -> dict:
     """Spawn subprocess, parse structured output, filter log lines."""
     temp_id = uuid.uuid4().hex[:8]
@@ -1350,19 +1393,6 @@ def run_match(
             agent1_score = float(score_match.group(1)) if score_match else 0.0
             agent2_score = float(score_match.group(2)) if score_match else 0.0
 
-            # Log filtering: keep only structurally meaningful lines
-            log_lines = []
-            for line in result.stdout.splitlines():
-                if line.startswith((
-                    "Agent-1:", "Agent-2:", "Game ",
-                    "=====", "----",
-                    "Final", "Moves:", "Scores:", "Points:",
-                    "BOARD:",
-                    "CRASH", "RESULT", "SCORE", "WINS", "DRAWS",
-                    "STATS",
-                )) or line.strip() == "":
-                    log_lines.append(line)
-
             return {
                 "match_id": match_id,
                 "agent1_run_id": run_ids[0],
@@ -1377,7 +1407,7 @@ def run_match(
                 "draws": draws,
                 "error": None,
                 "stats_block": stats_block,
-                "log": "\n".join(log_lines),
+                "log": result.stdout,
             }
 
         return {
@@ -1542,39 +1572,36 @@ async def main_async():
                 f.write("-" * 60 + "\n")
 
             print(f"  Match {match_id} ({folder1}:{run1} vs {folder2}:{run2}): Pts {p1}-{p2}")
-
-            # Update scoreboard for both agents
-            if args.update_scoreboard:
-                agent1_key = f"{folder1}:{run1}"
-                agent2_key = f"{folder2}:{run2}"
-                a1_wins = result.get("agent1_wins", 0)
-                a2_wins = result.get("agent2_wins", 0)
-                match_draws = result.get("draws", 0)
-
-                update_scoreboard(
-                    SCOREBOARD_PATH, agent1_key,
-                    games_played=NUM_GAMES_PER_MATCH,
-                    wins=a1_wins,
-                    losses=a2_wins,
-                    draws=match_draws,
-                    score=s1,
-                    points=p1,
-                )
-                update_scoreboard(
-                    SCOREBOARD_PATH, agent2_key,
-                    games_played=NUM_GAMES_PER_MATCH,
-                    wins=a2_wins,
-                    losses=a1_wins,
-                    draws=match_draws,
-                    score=s2,
-                    points=p2,
-                )
         else:
             print(f"  Match {match_id} ({folder1}:{run1} vs {folder2}:{run2}): FAILED - {result.get('error')}")
 
+        if result["success"] and args.update_scoreboard:
+            agent1_key = f"{folder1}:{run1}"
+            agent2_key = f"{folder2}:{run2}"
+            a1_wins = result.get("agent1_wins", 0)
+            a2_wins = result.get("agent2_wins", 0)
+            match_draws = result.get("draws", 0)
+
+            update_scoreboard(
+                SCOREBOARD_PATH, agent1_key,
+                games_played=NUM_GAMES_PER_MATCH,
+                wins=a1_wins,
+                losses=a2_wins,
+                draws=match_draws,
+                score=s1,
+                points=p1,
+            )
+            update_scoreboard(
+                SCOREBOARD_PATH, agent2_key,
+                games_played=NUM_GAMES_PER_MATCH,
+                wins=a2_wins,
+                losses=a1_wins,
+                draws=match_draws,
+                score=s2,
+                points=p2,
+            )
+
     print(f"\nLogs saved to: {RESULTS_DIR}")
-    if args.update_scoreboard:
-        print(f"Scoreboard updated: {SCOREBOARD_PATH}")
 
 
 if __name__ == "__main__":
