@@ -404,9 +404,9 @@ Total Turns: <count>
 
 **Scoring:** Base points per word + bonuses. Forfeit score: 12.
 
-**Move timeout:** 3 seconds (extended vs other games).
+**Move timeout:** Follows global `MOVE_TIME_LIMIT` (default 1.0s).
 
-**Game count:** Loads `NUM_OF_GAMES_IN_A_MATCH` from the environment and divides by 10. Effective default: 10 games per match. The reduction accounts for the 3s per-move timeout making each game significantly slower than other titles.
+**Game count:** Loads `NUM_OF_GAMES_IN_A_MATCH` from the environment and divides by 10. Effective default: 10 games per match. The reduction accounts for high turn counts (up to 200) making each game slower than other titles.
 
 **Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
 
@@ -512,7 +512,7 @@ This controls how many times every cross-model agent pair is guaranteed to encou
 
 **Execution:** Each match is a subprocess calling the game's match runner with `--update-scoreboard` appended automatically. The match runner handles game execution, result parsing, scoreboard updates, and log writing internally. The matchmaker only orchestrates scheduling and reports success/failure counts.
 
-**Game-count scaling:** A4, A5, and A8 match runners divide `NUM_OF_GAMES_IN_A_MATCH` by 10 internally, yielding 10 games per match by default rather than 100. This compensates for slower per-game execution (3s move timeout in A4; complex board evaluation in A8).
+**Game-count scaling:** A4, A5, A7, and A8 match runners divide `NUM_OF_GAMES_IN_A_MATCH` by 10 internally, yielding 10 games per match by default rather than 100. This compensates for slower per-game execution (high turn counts in A4; complex board evaluation in A7/A8).
 
 **Timeout:** 900 seconds per match subprocess. Timed-out matches are killed and recorded as failures.
 
@@ -541,7 +541,7 @@ This controls how many times every cross-model agent pair is guaranteed to encou
 
 ## Development Notes
 
-- Match runners execute agents in subprocesses with 1s move timeout (3s for WordFinder)
+- Match runners execute agents in subprocesses with 1s move timeout (configurable via `MOVE_TIME_LIMIT`)
 - Invalid moves, timeouts, crashes fallback to random valid moves
 - Game logs track per-agent error statistics
 - Agent code injection uses class renaming to avoid conflicts

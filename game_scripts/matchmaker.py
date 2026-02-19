@@ -229,14 +229,22 @@ async def run_match_subprocess(
             except asyncio.TimeoutError:
                 proc.kill()
                 await proc.communicate()
+                print(f"FAILED (timeout): {label}", flush=True)
                 return {"success": False, "label": label, "error": "timeout"}
 
+            success = proc.returncode == 0
+            if success:
+                print(f"FINISHED: {label}", flush=True)
+            else:
+                print(f"FAILED: {label}", flush=True)
+
             return {
-                "success": proc.returncode == 0,
+                "success": success,
                 "label": label,
-                "error": stderr.decode(errors="replace")[:300] if proc.returncode != 0 else None,
+                "error": stderr.decode(errors="replace")[:300] if not success else None,
             }
         except Exception as e:
+            print(f"ERROR: {label} - {e}", flush=True)
             return {"success": False, "label": label, "error": str(e)[:300]}
 
 
@@ -373,6 +381,7 @@ async def run_tournament(
     dry_run: bool,
     new_models: list[str] | None = None,
     health_check: bool = False,
+    random16: bool = False,
 ) -> None:
     game = GAME_REGISTRY[game_id]
     game_name = game["name"]
@@ -411,6 +420,8 @@ async def run_tournament(
 
     if players == 2:
         fixtures_2p = generate_2p_fixtures(agents, same_opponent_match, new_models)
+        if random16 and len(fixtures_2p) > 16:
+            fixtures_2p = random.sample(fixtures_2p, 16)
         total_matches = len(fixtures_2p)
         # Compute unique pairings for display
         flat_agents = [(f, r) for f, rs in agents.items() for r in rs]
@@ -435,6 +446,8 @@ async def run_tournament(
         print(f"Workers: {workers}")
     else:
         fixtures_6p = generate_6p_fixtures(agents, same_opponent_match, new_models)
+        if random16 and len(fixtures_6p) > 16:
+            fixtures_6p = random.sample(fixtures_6p, 16)
         total_matches = len(fixtures_6p)
         print(f"\nMATCHMAKER - {game_name}{mode_label}")
         print(f"Agents: {total_agents} ({num_models} models)")
@@ -548,6 +561,11 @@ def main() -> None:
         action="store_true",
         help="Run syntax verification on all agents before execution",
     )
+    parser.add_argument(
+        "--random16",
+        action="store_true",
+        help="Randomly select 16 matches and run them",
+    )
     args = parser.parse_args()
 
     new_models = None
@@ -562,6 +580,7 @@ def main() -> None:
             args.dry_run,
             new_models,
             args.health,
+            args.random16,
         )
     )
 

@@ -1256,8 +1256,7 @@ async def main_async():
             game_log = result.get("log", "")
             if game_log:
                 status += f"\n{game_log}\n"
-            if result.get("stats_block"):
-                status += f"\n--- MATCH STATISTICS ---\n{result['stats_block']}\n"
+
         else:
             status = f"FAILED: {result.get('error', 'Unknown')}"
 

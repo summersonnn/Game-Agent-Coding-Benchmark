@@ -925,8 +925,7 @@ async def main_async():
 
             if res.get("log"):
                 status += f"\n{res['log'].strip()}\n"
-            if res.get("stats_block"):
-                status += f"\n--- MATCH STATISTICS ---\n{res['stats_block']}\n"
+
         else:
             print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): FAILED - {res.get('error')}")
             status = f"FAILED: {res.get('error', 'Unknown')}\n"

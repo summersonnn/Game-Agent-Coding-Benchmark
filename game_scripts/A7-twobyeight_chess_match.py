@@ -31,9 +31,9 @@ load_dotenv()
 
 # Configuration
 try:
-    NUM_GAMES_PER_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
+    NUM_GAMES_PER_MATCH = int(int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100")) / 10)
 except (ValueError, TypeError):
-    NUM_GAMES_PER_MATCH = 100
+    NUM_GAMES_PER_MATCH = 10
 
 try:
     MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
@@ -1565,10 +1565,7 @@ async def main_async():
                 game_log = result.get("log", "")
                 if game_log:
                     f.write(f"\n{game_log}\n")
-                if result.get("stats_block"):
-                    f.write(
-                        f"--- MATCH STATISTICS ---\n{result['stats_block']}\n"
-                    )
+
                 f.write("-" * 60 + "\n")
 
             print(f"  Match {match_id} ({folder1}:{run1} vs {folder2}:{run2}): Pts {p1}-{p2}")
