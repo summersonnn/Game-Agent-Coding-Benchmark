@@ -107,7 +107,7 @@ Example:
 | Failure Type | Consequence |
 | --- | --- |
 | make_move() Crash | Random valid move played; game continues. |
-| Initialization Crash | Immediate game forfeit (for the match, as Wizard requires 6 stable agents). |
+| Initialization Crash | Agent replaced with random bot for that game; other_crash incremented. |
 | Move Timeout | Random valid move played; game continues. |
 | Invalid Move | Random valid move played; game continues. |
 
@@ -242,16 +242,16 @@ class WizardAgent:
 
 ---
 
-**Competition Format**: 
+**Competition Format**:
 
-In this competition, 3 LLMs compete against each other. Each LLM's code will be used to create **2 agents** that play independently (using the same strategy but with different hands).
+In this competition, 6 different LLMs compete against each other. Each LLM provides 1 agent.
 
-- **Total Players**: 6 agents (Agent-1, Agent-2, Agent-3, Agent-4, Agent-5, Agent-6)
-- **Agent Assignment**: 
-  - Model 1 controls Agent-1 and Agent-2
-  - Model 2 controls Agent-3 and Agent-4
-  - Model 3 controls Agent-5 and Agent-6
+- **Total Players**: 6 agents (Agent-1 through Agent-6), each from a different model
+- **Seating**: Seat positions rotate each game for fairness
 
-Multiple games will be played. Your final ranking is determined by the **combined total score** of both your agents across all games. This tests both strategy quality and consistency.
+Multiple games are played per match. After each game, agents are ranked by their
+Wizard score (sum of round scores). Rank-based match points are awarded per game:
+  1st place: 5 points, 2nd: 4, 3rd: 3, 4th: 2, 5th: 1, 6th: 0
 
-**Point Allocation**: This is a ranking-based competition. Higher combined scores lead to better rankings.
+Ties share the average of their tied positions' points.
+Your tie-breaker score is your accumulated raw Wizard in-game score across all games.

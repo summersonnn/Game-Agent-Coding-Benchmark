@@ -415,6 +415,10 @@ async def run_tournament(
         print(f"ERROR: Need 2+ models for cross-model pairings, found {num_models}")
         sys.exit(1)
 
+    if players == 6 and num_models < 6:
+        print(f"ERROR: Need 6+ models for 6-player games, found {num_models}")
+        sys.exit(1)
+
     # Generate fixtures
     mode_label = f" [incremental: {', '.join(new_models)}]" if new_models else ""
 

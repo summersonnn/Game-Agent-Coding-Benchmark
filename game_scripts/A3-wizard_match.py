@@ -1,8 +1,10 @@
 """
-Wizard Match Runner: Orchestrates 6-player Wizard card games between AI models.
+Wizard Match Runner: Orchestrates 6-player Wizard card game matches between AI agents.
 
-Prompts 6 models to implement WizardAgent, extracts their code, runs games,
-and reports rankings based on total scores.
+Three-layer architecture (matching A8 pattern): GAME_ENGINE_CODE defines Card +
+WizardGame classes, MATCH_RUNNER_CODE runs games inside a subprocess with timeout
+and stats tracking, and the outer layer handles CLI, agent loading, subprocess
+orchestration, logging, and scoreboard updates.
 """
 
 import argparse
@@ -18,253 +20,46 @@ from pathlib import Path
 import logging
 from dotenv import load_dotenv
 
-# Add utils directory to sys.path
 sys.path.append(str(Path(__file__).parent.parent / "utils"))
 
 from model_api import ModelAPI
 from logging_config import setup_logging
+from scoreboard import update_scoreboard_6p
 
 logger = setup_logging(__name__)
 
-# Load environment variables
 load_dotenv()
 
 # Configuration
 NUM_PLAYERS = 6
-NUM_MODELS = 3  # 3 models, each prompted twice
-NUM_PROMPTS_PER_MODEL = 2  # Each model generates 2 agents
-NUM_ROUNDS = 10  # 60 cards / 6 players = 10 rounds
+NUM_ROUNDS = 10
+
 try:
-    NUM_GAMES_IN_WIZARD_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
+    NUM_GAMES_PER_MATCH = int(int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100")) / 10)
 except (ValueError, TypeError):
-    NUM_GAMES_IN_WIZARD_MATCH = 100
+    NUM_GAMES_PER_MATCH = 10
 
 try:
     MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
-# Results directories
-WIZARD_RESULTS_DIR = Path(__file__).parent.parent / "results" / "wizard"
-GAME_LOGS_DIR = WIZARD_RESULTS_DIR / "game_logs"
-MODEL_RESPONSES_DIR = WIZARD_RESULTS_DIR / "model_responses"
+try:
+    MATCH_TIME_LIMIT = int(os.getenv("MATCH_TIME_LIMIT", "900"))
+except (ValueError, TypeError):
+    MATCH_TIME_LIMIT = 900
 
-# Stored agents directory
-AGENTS_DIR = Path(__file__).parent.parent / "agents"
-GAME_NAME = "A3-Wizard"  # Default game for stored agents
+BASE_DIR = Path(__file__).parent.parent
+RESULTS_DIR = BASE_DIR / "results" / "wizard"
+SCOREBOARD_PATH = BASE_DIR / "scoreboard" / "A3-scoreboard.txt"
+AGENTS_DIR = BASE_DIR / "agents"
+GAME_NAME = "A3-Wizard"
 
-# The game code template with placeholders for agent implementations
-GAME_CODE_TEMPLATE = '''
-import sys
-import random
-import signal
-# Move timeout in seconds
-MOVE_TIMEOUT = {move_timeout}
 
-class MoveTimeoutException(Exception):
-    pass
-
-def timeout_handler(signum, frame):
-    raise MoveTimeoutException("Move timeout")
-
-NUM_PLAYERS = {num_players}
-NUM_ROUNDS = {num_rounds}
-NUM_GAMES = {num_games}
-DEBUG_MODE = {debug_mode}
-HUMAN_MODE = {human_mode}
-
-{extra_imports}
-
-{card_class}
-
-{agent_code}
-
-{game_class}
-
-# --- Stats ---
-stats = {{
-    "p1_timeout": 0, "p1_crash": 0, "p1_invalid": 0,
-    "p2_timeout": 0, "p2_crash": 0, "p2_invalid": 0,
-    "p3_timeout": 0, "p3_crash": 0, "p3_invalid": 0,
-    "p4_timeout": 0, "p4_crash": 0, "p4_invalid": 0,
-    "p5_timeout": 0, "p5_crash": 0, "p5_invalid": 0,
-    "p6_timeout": 0, "p6_crash": 0, "p6_invalid": 0,
-}}
-
-def debug_wait(message="Press Enter to continue..."):
-    """Wait for user input in debug mode."""
-    if DEBUG_MODE:
-        input(f"\\n[DEBUG] {{message}}")
-
-def call_agent_with_timeout(agent, phase, game_state):
-    """Call agent's make_move with timeout protection."""
-    agent_idx = int(agent.name.split("-")[1])
-    stat_prefix = f"p{{agent_idx}}"
-    
-    try:
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(int(MOVE_TIMEOUT))
-        try:
-            return agent.make_move(phase, game_state)
-        finally:
-            signal.alarm(0)
-    except MoveTimeoutException:
-        stats[f"{{stat_prefix}}_timeout"] += 1
-        return None
-    except Exception:
-        stats[f"{{stat_prefix}}_crash"] += 1
-        return None
-
-def play_game(game_num, total_scores):
-    """Play one complete game of Wizard (10 rounds) and update scores."""
-    game = WizardGame(NUM_PLAYERS)
-    
-    # Initialize agents
-    agents = []
-    for i in range(NUM_PLAYERS):
-        class_name = f"WizardAgent_{{i+1}}"
-        try:
-            agent_class = globals()[class_name]
-            agent = agent_class(f"Player-{{i+1}}")
-            agents.append(agent)
-        except Exception as e:
-            print(f"ERROR: Failed to initialize {{class_name}}: {{e}}")
-            return False
-    
-    print(f"\\n{{'='*60}}")
-    print(f"GAME {{game_num}}")
-    print(f"{{'='*60}}")
-    
-    # Play all rounds
-    for round_num in range(1, NUM_ROUNDS + 1):
-        game.start_round(round_num)
-        print(f"\\n--- Round {{round_num}} ({{round_num}} cards each) ---")
-        print(f"Trump: {{game.trump_suit if game.trump_suit else 'None'}}")
-        
-        if DEBUG_MODE or HUMAN_MODE:
-            print(f"\\n[DEBUG] Cards dealt:")
-            for i in range(NUM_PLAYERS):
-                if HUMAN_MODE and i != 0: continue # Only show Human's cards or debug all
-                hand_str = ", ".join([str(card) for card in game.hands[i]])
-                print(f"  Player-{{i+1}}: {{hand_str}}")
-            if DEBUG_MODE:
-                debug_wait("Cards dealt. Press Enter to start bidding...")
-        
-        # Bidding phase
-        for i, agent in enumerate(agents):
-            game_state = game.get_game_state(i, "bid")
-            bid = call_agent_with_timeout(agent, "bid", game_state)
-            
-            # Validate bid
-            if not isinstance(bid, int) or bid < 0 or bid > game.cards_this_round:
-                stats[f"p{{i+1}}_invalid"] += 1
-                bid = random.randint(0, game.cards_this_round)
-            
-            # Hook rule: last bidder cannot make total bids equal total tricks
-            if i == NUM_PLAYERS - 1:
-                current_sum = sum(b for b in game.bids if b is not None)
-                forbidden_bid = game.cards_this_round - current_sum
-                if 0 <= forbidden_bid <= game.cards_this_round and bid == forbidden_bid:
-                    stats[f"p{{i+1}}_invalid"] += 1
-                    # Pick a random valid bid that isn't forbidden
-                    valid_bids = [b for b in range(0, game.cards_this_round + 1) if b != forbidden_bid]
-                    bid = random.choice(valid_bids) if valid_bids else 0
-            
-            game.record_bid(i, bid)
-            
-            if DEBUG_MODE:
-                print(f"  Player-{{i+1}} bids: {{bid}}")
-        
-        print(f"Bids: {{game.bids}}")
-        
-        print(f"Bids: {{game.bids}}")
-        
-        if DEBUG_MODE:
-            debug_wait("Bidding complete. Press Enter to start playing tricks...")
-        
-        # Playing phase - play all tricks for this round
-        for trick_num in range(game.cards_this_round):
-            game.start_trick()
-            
-            if DEBUG_MODE:
-                print(f"\\n  Trick {{trick_num + 1}}/{{game.cards_this_round}}:")
-            
-            for _ in range(NUM_PLAYERS):
-                current_player = game.current_player
-                agent = agents[current_player]
-                game_state = game.get_game_state(current_player, "play")
-                
-                card = call_agent_with_timeout(agent, "play", game_state)
-                
-                # Validate and play card
-                valid_card = game.validate_and_play(current_player, card)
-                if valid_card != card:
-                    stats[f"p{{current_player+1}}_invalid"] += 1
-                
-                if DEBUG_MODE:
-                    print(f"    Player-{{current_player+1}} plays: {{valid_card}}")
-            
-            winner = game.finish_trick()
-            
-            if DEBUG_MODE:
-                print(f"  → Player-{{winner+1}} wins the trick!")
-                debug_wait(f"Trick {{trick_num + 1}} complete. Press Enter to continue...")
-        
-        # Score the round
-        game.score_round()
-        print(f"Tricks won: {{game.tricks_won}}")
-        print(f"Round scores: {{[game.total_scores[i] - total_scores[i] for i in range(NUM_PLAYERS)]}}")
-        
-        if DEBUG_MODE:
-            print("\\n[DEBUG] Round scoring details:")
-            for i in range(NUM_PLAYERS):
-                bid = game.bids[i]
-                won = game.tricks_won[i]
-                round_score = game.total_scores[i] - total_scores[i]
-                status = "✓" if bid == won else "✗"
-                print(f"  Player-{{i+1}}: Bid {{bid}}, Won {{won}} {{status}} → {{round_score:+d}} points")
-            debug_wait(f"Round {{round_num}} complete. Press Enter to continue...")
-    
-    # Update total scores
-    for i in range(NUM_PLAYERS):
-        total_scores[i] += game.total_scores[i]
-    
-    print(f"\\nGame {{game_num}} complete!")
-    print(f"Game scores: {{game.total_scores}}")
-    print(f"Running totals: {{total_scores}}")
-    
-    sys.stdout.flush()
-    
-    return True
-
-def main():
-    """Main function to run the Wizard simulation."""
-    total_scores = [0] * NUM_PLAYERS
-    
-    for i in range(NUM_GAMES):
-        success = play_game(i + 1, total_scores)
-        if not success:
-            print(f"ERROR: Game {{i+1}} failed to complete")
-            break
-    
-    # Final results
-    result_str = "RESULT:"
-    result_str += ",".join([f"P{{i+1}}={{total_scores[i]}}" for i in range(NUM_PLAYERS)])
-    print(f"\\n{{result_str}}")
-    
-    stats_str = "STATS:"
-    stats_parts = []
-    for i in range(NUM_PLAYERS):
-        stats_parts.append(f"P{{i+1}}T={{stats[f'p{{i+1}}_timeout']}}")
-        stats_parts.append(f"P{{i+1}}C={{stats[f'p{{i+1}}_crash']}}")
-        stats_parts.append(f"P{{i+1}}I={{stats[f'p{{i+1}}_invalid']}}")
-    print(stats_str + ",".join(stats_parts))
-
-if __name__ == "__main__":
-    main()
-'''
-
-CARD_CLASS = '''
+# ============================================================
+# Shared game engine code (Card + WizardGame classes)
+# ============================================================
+GAME_ENGINE_CODE = r'''
 class Card:
     """Represents a single card in the Wizard deck."""
     def __init__(self, card_type, suit=None, rank=None):
@@ -276,7 +71,7 @@ class Card:
         self.card_type = card_type
         self.suit = suit
         self.rank = rank
-    
+
     def __str__(self):
         if self.card_type == "wizard":
             return "Wizard"
@@ -286,32 +81,31 @@ class Card:
             rank_str = {11: "J", 12: "Q", 13: "K", 14: "A"}.get(self.rank, str(self.rank))
             suit_str = self.suit[0]
             return f"{rank_str}{suit_str}"
-    
+
     def __repr__(self):
         return self.__str__()
-    
+
     def __eq__(self, other):
         if not isinstance(other, Card):
             return False
-        return (self.card_type == other.card_type and 
-                self.suit == other.suit and 
+        return (self.card_type == other.card_type and
+                self.suit == other.suit and
                 self.rank == other.rank)
-    
+
     def __hash__(self):
         return hash((self.card_type, self.suit, self.rank))
-'''
 
-GAME_CLASS = '''
+
 class WizardGame:
     """Manages the complete Wizard game state and rules."""
-    
+
     SUITS = ["Hearts", "Diamonds", "Clubs", "Spades"]
-    
+
     def __init__(self, num_players):
         self.num_players = num_players
         self.deck = self._create_deck()
         self.total_scores = [0] * num_players
-        
+
         # Round state
         self.round_number = 0
         self.cards_this_round = 0
@@ -319,54 +113,44 @@ class WizardGame:
         self.hands = [[] for _ in range(num_players)]
         self.bids = [None] * num_players
         self.tricks_won = [0] * num_players
-        
+
         # Trick state
         self.current_trick = []
         self.current_player = 0
         self.trick_leader = 0
-    
+
     def _create_deck(self):
         """Create a full 60-card Wizard deck."""
         deck = []
-        
-        # Add 4 Wizards
         for _ in range(4):
             deck.append(Card("wizard"))
-        
-        # Add 4 Jesters
         for _ in range(4):
             deck.append(Card("jester"))
-        
-        # Add 52 standard cards
         for suit in self.SUITS:
-            for rank in range(2, 15):  # 2-14 (Ace=14)
+            for rank in range(2, 15):
                 deck.append(Card("standard", suit, rank))
-        
         return deck
-    
+
     def start_round(self, round_num):
         """Start a new round by dealing cards and determining trump."""
         self.round_number = round_num
         self.cards_this_round = round_num
         self.bids = [None] * self.num_players
         self.tricks_won = [0] * self.num_players
-        
-        # Shuffle and deal
+
         random.shuffle(self.deck)
         self.hands = [[] for _ in range(self.num_players)]
-        
+
         card_idx = 0
         for i in range(self.num_players):
             for _ in range(self.cards_this_round):
                 self.hands[i].append(self.deck[card_idx])
                 card_idx += 1
-        
-        # Determine trump
+
         total_dealt = self.num_players * self.cards_this_round
         if total_dealt < len(self.deck):
             trump_card = self.deck[total_dealt]
             if trump_card.card_type == "wizard":
-                # Dealer chooses - for simplicity, choose random suit
                 self.trump_suit = random.choice(self.SUITS)
             elif trump_card.card_type == "jester":
                 self.trump_suit = None
@@ -374,19 +158,16 @@ class WizardGame:
                 self.trump_suit = trump_card.suit
         else:
             self.trump_suit = None
-        
+
         self.current_player = 0
-    
+
     def record_bid(self, player_idx, bid):
-        """Record a player's bid."""
         self.bids[player_idx] = bid
-    
+
     def start_trick(self):
-        """Start a new trick."""
         self.current_trick = []
-    
+
     def get_game_state(self, player_idx, phase):
-        """Get the complete public game state for a player."""
         return {
             "round_number": self.round_number,
             "cards_this_round": self.cards_this_round,
@@ -399,202 +180,532 @@ class WizardGame:
             "tricks_won": self.tricks_won[:],
             "scores": self.total_scores[:],
         }
-    
+
     def _get_led_suit(self):
-        """Determine the suit that was led (first non-Wizard/Jester standard card)."""
         for _, card in self.current_trick:
             if card.card_type == "standard":
                 return card.suit
         return None
-    
+
     def _get_valid_cards(self, player_idx):
-        """Get list of valid cards the player can play."""
         hand = self.hands[player_idx]
-        
-        # First to play or only Wizards/Jesters played - can play anything
         led_suit = self._get_led_suit()
         if led_suit is None:
             return hand[:]
-        
-        # Check if player has cards in led suit
         cards_in_suit = [c for c in hand if c.card_type == "standard" and c.suit == led_suit]
         wizards_and_jesters = [c for c in hand if c.card_type in ["wizard", "jester"]]
-        
         if cards_in_suit:
-            # Must play led suit or Wizard/Jester
             return cards_in_suit + wizards_and_jesters
         else:
-            # No cards in led suit - can play anything
             return hand[:]
-    
+
     def validate_and_play(self, player_idx, card):
-        """Validate the card play and execute it. Returns the actual card played."""
         hand = self.hands[player_idx]
         valid_cards = self._get_valid_cards(player_idx)
-        
-        # Check if card is in hand and valid
         if card not in hand:
-            # Card not in hand - play random valid card
             card = random.choice(valid_cards) if valid_cards else random.choice(hand)
         elif card not in valid_cards:
-            # Card is in hand but not valid - play random valid card
             card = random.choice(valid_cards)
-        
-        # Play the card
         self.hands[player_idx].remove(card)
         self.current_trick.append((player_idx, card))
         self.current_player = (self.current_player + 1) % self.num_players
-        
         return card
-    
+
     def finish_trick(self):
-        """Determine trick winner and award the trick."""
         winner = self._determine_trick_winner()
         self.tricks_won[winner] += 1
         self.current_player = winner
         self.trick_leader = winner
         return winner
-    
+
     def _determine_trick_winner(self):
-        """Determine who won the current trick."""
-        # Check for Wizards (first Wizard wins)
         for player_idx, card in self.current_trick:
             if card.card_type == "wizard":
                 return player_idx
-        
-        # Check if all Jesters (first Jester wins)
         if all(card.card_type == "jester" for _, card in self.current_trick):
             return self.current_trick[0][0]
-        
-        # Find highest card
         led_suit = self._get_led_suit()
         best_player = None
         best_card = None
-        
         for player_idx, card in self.current_trick:
             if card.card_type == "jester":
                 continue
-            
             if best_card is None:
                 best_player = player_idx
                 best_card = card
                 continue
-            
-            # Compare cards
             if self._card_beats(card, best_card, led_suit):
                 best_player = player_idx
                 best_card = card
-        
         return best_player
-    
+
     def _card_beats(self, card1, card2, led_suit):
-        """Returns True if card1 beats card2."""
-        # Wizards handled separately
-        # Jesters always lose
         if card1.card_type == "jester":
             return False
         if card2.card_type == "jester":
             return True
-        
-        # Both standard cards
         card1_is_trump = (card1.suit == self.trump_suit)
         card2_is_trump = (card2.suit == self.trump_suit)
-        
         if card1_is_trump and not card2_is_trump:
             return True
         if card2_is_trump and not card1_is_trump:
             return False
-        
-        # Both trump or both non-trump
-        # If both in led suit or both trump, compare ranks
         if card1.suit == card2.suit:
             return card1.rank > card2.rank
-        
-        # Different suits - card in led suit wins
         if card1.suit == led_suit:
             return True
         if card2.suit == led_suit:
             return False
-        
-        # Neither in led suit (shouldn't happen with valid play)
         return card1.rank > card2.rank
-    
+
     def score_round(self):
-        """Score the round based on bids vs tricks won."""
         for i in range(self.num_players):
             bid = self.bids[i]
             won = self.tricks_won[i]
-            
             if bid == won:
-                # Correct bid
                 score = 20 + (10 * won)
             else:
-                # Incorrect bid
                 score = -10 * abs(bid - won)
-            
             self.total_scores[i] += score
 '''
 
 
-def load_prompt() -> str:
-    """Load the Wizard prompt from the games directory."""
-    prompt_path = Path(__file__).parent.parent / "games" / "A3-Wizard.txt"
-    if not prompt_path.exists():
-        raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
-    return prompt_path.read_text()
+# ============================================================
+# Match runner code (play_game + main for agent-vs-agent)
+# ============================================================
+MATCH_RUNNER_CODE = r'''
+class MoveTimeoutException(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise MoveTimeoutException("Move timeout")
+
+
+class RandomFallbackAgent:
+    """Replaces agents that crash during initialization."""
+    def __init__(self, name):
+        self.name = name
+
+    def make_move(self, phase, game_state):
+        if phase == "bid":
+            return random.randint(0, game_state["cards_this_round"])
+        else:
+            return random.choice(game_state["my_hand"])
+
+
+def call_agent_with_timeout(agent, phase, game_state, agent_label, match_stats):
+    """Call agent's make_move with timeout protection."""
+    try:
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(max(1, int(MOVE_TIMEOUT)))
+        try:
+            return agent.make_move(phase, game_state)
+        finally:
+            signal.alarm(0)
+    except MoveTimeoutException:
+        match_stats[agent_label]["timeout"] += 1
+        return None
+    except Exception:
+        match_stats[agent_label]["make_move_crash"] += 1
+        return None
+
+
+def play_game(game_num, match_stats):
+    """Play one complete 6-player Wizard game and update match_stats."""
+    game = WizardGame(NUM_PLAYERS)
+
+    # Rotate seating for fairness: offset by (game_num - 1) % 6
+    offset = (game_num - 1) % NUM_PLAYERS
+    seat_order = [(i + offset) % NUM_PLAYERS for i in range(NUM_PLAYERS)]
+    # seat_order[seat_idx] = original agent index (0-based)
+
+    # Map: seat position -> agent label, agent object
+    agents = [None] * NUM_PLAYERS
+    agent_labels = [None] * NUM_PLAYERS  # Agent-1 through Agent-6 labels per seat
+
+    for seat_idx in range(NUM_PLAYERS):
+        orig_idx = seat_order[seat_idx]
+        agent_label = f"Agent-{orig_idx + 1}"
+        class_name = f"WizardAgent_{orig_idx + 1}"
+        agent_labels[seat_idx] = agent_label
+        try:
+            agent_class = globals()[class_name]
+            agents[seat_idx] = agent_class(agent_label)
+        except Exception as e:
+            print(f"{agent_label}: init crash - {str(e)[:80]}")
+            match_stats[agent_label]["other_crash"] += 1
+            agents[seat_idx] = RandomFallbackAgent(agent_label)
+
+    print()
+    print("=" * 60)
+    print(f"Game {game_num}")
+    for seat_idx in range(NUM_PLAYERS):
+        orig_idx = seat_order[seat_idx]
+        info_var = f"AGENT{orig_idx + 1}_INFO"
+        info = globals().get(info_var, f"agent-{orig_idx + 1}")
+        print(f"Seat {seat_idx}: {agent_labels[seat_idx]} ({info})")
+    print("-" * 60)
+
+    # Play all 10 rounds
+    for round_num in range(1, NUM_ROUNDS + 1):
+        game.start_round(round_num)
+        print(f"Round {round_num} ({round_num} cards) - Trump: {game.trump_suit if game.trump_suit else 'None'}")
+
+        # Bidding phase
+        for seat_idx in range(NUM_PLAYERS):
+            agent = agents[seat_idx]
+            label = agent_labels[seat_idx]
+            game_state = game.get_game_state(seat_idx, "bid")
+            bid = call_agent_with_timeout(agent, "bid", game_state, label, match_stats)
+
+            if not isinstance(bid, int) or bid < 0 or bid > game.cards_this_round:
+                match_stats[label]["invalid"] += 1
+                bid = random.randint(0, game.cards_this_round)
+
+            # Hook rule: last bidder cannot make total bids equal total tricks
+            if seat_idx == NUM_PLAYERS - 1:
+                current_sum = sum(b for b in game.bids if b is not None)
+                forbidden_bid = game.cards_this_round - current_sum
+                if 0 <= forbidden_bid <= game.cards_this_round and bid == forbidden_bid:
+                    match_stats[label]["invalid"] += 1
+                    valid_bids = [b for b in range(0, game.cards_this_round + 1) if b != forbidden_bid]
+                    bid = random.choice(valid_bids) if valid_bids else 0
+
+            game.record_bid(seat_idx, bid)
+
+        print(f"Bids: {game.bids}")
+
+        # Playing phase
+        for trick_num in range(game.cards_this_round):
+            game.start_trick()
+            for _ in range(NUM_PLAYERS):
+                current_player = game.current_player
+                agent = agents[current_player]
+                label = agent_labels[current_player]
+                game_state = game.get_game_state(current_player, "play")
+
+                card = call_agent_with_timeout(agent, "play", game_state, label, match_stats)
+
+                valid_card = game.validate_and_play(current_player, card)
+                if valid_card != card:
+                    match_stats[label]["invalid"] += 1
+
+            winner = game.finish_trick()
+
+        game.score_round()
+        print(f"Tricks won: {game.tricks_won}")
+        round_scores = [game.total_scores[i] for i in range(NUM_PLAYERS)]
+        print(f"Running scores: {round_scores}")
+
+    # Game complete - rank by game score
+    game_scores = list(game.total_scores)
+    print(f"Game {game_num} final scores: {game_scores}")
+
+    # Build (seat_idx, score) pairs and sort descending
+    indexed = [(seat_idx, game_scores[seat_idx]) for seat_idx in range(NUM_PLAYERS)]
+    indexed.sort(key=lambda x: x[1], reverse=True)
+
+    # Assign rank-based points with tie handling
+    # Points: 1st=5, 2nd=4, 3rd=3, 4th=2, 5th=1, 6th=0
+    rank_points = [5, 4, 3, 2, 1, 0]
+    placement_labels = ["1st", "2nd", "3rd", "4th", "5th", "6th"]
+
+    # Group by score to handle ties
+    i = 0
+    while i < NUM_PLAYERS:
+        j = i
+        while j < NUM_PLAYERS and indexed[j][1] == indexed[i][1]:
+            j += 1
+        # Positions i through j-1 are tied
+        tied_points = sum(rank_points[k] for k in range(i, j)) / (j - i)
+        for k in range(i, j):
+            seat_idx = indexed[k][0]
+            label = agent_labels[seat_idx]
+            match_stats[label]["points"] += tied_points
+            match_stats[label]["score"] += game_scores[seat_idx]
+            # For placement tracking, share the best position label
+            # Each tied agent gets credited at the highest tied position
+            for pos in range(i, j):
+                placement_key = placement_labels[pos]
+                # Distribute evenly: each tied agent gets 1/(j-i) of each tied position
+                match_stats[label][placement_key] += 1.0 / (j - i)
+        i = j
+
+    # Print per-game result block
+    print("-" * 40)
+    print("Rankings:")
+    for rank_idx, (seat_idx, score) in enumerate(indexed):
+        label = agent_labels[seat_idx]
+        pts = rank_points[rank_idx] if rank_idx < NUM_PLAYERS else 0
+        # Approximate — ties handled above, this is just display
+        print(f"  {rank_idx + 1}. {label}: score={score}")
+    print("=" * 60)
+
+    sys.stdout.flush()
+
+
+def main():
+    match_stats = {
+        f"Agent-{i}": {
+            "1st": 0.0, "2nd": 0.0, "3rd": 0.0,
+            "4th": 0.0, "5th": 0.0, "6th": 0.0,
+            "points": 0.0, "score": 0.0,
+            "make_move_crash": 0, "other_crash": 0, "crash": 0,
+            "timeout": 0, "invalid": 0,
+        }
+        for i in range(1, NUM_PLAYERS + 1)
+    }
+
+    for i in range(NUM_GAMES):
+        play_game(i + 1, match_stats)
+        sys.stdout.flush()
+
+    # Aggregate crash stats
+    for key in match_stats:
+        match_stats[key]["crash"] = match_stats[key]["make_move_crash"] + match_stats[key]["other_crash"]
+
+    # Print structured output for outer layer parsing
+    print("=" * 60)
+    for i in range(1, NUM_PLAYERS + 1):
+        info_var = f"AGENT{i}_INFO"
+        print(f"Agent-{i}: {globals().get(info_var, f'agent-{i}')}")
+
+    result_parts = [f"Agent-{i}={match_stats[f'Agent-{i}']['points']:.1f}" for i in range(1, NUM_PLAYERS + 1)]
+    print(f"RESULT:{','.join(result_parts)}")
+
+    score_parts = [f"Agent-{i}={match_stats[f'Agent-{i}']['score']:.1f}" for i in range(1, NUM_PLAYERS + 1)]
+    print(f"SCORE:{','.join(score_parts)}")
+
+    stats_parts = [f"Agent-{i}={match_stats[f'Agent-{i}']}" for i in range(1, NUM_PLAYERS + 1)]
+    print(f"STATS:{','.join(stats_parts)}")
+
+    print("--- MATCH STATISTICS ---")
+    for i in range(1, NUM_PLAYERS + 1):
+        s = match_stats[f"Agent-{i}"]
+        print(f"Agent-{i} make_move_crash: {s['make_move_crash']}")
+        print(f"Agent-{i} other_crash: {s['other_crash']}")
+        print(f"Agent-{i} crash (total): {s['crash']}")
+        print(f"Agent-{i} Timeouts: {s['timeout']}")
+        print(f"Agent-{i} Invalid: {s['invalid']}")
+        print(f"Agent-{i} Points: {s['points']:.1f}")
+        print(f"Agent-{i} Score: {s['score']:.1f}")
+        print(f"Agent-{i} Placements: 1st={s['1st']:.1f} 2nd={s['2nd']:.1f} 3rd={s['3rd']:.1f} 4th={s['4th']:.1f} 5th={s['5th']:.1f} 6th={s['6th']:.1f}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+# ============================================================
+# Human play mode code
+# ============================================================
+HUMAN_PLAY_CODE = r'''
+class HumanAgent:
+    def __init__(self, name):
+        self.name = name
+
+    def make_move(self, phase, game_state):
+        print(f"\n--- {self.name}'s TURN ({phase}) ---")
+        if phase == "bid":
+            print(f"Round: {game_state['round_number']} ({game_state['cards_this_round']} cards)")
+            print(f"Trump: {game_state['trump_suit']}")
+            print(f"Hand: {[str(c) for c in game_state['my_hand']]}")
+            print(f"Bids so far: {game_state['bids']}")
+            while True:
+                try:
+                    bid = int(input(f"Enter Bid [0-{game_state['cards_this_round']}]: ").strip())
+                    if 0 <= bid <= game_state['cards_this_round']:
+                        return bid
+                    print("Invalid bid range.")
+                except ValueError:
+                    print("Enter a number.")
+        else:
+            print(f"Trump: {game_state['trump_suit']}")
+            print(f"Trick so far: {[(i+1, str(c)) for i, c in game_state['current_trick']]}")
+            print(f"Hand: {[(i, str(c)) for i, c in enumerate(game_state['my_hand'])]}")
+            print(f"Bids: {game_state['bids']} | Tricks won: {game_state['tricks_won']}")
+            while True:
+                try:
+                    idx = int(input(f"Select Card Index [0-{len(game_state['my_hand'])-1}]: ").strip())
+                    if 0 <= idx < len(game_state['my_hand']):
+                        return game_state['my_hand'][idx]
+                    print("Invalid index.")
+                except ValueError:
+                    print("Enter a number.")
+
+
+class RandomBotAgent:
+    def __init__(self, name):
+        self.name = name
+
+    def make_move(self, phase, game_state):
+        if phase == "bid":
+            return random.randint(0, game_state['cards_this_round'])
+        else:
+            return random.choice(game_state['my_hand'])
+
+
+MODE_TITLES = {
+    "humanvsbot": "Human vs Random Bots",
+    "humanvshuman": "Human vs Human (Hotseat)",
+    "humanvsagent": "Human vs Stored Agent",
+}
+
+
+if __name__ == "__main__":
+    mode_title = MODE_TITLES.get(GAME_MODE, GAME_MODE)
+    print("=" * 60)
+    print(f"WIZARD - {mode_title}")
+    print("=" * 60)
+
+    agents = []
+    if GAME_MODE == "humanvsbot":
+        agents.append(HumanAgent("Human"))
+        for i in range(2, NUM_PLAYERS + 1):
+            agents.append(RandomBotAgent(f"Bot-{i}"))
+        print("You are Agent-1 (Human). Playing against 5 random bots.")
+    elif GAME_MODE == "humanvshuman":
+        for i in range(1, NUM_PLAYERS + 1):
+            agents.append(HumanAgent(f"Player-{i}"))
+        print("All 6 seats are human players (hotseat mode).")
+    elif GAME_MODE == "humanvsagent":
+        agents.append(HumanAgent("Human"))
+        try:
+            stored_agent = WizardAgent_1(f"StoredAgent")
+            agents.append(stored_agent)
+        except Exception as e:
+            print(f"Failed to load stored agent: {e}")
+            agents.append(RandomBotAgent("FallbackBot-2"))
+        for i in range(3, NUM_PLAYERS + 1):
+            agents.append(RandomBotAgent(f"Bot-{i}"))
+        print("You are Agent-1 (Human). Agent-2 is stored agent. Rest are bots.")
+
+    game = WizardGame(NUM_PLAYERS)
+    NUM_ROUNDS_LOCAL = 10
+
+    total_scores_display = [0] * NUM_PLAYERS
+    for round_num in range(1, NUM_ROUNDS_LOCAL + 1):
+        game.start_round(round_num)
+        print(f"\n{'='*60}")
+        print(f"Round {round_num} ({round_num} cards) - Trump: {game.trump_suit if game.trump_suit else 'None'}")
+        print(f"{'='*60}")
+
+        # Show hand to human(s)
+        for i, agent in enumerate(agents):
+            if isinstance(agent, HumanAgent):
+                print(f"\n{agent.name}'s hand: {[str(c) for c in game.hands[i]]}")
+
+        # Bidding
+        for i, agent in enumerate(agents):
+            game_state = game.get_game_state(i, "bid")
+            bid = agent.make_move("bid", game_state)
+            if not isinstance(bid, int) or bid < 0 or bid > game.cards_this_round:
+                bid = random.randint(0, game.cards_this_round)
+            # Hook rule for last bidder
+            if i == NUM_PLAYERS - 1:
+                current_sum = sum(b for b in game.bids if b is not None)
+                forbidden = game.cards_this_round - current_sum
+                if 0 <= forbidden <= game.cards_this_round and bid == forbidden:
+                    valid = [b for b in range(0, game.cards_this_round + 1) if b != forbidden]
+                    bid = random.choice(valid) if valid else 0
+                    print(f"(Hook rule applied, bid changed to {bid})")
+            game.record_bid(i, bid)
+            print(f"{agent.name} bids: {bid}")
+
+        print(f"All bids: {game.bids}")
+
+        # Playing tricks
+        for trick_num in range(game.cards_this_round):
+            game.start_trick()
+            print(f"\n  Trick {trick_num + 1}/{game.cards_this_round}:")
+            for _ in range(NUM_PLAYERS):
+                cp = game.current_player
+                agent = agents[cp]
+                game_state = game.get_game_state(cp, "play")
+                card = agent.make_move("play", game_state)
+                played = game.validate_and_play(cp, card)
+                print(f"    {agent.name} plays: {played}")
+            winner = game.finish_trick()
+            print(f"  -> {agents[winner].name} wins trick!")
+
+        game.score_round()
+        print(f"\nRound {round_num} complete.")
+        print(f"Tricks won: {game.tricks_won}")
+        print(f"Scores: {game.total_scores}")
+
+    print(f"\n{'='*60}")
+    print("FINAL SCORES")
+    print(f"{'='*60}")
+    indexed = [(i, game.total_scores[i]) for i in range(NUM_PLAYERS)]
+    indexed.sort(key=lambda x: x[1], reverse=True)
+    for rank, (idx, score) in enumerate(indexed, 1):
+        print(f"  {rank}. {agents[idx].name}: {score}")
+    print("\nThanks for playing!")
+'''
+
+
+# ============================================================
+# Outer layer functions
+# ============================================================
 
 
 def find_model_folder(pattern: str) -> str | None:
-    """
-    Find a model folder matching the given pattern.
-    
-    Returns the folder name if exactly one match found, None otherwise.
-    Prints warning if multiple matches found.
-    """
+    """Find agent model folder by exact match or substring fallback."""
     if not AGENTS_DIR.exists():
-        print(f"ERROR: Agents directory not found: {AGENTS_DIR}")
+        logger.error("Agents directory not found: %s", AGENTS_DIR)
         return None
 
-    # Exact match first (matchmaker passes full folder names)
     exact = AGENTS_DIR / pattern
     if exact.is_dir():
         return pattern
 
-    # Substring fallback for interactive CLI use
     matches = [
         d.name for d in AGENTS_DIR.iterdir()
         if d.is_dir() and pattern.lower() in d.name.lower()
     ]
 
     if not matches:
-        print(f"ERROR: No model folder matches pattern '{pattern}'")
+        logger.error("No model folder matches pattern '%s'", pattern)
         return None
-    
+
     if len(matches) > 1:
         return ModelAPI.resolve_model_interactive(pattern, matches, context="folder")
-    
+
     return matches[0]
 
 
-def load_stored_agent(model_folder: str, game: str, run: int, agent_idx: int) -> tuple[str, str]:
-    """
-    Load agent code from a stored file and rename the class.
-    
-    Returns tuple of (renamed_code, imports).
+def get_available_runs(model_folder: str, game: str) -> list[int]:
+    """Get sorted list of available run IDs for a model and game."""
+    model_dir = AGENTS_DIR / model_folder
+    runs = []
+    pattern = re.compile(rf"^{re.escape(game)}_(\d+)\.py$")
+
+    for file in model_dir.glob(f"{game}_*.py"):
+        match = pattern.match(file.name)
+        if match:
+            runs.append(int(match.group(1)))
+
+    return sorted(runs)
+
+
+def load_stored_agent(
+    model_folder: str, game: str, run: int, agent_idx: int
+) -> tuple[str, str]:
+    """Load agent code from stored file, rename class to WizardAgent_{agent_idx}.
+
+    Returns (renamed_code, imports). Empty strings on failure.
     """
     agent_file = AGENTS_DIR / model_folder / f"{game}_{run}.py"
-    
+
     if not agent_file.exists():
-        print(f"ERROR: Agent file not found: {agent_file}")
+        logger.error("Agent file not found: %s", agent_file)
         return "", ""
-    
+
     content = agent_file.read_text()
-    
-    # Extract the class definition (everything after the docstring header)
-    # The file format has a docstring header then imports then class
     lines = content.split("\n")
-    
-    # Skip the header docstring (lines starting with """ or within it)
+
+    # Skip header docstring
     code_start = 0
     in_docstring = False
     for i, line in enumerate(lines):
@@ -604,703 +715,417 @@ def load_stored_agent(model_folder: str, game: str, run: int, agent_idx: int) ->
                 break
             else:
                 in_docstring = True
-    
+
     code_lines = lines[code_start:]
-    code = "\n".join(code_lines)
-    
-    # Extract imports
+
     imports = []
-    for line in code_lines:
+    class_start_idx = None
+
+    for i, line in enumerate(code_lines):
         stripped = line.strip()
-        if stripped.startswith("import ") or stripped.startswith("from "):
-            if "random" not in stripped:  # random is in template
-                imports.append(stripped)
-    
-    # Rename WizardAgent to WizardAgent_{agent_idx}
-    new_class_name = f"WizardAgent_{agent_idx}"
-    code = re.sub(r"class\s+WizardAgent\b", f"class {new_class_name}", code)
-    
-    return code.strip(), "\n".join(imports)
-
-
-def parse_agent_specs(agents_str: str) -> list[tuple[str, int]]:
-    """
-    Parse agent specification string into list of (model_pattern, run_number) tuples.
-    
-    Format: "model1:run1,model1:run2,model2:run1,..."
-    """
-    specs = []
-    for spec in agents_str.split(","):
-        spec = spec.strip()
-        if ":" not in spec:
-            print(f"ERROR: Invalid agent spec '{spec}'. Expected format: model:run")
-            continue
-        
-        parts = spec.split(":", 1)
-        try:
-            model_pattern = parts[0].strip()
-            run_num = int(parts[1].strip())
-            specs.append((model_pattern, run_num))
-        except ValueError:
-            print(f"ERROR: Invalid run number in spec '{spec}'")
-    
-    return specs
-
-
-def load_all_stored_agents(agent_specs: list[tuple[str, int]], game: str) -> list[tuple[str, str, str]]:
-    """
-    Load all agents from stored files.
-    
-    Returns list of (agent_idx, model_folder, code) tuples.
-    """
-    agents = []
-    all_imports = []
-    
-    for i, (model_pattern, run_num) in enumerate(agent_specs, 1):
-        model_folder = find_model_folder(model_pattern)
-        if not model_folder:
-            return []
-        
-        code, imports = load_stored_agent(model_folder, game, run_num, i)
-        if not code:
-            return []
-        
-        agents.append((i, model_folder, code))
-        if imports:
-            all_imports.extend(imports.split("\n"))
-    
-    return agents, list(set(imp for imp in all_imports if imp.strip()))
-
-
-
-def select_models(api: ModelAPI) -> list[str]:
-    """Interactive model selection for the 3 competing models."""
-    print("\n" + "=" * 60)
-    print("WIZARD MATCH - MODEL SELECTION")
-    print("=" * 60)
-    print("\nAvailable models:")
-    for i, model in enumerate(api.models):
-        print(f"  [{i}] {model}")
-
-    print(f"\nSelect {NUM_MODELS} models. Each model will control 2 agents (total {NUM_PLAYERS} players).")
-    
-    selected = []
-    for model_num in range(1, NUM_MODELS + 1):
-        while True:
-            try:
-                idx = int(input(f"Select Model {model_num} (index): ").strip())
-                if 0 <= idx < len(api.models):
-                    selected.append(api.models[idx])
-                    break
-                print(f"Invalid index. Must be 0-{len(api.models) - 1}")
-            except ValueError:
-                print("Please enter a number.")
-    
-    print("\nMatch setup:")
-    for i, model in enumerate(selected, 1):
-        # Consistent with populate_agents.py naming rule
-        name_to_use = model.split("@")[0]
-        parts = model.split("/")
-        if len(parts) >= 3:
-            flavor = parts[2]
-            if flavor not in name_to_use:
-                name_to_use = f"{name_to_use}-{flavor}"
-        short_name = name_to_use.replace("/", "-")
-        print(f"  Model {i} ({short_name}): Will be prompted {NUM_PROMPTS_PER_MODEL} times → Agent-{i*2-1} and Agent-{i*2}")
-    print(f"  Total: 1 game with {NUM_ROUNDS} rounds")
-    
-    return selected
-
-
-async def prompt_model(api: ModelAPI, model_name: str, prompt: str, run_id: int) -> tuple[int, str, str]:
-    """Call a model with the Wizard prompt and return its response."""
-    try:
-        logger.info("Prompting model: %s (run %d)", model_name, run_id)
-        max_tokens = api.get_max_tokens(GAME_NAME)
-        response = await api.call(prompt, model_name=model_name, reasoning=True, max_tokens=max_tokens)
-        content = response.choices[0].message.content or ""
-        logger.info("Received response from %s (run %d): %d chars", model_name, run_id, len(content))
-        return run_id, model_name, content
-    except Exception as e:
-        logger.error("Error prompting %s: %s", model_name, e)
-        return run_id, model_name, ""
-
-
-def extract_agent_code(response: str, class_name: str) -> tuple[str, str]:
-    """Extract WizardAgent class from model response and rename it."""
-    # Find code blocks
-    blocks = re.findall(r"```(?:python)?\\s*(.*?)```", response, re.DOTALL)
-    code = ""
-    
-    # Look for WizardAgent class
-    for b in blocks:
-        if "class WizardAgent" in b:
-            code = b
+        if stripped.startswith("class WizardAgent"):
+            class_start_idx = i
             break
-    
-    # Fallback: search in raw text
-    if not code and "class WizardAgent" in response:
-        match = re.search(r"(class WizardAgent.*?)(?=\\nclass\\s|\\ndef\\s|$|if __name__)", response, re.DOTALL)
-        if match:
-            code = match.group(1)
-    
-    if not code:
+        if stripped.startswith("import ") or stripped.startswith("from "):
+            if "random" not in stripped:
+                imports.append(stripped)
+
+    if class_start_idx is None:
+        logger.error("No WizardAgent class found in %s", agent_file)
         return "", ""
-    
-    # Rename the class
-    code = re.sub(r"class\\s+WizardAgent\\b", f"class {class_name}", code)
-    
-    # Extract imports (excluding random which is in template)
-    imports = []
-    for line in response.split("\\n"):
-        if (line.startswith("import ") or line.startswith("from ")) and "random" not in line:
-            imports.append(line.strip())
-    
-    return code.strip(), "\\n".join(imports)
+
+    # Extract class body via indentation detection
+    class_lines = []
+    base_indent = 0
+
+    for i in range(class_start_idx, len(code_lines)):
+        line = code_lines[i]
+        stripped = line.strip()
+
+        if i == class_start_idx:
+            class_lines.append(line)
+            base_indent = len(line) - len(line.lstrip())
+            continue
+
+        if not stripped or stripped.startswith("#"):
+            class_lines.append(line)
+            continue
+
+        current_indent = len(line) - len(line.lstrip())
+        if current_indent <= base_indent:
+            break
+
+        class_lines.append(line)
+
+    agent_code = "\n".join(class_lines)
+
+    agent_code = re.sub(
+        r"\bWizardAgent\b", f"WizardAgent_{agent_idx}", agent_code
+    )
+
+    return agent_code.strip(), "\n".join(imports)
 
 
-def run_match(game_code: str, debug_mode: bool = False) -> str:
-    """Execute the match and return output."""
-    temp_file = os.path.join(tempfile.gettempdir(), f"wizard_{uuid.uuid4().hex[:8]}.py")
+def parse_agent_spec(spec: str) -> tuple[str, int]:
+    """Parse 'model:run' spec into (model_pattern, run_number)."""
+    parts = spec.split(":")
+    if len(parts) != 2:
+        logger.error("Invalid agent spec '%s'. Expected model:run", spec)
+        return "", 0
+    try:
+        return parts[0], int(parts[1])
+    except ValueError:
+        logger.error("Invalid run number in spec '%s'", spec)
+        return parts[0], 0
+
+
+def build_game_code(
+    agent_codes: list[str],
+    extra_imports: str,
+    num_games: int,
+    move_timeout: float,
+    agent_infos: list[str],
+) -> str:
+    """Assemble the full subprocess script from components."""
+    header = (
+        "import sys\n"
+        "import random\n"
+        "import signal\n"
+        "\n"
+        f"MOVE_TIMEOUT = {move_timeout}\n"
+        f"NUM_GAMES = {num_games}\n"
+        f"NUM_PLAYERS = {NUM_PLAYERS}\n"
+        f"NUM_ROUNDS = {NUM_ROUNDS}\n"
+    )
+
+    for i, info in enumerate(agent_infos, 1):
+        header += f'AGENT{i}_INFO = "{info}"\n'
+
+    parts = [header, extra_imports]
+    parts.extend(agent_codes)
+    parts.append(GAME_ENGINE_CODE)
+    parts.append(MATCH_RUNNER_CODE)
+
+    return "\n\n".join(parts)
+
+
+def build_human_game_code(
+    mode: str, agent_code: str = "", agent_imports: str = ""
+) -> str:
+    """Build subprocess script for human play modes."""
+    header = (
+        "import random\n"
+        f'GAME_MODE = "{mode}"\n'
+        f"NUM_PLAYERS = {NUM_PLAYERS}\n"
+    )
+    parts = [header]
+    if mode == "humanvsagent" and agent_imports:
+        parts.append(agent_imports)
+    if mode == "humanvsagent" and agent_code:
+        parts.append(agent_code)
+    parts.append(GAME_ENGINE_CODE)
+    parts.append(HUMAN_PLAY_CODE)
+    return "\n\n".join(parts)
+
+
+def run_match(
+    game_code: str, match_id: int, run_ids: list[int], timeout: int = MATCH_TIME_LIMIT
+) -> dict:
+    """Write temp file, execute subprocess, parse structured output."""
+    temp_id = uuid.uuid4().hex[:8]
+    temp_file = os.path.join(
+        tempfile.gettempdir(), f"wizard_match_{match_id}_{temp_id}.py"
+    )
+
     try:
         with open(temp_file, "w") as f:
             f.write(game_code)
-        # In debug mode, run with stdin=sys.stdin to allow input
-        if debug_mode:
-            result = subprocess.run(["python", temp_file], text=True, timeout=600)
-            return "DEBUG_MODE_RUN"
-        else:
-            result = subprocess.run(["python", temp_file], capture_output=True, text=True, timeout=600)
-        return result.stdout
+
+        result = subprocess.run(
+            ["python", temp_file], capture_output=True, text=True, timeout=timeout
+        )
+
+        if result.returncode != 0:
+            return {
+                "match_id": match_id,
+                "success": False,
+                "error": result.stderr[:500],
+                "log": result.stdout,
+            }
+
+        stdout = result.stdout
+
+        # Parse RESULT line: Agent-1=<pts>,...,Agent-6=<pts>
+        result_match = re.search(
+            r"RESULT:((?:Agent-\d+=[\d.]+,?)+)", stdout
+        )
+
+        # Parse SCORE line
+        score_match = re.search(
+            r"SCORE:((?:Agent-\d+=-?[\d.]+,?)+)", stdout
+        )
+
+        # Parse STATS lines
+        stats_block = ""
+        if "--- MATCH STATISTICS ---" in stdout:
+            stats_block = stdout.split("--- MATCH STATISTICS ---")[1].strip()
+
+        if result_match:
+            agent_points = {}
+            for part in result_match.group(1).split(","):
+                if "=" in part:
+                    name, val = part.split("=")
+                    agent_points[name.strip()] = float(val.strip())
+
+            agent_scores = {}
+            if score_match:
+                for part in score_match.group(1).split(","):
+                    if "=" in part:
+                        name, val = part.split("=")
+                        agent_scores[name.strip()] = float(val.strip())
+
+            # Parse per-agent placement counts from stats block
+            agent_placements = {}
+            for i in range(1, NUM_PLAYERS + 1):
+                key = f"Agent-{i}"
+                placements = {}
+                for p in ["1st", "2nd", "3rd", "4th", "5th", "6th"]:
+                    pm = re.search(rf"Agent-{i} Placements:.*?{p}=([\d.]+)", stats_block)
+                    placements[p] = float(pm.group(1)) if pm else 0.0
+                agent_placements[key] = placements
+
+            return {
+                "match_id": match_id,
+                "success": True,
+                "agent_points": agent_points,
+                "agent_scores": agent_scores,
+                "agent_placements": agent_placements,
+                "stats_block": stats_block,
+                "log": stdout,
+                "error": None,
+            }
+
+        return {
+            "match_id": match_id,
+            "success": False,
+            "error": "Could not parse results:\n" + stdout[:300],
+            "log": stdout,
+        }
+
     except Exception as e:
-        return f"ERROR: {{e}}"
+        return {
+            "match_id": match_id,
+            "success": False,
+            "error": str(e),
+            "log": "",
+        }
     finally:
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
-def run_match_human(game_code: str) -> None:
-    temp_file = os.path.join(tempfile.gettempdir(), f"wizard_human_{{uuid.uuid4().hex[:8]}}.py")
-    try:
-        with open(temp_file, "w") as f: f.write(game_code)
-        subprocess.call(["python", temp_file])
-    finally:
-        if os.path.exists(temp_file): os.remove(temp_file)
 
-
-async def run_single_game(responses, log_f, resp_f, models, debug_mode=False):
-    """Run a single game with the 6 agents from the responses."""
-    # Log responses
-    with open(resp_f, "a") as f:
-        f.write(f"--- AGENT RESPONSES ---\\n")
-        for i, (prompt_id, mname, content) in enumerate(responses, 1):
-            f.write(f"Agent {i} from {mname} (prompt #{prompt_id}):\\n{content}\\n\\n")
-        f.write("-" * 80 + "\\n\\n")
-    
-    # Extract agent code for all 6 agents (already 6 responses, no duplication needed)
-    agent_codes = []
-    all_imports = []
-    
-    for i, (_, _, content) in enumerate(responses, 1):
-        code, imports = extract_agent_code(content, f"WizardAgent_{i}")
-        if not code:
-            return {"success": False, "error": f"Code extraction failed for Agent {i}"}
-        
-        agent_codes.append(code)
-        if imports:
-            all_imports.extend(imports.split("\\n"))
-    
-    # Check if extraction succeeded
-    if len(agent_codes) != NUM_PLAYERS:
-        return {"success": False, "error": "Code extraction failed"}
-        
-    # Build game code
-    extra_imports = "\\n".join(set(imp for imp in all_imports if imp.strip()))
-    combined_agent_code = "\\n\\n".join(agent_codes)
-    
-    game_code = GAME_CODE_TEMPLATE.format(
-        num_players=NUM_PLAYERS,
-        num_rounds=NUM_ROUNDS,
-        num_games=NUM_GAMES_IN_WIZARD_MATCH,
-        debug_mode=str(debug_mode),
-        extra_imports=extra_imports,
-        card_class=CARD_CLASS,
-        agent_code=combined_agent_code,
-        move_timeout=MOVE_TIME_LIMIT,
-        game_class=GAME_CLASS
-    )
-        
-    # Run match
-    if debug_mode:
-        output = run_match(game_code, debug_mode)
-    else:
-        output = await asyncio.get_event_loop().run_in_executor(None, run_match, game_code, False)
-    
-    with open(log_f, "a") as f:
-        f.write(f"--- GAME LOG ---\\n")
-        f.write(output)
-        f.write("-" * 40 + "\\n\\n")
-    
-    # Parse results
-    if debug_mode:
-        return {"success": True, "scores": {f"P{i+1}": 0 for i in range(NUM_PLAYERS)}}
-    
-    result_match = re.search(r"RESULT:(.+)", output)
-    if result_match:
-        result_str = result_match.group(1)
-        scores = {}
-        for part in result_str.split(","):
-            if "=" in part:
-                player, score = part.split("=")
-                scores[player.strip()] = int(score.strip())
-        return {"success": True, "scores": scores}
-    else:
-        return {"success": False, "error": "Result parsing failed"}
-
-
-async def main_async(debug_mode=False):
-    """Main async entry point."""
-    api = ModelAPI()
-    
-    # Validate minimum models
-    if len(api.models) < NUM_MODELS:
-        print(f"ERROR: Need at least {NUM_MODELS} models available. Found {len(api.models)}.")
-        return
-    
-    models = select_models(api)
-    prompt = load_prompt()
-    
-    # Create directories
-    WIZARD_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    MODEL_RESPONSES_DIR.mkdir(parents=True, exist_ok=True)
-    
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    model_suffix = "_vs_".join(m.split("/")[-1].split("@")[0] for m in models)
-    log_f = GAME_LOGS_DIR / f"{ts}_{model_suffix}_game.txt"
-    resp_f = MODEL_RESPONSES_DIR / f"{ts}_responses.txt"
-    
-    # Fire all prompts concurrently (3 models × 2 prompts each = 6 total)
-    print("\nPrompting models...")
-    tasks = []
-    prompt_id = 1
-    for model in models:
-        for _ in range(NUM_PROMPTS_PER_MODEL):
-            tasks.append(asyncio.create_task(prompt_model(api, model, prompt, prompt_id)))
-            prompt_id += 1
-    
-    responses = await asyncio.gather(*tasks)
-    
-    # Run the single game
-    if debug_mode:
-        print("\n" + "=" * 60)
-        print("DEBUG MODE ENABLED")
-        print("=" * 60)
-        print("You will be prompted at each stage of the game.")
-        print("Game state and decisions will be displayed in detail.\n")
-    
-    print("\nRunning game...")
-    result = await run_single_game(responses, log_f, resp_f, models, debug_mode)
-    
-    if not result["success"]:
-        print(f"\nERROR: {result.get('error', 'Game failed')}")
-        return
-    
-    # Calculate final rankings
-    print("\n" + "=" * 60)
-    print("FINAL RANKINGS")
-    print("=" * 60)
-    
-    agent_scores = result["scores"]
-    
-    # Aggregate by model
-    model_scores = {}
-    for i, model in enumerate(models, 1):
-        agent1 = f"P{i*2-1}"
-        agent2 = f"P{i*2}"
-        total = agent_scores[agent1] + agent_scores[agent2]
-        model_short = model.split("/")[-1].split("@")[0]
-        model_scores[model_short] = {
-            "total": total,
-            "agent1_score": agent_scores[agent1],
-            "agent2_score": agent_scores[agent2],
-            "agent1_name": agent1,
-            "agent2_name": agent2,
-        }
-    
-    # Sort by total score
-    rankings = sorted(model_scores.items(), key=lambda x: x[1]["total"], reverse=True)
-    
-    # Show individual agents first
-    print("\\nIndividual Agent Leaderboard:")
-    agent_rankings = sorted(agent_scores.items(), key=lambda x: x[1], reverse=True)
-    for rank, (agent, score) in enumerate(agent_rankings, 1):
-        agent_idx = int(agent[1:]) - 1
-        model_idx = agent_idx // 2
-        model_name = models[model_idx].split("/")[-1].split("@")[0]
-        print(f"  {rank}. {agent} ({model_name}): {score} points")
-    
-    # Then show aggregated by model
-    print("\\nAggregated by Model (combined score of both agents):")
-    for rank, (model_name, data) in enumerate(rankings, 1):
-        print(f"  {rank}. {model_name}: {data['total']} points")
-        print(f"      {data['agent1_name']}: {data['agent1_score']} | {data['agent2_name']}: {data['agent2_score']}")
-
-
-def run_stored_game(agent_codes: list[tuple[int, str, str]], imports: list[str], debug_mode: bool = False) -> dict:
-    """Run a game with pre-loaded stored agents."""
-    # Build the combined agent code
-    combined_agent_code = "\n\n".join(code for _, _, code in agent_codes)
-    extra_imports = "\n".join(imports)
-    
-    game_code = GAME_CODE_TEMPLATE.format(
-        num_players=NUM_PLAYERS,
-        num_rounds=NUM_ROUNDS,
-        num_games=NUM_GAMES_IN_WIZARD_MATCH,
-        debug_mode=str(debug_mode),
-        extra_imports=extra_imports,
-        card_class=CARD_CLASS,
-        agent_code=combined_agent_code,
-        move_timeout=MOVE_TIME_LIMIT,
-        game_class=GAME_CLASS
-    )
-    
-    # Run the match
-    if debug_mode:
-        output = run_match(game_code, debug_mode)
-    else:
-        output = run_match(game_code, False)
-    
-    # Parse results
-    if debug_mode:
-        return {"success": True, "scores": {f"P{i+1}": 0 for i in range(NUM_PLAYERS)}}
-    
-    result_match = re.search(r"RESULT:(.+)", output)
-    if result_match:
-        result_str = result_match.group(1)
-        scores = {}
-        for part in result_str.split(","):
-            if "=" in part:
-                player, score = part.split("=")
-                scores[player.strip()] = int(score.strip())
-        return {"success": True, "scores": scores}
-    else:
-        return {"success": False, "error": f"Result parsing failed. Output:\n{output[:500]}"}
-
-
-def main_stored(agents_str: str, game: str, debug_mode: bool = False):
-    """Main function for stored agent mode."""
-    print("\n" + "=" * 60)
-    print("WIZARD MATCH - STORED AGENT MODE")
-    print("=" * 60)
-    
-    # Parse agent specifications
-    agent_specs = parse_agent_specs(agents_str)
-    
-    if len(agent_specs) != NUM_PLAYERS:
-        print(f"\nERROR: Need exactly {NUM_PLAYERS} agents, got {len(agent_specs)}")
-        print("Example: --agents mistral:1,mistral:2,mistral:3,fp8:1,fp8:2,fp8:3")
-        return
-    
-    print(f"\nLoading {NUM_PLAYERS} agents for game: {game}")
-    for i, (model, run) in enumerate(agent_specs, 1):
-        print(f"  Agent-{i}: {model} (run {run})")
-    
-    # Load all agents
-    result = load_all_stored_agents(agent_specs, game)
-    if not result or not result[0]:
-        print("\nERROR: Failed to load agents")
-        return
-    
-    agents, imports = result
-    print(f"\nLoaded {len(agents)} agents successfully")
-    
-    # Create log directories
-    WIZARD_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    agent_suffix = "_vs_".join(f"{m}:{r}" for m, r in agent_specs)
-    log_f = GAME_LOGS_DIR / f"{ts}_{agent_suffix}_stored_game.txt"
-    
-    # Log agent info
-    with open(log_f, "w") as f:
-        f.write(f"Stored Agent Game - {ts}\n")
-        f.write("=" * 60 + "\n")
-        for i, (model, run) in enumerate(agent_specs, 1):
-            f.write(f"Agent-{i}: {model} (run {run})\n")
-        f.write("\n")
-    
-    # Run game
-    if debug_mode:
-        print("\n" + "=" * 60)
-        print("DEBUG MODE ENABLED")
-        print("=" * 60)
-    
-    print("\nRunning game...")
-    result = run_stored_game(agents, imports, debug_mode)
-    
-    # Log output
-    with open(log_f, "a") as f:
-        f.write(f"Result: {result}\n")
-    
-    if not result["success"]:
-        print(f"\nERROR: {result.get('error', 'Game failed')}")
-        return
-    
-    # Show rankings
-    print("\n" + "=" * 60)
-    print("FINAL RANKINGS")
-    print("=" * 60)
-    
-    agent_scores = result["scores"]
-    
-    # Individual agent rankings with model info
-    print("\nIndividual Agent Leaderboard:")
-    agent_rankings = sorted(agent_scores.items(), key=lambda x: x[1], reverse=True)
-    for rank, (agent, score) in enumerate(agent_rankings, 1):
-        agent_idx = int(agent[1:]) - 1
-        model_pattern, run_num = agent_specs[agent_idx]
-        print(f"  {rank}. {agent} ({model_pattern}:{run_num}): {score} points")
-    
-    print(f"\nGame log saved to: {log_f}")
-
-
-def get_available_runs(model_folder: str, game: str) -> list[int]:
-    """Get list of available run IDs for a model and game."""
-    model_dir = AGENTS_DIR / model_folder
-    runs = []
-    pattern = re.compile(rf"^{re.escape(game)}_(\d+)\.py$")
-    
-    for file in model_dir.glob(f"{game}_*.py"):
-        match = pattern.match(file.name)
-        if match:
-            runs.append(int(match.group(1)))
-    
-    return sorted(runs)
-
-
-def parse_agent_spec(spec: str) -> tuple[str, list[int]]:
-    """Parse agent spec (model:run1:run2) into model pattern and list of runs."""
-    parts = spec.split(":")
-    model_pattern = parts[0]
-    runs = [int(r) for r in parts[1:]]
-    return model_pattern, runs
-
-
-async def run_game_async(game_id: int, game_agents: list[tuple[str, int]], log_f: Path, debug_mode: bool = False):
-    """Run a single 6-player Wizard game and return the results."""
-    loaded_agents = []
-    all_imports = []
-    
-    for idx, (folder, run) in enumerate(game_agents, 1):
-        code, imports = load_stored_agent(folder, GAME_NAME, run, idx)
-        if not code:
-            return {"success": False, "error": f"Failed to load agent {idx}", "game_id": game_id}
-        loaded_agents.append((idx, folder, code))
-        if imports:
-            all_imports.extend(imports.split("\n"))
-
-    result = await asyncio.get_event_loop().run_in_executor(None, run_stored_game, loaded_agents, list(set(all_imports)), debug_mode)
-    
-    with open(log_f, "a") as f:
-        f.write(f"--- Game {game_id} ---\n")
-        for idx, (folder, run) in enumerate(game_agents, 1):
-            f.write(f"Slot {idx}: {folder} (run {run})\n")
-        f.write(f"Result: {result}\n")
-        f.write("-" * 40 + "\n\n")
-        
-    result["game_id"] = game_id
-    result["game_agents"] = game_agents
-    return result
+async def run_match_async(
+    game_code: str, match_id: int, run_ids: list[int]
+) -> dict:
+    """Run match in executor for async compatibility."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, run_match, game_code, match_id, run_ids)
 
 
 async def main_async():
-    parser = argparse.ArgumentParser(description="Run Wizard matches between stored AI agents")
-    parser.add_argument("--agent", nargs="+", help="Agent specs: model1[:run1:run2] model2[:run3:run4] ...")
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
-    parser.add_argument("--human", action="store_true", help="Play interactively against random bots")
+    parser = argparse.ArgumentParser(description="Run Wizard matches between AI agents")
+    parser.add_argument(
+        "--agent", nargs="+",
+        help="Agent specs: model1:run1 model2:run2 ... (exactly 6 for match mode)",
+    )
+    human_group = parser.add_mutually_exclusive_group()
+    human_group.add_argument(
+        "--humanvsbot", action="store_true",
+        help="Play interactively against 5 random bots",
+    )
+    human_group.add_argument(
+        "--humanvshuman", action="store_true",
+        help="All 6 seats are human players (hotseat)",
+    )
+    human_group.add_argument(
+        "--humanvsagent", action="store_true",
+        help="Play against a stored agent + 4 random bots (requires --agent with 1 spec)",
+    )
+    parser.add_argument(
+        "--update-scoreboard", action="store_true",
+        help="Write results to scoreboard (default: off; enabled by matchmaker)",
+    )
     args = parser.parse_args()
 
-    if args.human:
-        print("\n" + "=" * 60)
-        print("WIZARD HUMAN MODE")
-        print("You are playing against 5 RandomBots.")
-        print("=" * 60)
-        
-        # Build agent aliases code
-        agent_code = """
-class RandomAgent:
-    def __init__(self, name):
-        self.name = name
+    # --- Human modes ---
+    human_mode = None
+    if args.humanvsbot:
+        human_mode = "humanvsbot"
+    elif args.humanvshuman:
+        human_mode = "humanvshuman"
+    elif args.humanvsagent:
+        human_mode = "humanvsagent"
 
-    def make_move(self, phase, game_state):
-        if phase == "bid":
-            return random.randint(0, game_state['cards_this_round'])
-        else: # play
-            return random.choice(game_state['my_hand'])
-
-class HumanAgent:
-    def __init__(self, name):
-        self.name = name
-
-    def make_move(self, phase, game_state):
-        print(f"\\n--- YOUR TURN ({phase}) ---")
-        if phase == "bid":
-             print(f"Round: {game_state['round_number']} ({game_state['cards_this_round']} cards)")
-             print(f"Trump: {game_state['trump_suit']}")
-             print(f"Hand: {[str(c) for c in game_state['my_hand']]}")
-             while True:
-                try:
-                    bid = int(input(f"Enter Bid [0-{game_state['cards_this_round']}]: ").strip())
-                    if 0 <= bid <= game_state['cards_this_round']: return bid
-                    print("Invalid bid.")
-                except ValueError: print("Enter a number.")
+    if human_mode:
+        if human_mode == "humanvsagent":
+            if not args.agent or len(args.agent) != 1:
+                print("ERROR: --humanvsagent requires exactly 1 --agent spec.")
+                print("Example: --humanvsagent --agent mistral:1")
+                sys.exit(1)
+            model_pattern, run_num = parse_agent_spec(args.agent[0])
+            folder = find_model_folder(model_pattern)
+            if not folder:
+                sys.exit(1)
+            if not run_num:
+                runs = get_available_runs(folder, GAME_NAME)
+                if not runs:
+                    print(f"ERROR: No runs found for {folder}/{GAME_NAME}")
+                    sys.exit(1)
+                run_num = runs[0]
+            agent_code, agent_imports = load_stored_agent(
+                folder, GAME_NAME, run_num, 1
+            )
+            if not agent_code:
+                print(f"ERROR: Failed to load agent from {folder}")
+                sys.exit(1)
+            game_code = build_human_game_code(
+                "humanvsagent", agent_code, agent_imports
+            )
+        elif args.agent:
+            print("ERROR: --agent is not used with --humanvsbot or --humanvshuman.")
+            sys.exit(1)
         else:
-             print(f"Trick so far: {[(i+1, str(c)) for i,c in game_state['current_trick']]}")
-             # trick_leader is player index. Derived led suit is implicit.
-             print(f"Hand: {[(i, str(c)) for i,c in enumerate(game_state['my_hand'])]}")
-             while True:
-                try:
-                    idx = int(input(f"Select Card Index [0-{len(game_state['my_hand'])-1}]: ").strip())
-                    if 0 <= idx < len(game_state['my_hand']):
-                        return game_state['my_hand'][idx]
-                    print("Invalid index.")
-                except ValueError: print("Enter a number.")
+            game_code = build_human_game_code(human_mode)
 
-class WizardAgent_1(HumanAgent): pass
-class WizardAgent_2(RandomAgent): pass
-class WizardAgent_3(RandomAgent): pass
-class WizardAgent_4(RandomAgent): pass
-class WizardAgent_5(RandomAgent): pass
-class WizardAgent_6(RandomAgent): pass
-"""
-        
-        game_code = GAME_CODE_TEMPLATE.format(
-            num_players=NUM_PLAYERS,
-            num_rounds=NUM_ROUNDS,
-            num_games=1,
-            debug_mode=False,
-            human_mode=True,
-            extra_imports="",
-            card_class=CARD_CLASS,
-            agent_code=agent_code,
-            game_class=GAME_CLASS,
-            move_timeout=99999
+        temp_file = os.path.join(
+            tempfile.gettempdir(),
+            f"wizard_{human_mode}_{uuid.uuid4().hex[:8]}.py",
         )
-        run_match_human(game_code)
+        try:
+            with open(temp_file, "w") as f:
+                f.write(game_code)
+            subprocess.run(
+                ["python", temp_file],
+                stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr,
+            )
+        finally:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
         return
 
-    if not args.agent:
-        print("ERROR: Need agent specifications.")
-        print("Example: --agent mistral:1:2 gpt-mini:1:2 gemma:1:2")
+    # --- Agent match mode ---
+    if not args.agent or len(args.agent) != NUM_PLAYERS:
+        print(f"ERROR: Need exactly {NUM_PLAYERS} agent specifications.")
+        print("Example: --agent model1:1 model2:1 model3:1 model4:1 model5:1 model6:1")
         sys.exit(1)
 
-    # Group agent runs by model folder
-    runs_by_model = {} # folder -> list of runs
-    
+    # Parse and resolve all 6 agent specs
+    agent_specs = []
     for spec in args.agent:
-        model_pattern, runs = parse_agent_spec(spec)
+        model_pattern, run_num = parse_agent_spec(spec)
+        if not model_pattern:
+            sys.exit(1)
         folder = find_model_folder(model_pattern)
         if not folder:
             sys.exit(1)
-            
-        if not runs:
-            runs = get_available_runs(folder, GAME_NAME)
-            
-        if folder not in runs_by_model:
-            runs_by_model[folder] = []
-        runs_by_model[folder].extend(runs)
-
-    folders = list(runs_by_model.keys())
-    num_models = len(folders)
-    
-    if num_models == 0:
-        print("ERROR: No valid models found.")
-        sys.exit(1)
-
-    # Calculate slots per model for a 6-player game
-    # Distribute 6 slots as evenly as possible
-    base_slots = 6 // num_models
-    remainder = 6 % num_models
-    slots_per_model = {folder: base_slots for folder in folders}
-    for i in range(remainder):
-        slots_per_model[folders[i]] += 1
-
-    # How many games can we run?
-    # Based on the limiting model's available runs
-    num_games = 1000000 # Large initial value
-    for folder in folders:
-        possible = len(runs_by_model[folder]) // slots_per_model[folder]
-        num_games = min(num_games, possible)
-    
-    if num_games == 0:
-        print(f"ERROR: Not enough runs to fill slots for {num_models} models.")
-        for folder in folders:
-            print(f"  {folder}: slots required={slots_per_model[folder]}, available={len(runs_by_model[folder])}")
-        sys.exit(1)
+        agent_specs.append((folder, run_num))
 
     print("\n" + "=" * 60)
     print("WIZARD MATCH - STORED AGENTS")
     print("=" * 60)
-    print(f"Total Models: {num_models}")
-    for folder in folders:
-        print(f"  {folder}: {len(runs_by_model[folder])} runs, {slots_per_model[folder]} slots/game")
-    print(f"Total Games: {num_games}")
+    for i, (folder, run) in enumerate(agent_specs, 1):
+        print(f"  Agent-{i}: {folder}:{run}")
+    print(f"  Games per match: {NUM_GAMES_PER_MATCH}")
     print("=" * 60)
 
-    WIZARD_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    GAME_LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    
+    # Load all 6 agents
+    agent_codes = []
+    all_imports = set()
+
+    for i, (folder, run) in enumerate(agent_specs, 1):
+        code, imports = load_stored_agent(folder, GAME_NAME, run, i)
+        if not code:
+            print(f"ERROR: Failed to load Agent-{i} from {folder}:{run}")
+            sys.exit(1)
+        agent_codes.append(code)
+        if imports:
+            for imp in imports.split("\n"):
+                if imp.strip():
+                    all_imports.add(imp.strip())
+
+    extra_imports = "\n".join(sorted(all_imports))
+    agent_infos = [f"{folder}:{run}" for folder, run in agent_specs]
+
+    game_code = build_game_code(
+        agent_codes, extra_imports, NUM_GAMES_PER_MATCH,
+        MOVE_TIME_LIMIT, agent_infos,
+    )
+
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    model_suffix = "_vs_".join(folders)
-    log_f = GAME_LOGS_DIR / f"{ts}_{model_suffix}_match.txt"
 
-    print(f"\nRunning {num_games} games in parallel...")
-    game_tasks = []
-    
-    for i in range(num_games):
-        game_agents = []
-        for folder in folders:
-            num_slots = slots_per_model[folder]
-            # Take consecutive runs for this game
-            for j in range(num_slots):
-                run_idx = i * num_slots + j
-                game_agents.append((folder, runs_by_model[folder][run_idx]))
-        
-        # Ensure we have exactly 6 agents
-        if len(game_agents) != 6:
-            logger.error("Game %d has %d agents instead of 6", i + 1, len(game_agents))
-            continue
-            
-        game_tasks.append(run_game_async(i + 1, game_agents, log_f, args.debug))
+    run_ids = [run for _, run in agent_specs]
+    result = run_match(game_code, 1, run_ids)
 
-    results = await asyncio.gather(*game_tasks)
-    
-    total_stats = {} # model_folder -> total_score
-    
-    # Sort results for display
-    results.sort(key=lambda x: x["game_id"])
+    # Build log filename
+    agent_suffix = "_vs_".join(f"{f}:{r}" for f, r in agent_specs)
+    log_f = RESULTS_DIR / f"{ts}_{agent_suffix}_match.txt"
 
-    for res in results:
-        game_id = res["game_id"]
-        game_agents = res["game_agents"]
-        print(f"\nGame {game_id}:")
-        
-        if res["success"]:
-            scores = res["scores"]
-            for idx, (folder, run) in enumerate(game_agents, 1):
-                p_key = f"P{idx}"
-                score = scores.get(p_key, 0)
-                total_stats[folder] = total_stats.get(folder, 0) + score
-                print(f"  Slot {idx}: {folder} (run {run}) -> {score}")
-        else:
-            print(f"  FAILED: {res.get('error', 'Unknown error')}")
+    if result["success"]:
+        agent_points = result["agent_points"]
+        agent_scores = result["agent_scores"]
+        agent_placements = result["agent_placements"]
 
-    print("\nFINAL RESULTS (Aggregated Scores):")
-    sorted_ranks = sorted(total_stats.items(), key=lambda x: x[1], reverse=True)
-    for rank, (folder, score) in enumerate(sorted_ranks, 1):
-        print(f"  {rank}. {folder}: {score}")
-    print(f"\nLogs saved to: {log_f}")
+        status = "Result:\n"
+        for i, (folder, run) in enumerate(agent_specs, 1):
+            key = f"Agent-{i}"
+            pts = agent_points.get(key, 0)
+            sc = agent_scores.get(key, 0)
+            status += f"  {key} ({folder}:{run}): Pts={pts:.1f} Score={sc:.1f}\n"
+
+        game_log = result.get("log", "")
+        if game_log:
+            status += f"\n{game_log}\n"
+
+        print("\nFINAL RESULTS:")
+        for i, (folder, run) in enumerate(agent_specs, 1):
+            key = f"Agent-{i}"
+            pts = agent_points.get(key, 0)
+            sc = agent_scores.get(key, 0)
+            print(f"  {key} ({folder}:{run}): Pts={pts:.1f} Score={sc:.1f}")
+    else:
+        status = f"FAILED: {result.get('error', 'Unknown')}"
+        print(f"\nMATCH FAILED: {result.get('error', 'Unknown')}")
+
+    with open(log_f, "w") as f:
+        f.write("Match Contenders:\n")
+        for i, (folder, run) in enumerate(agent_specs, 1):
+            f.write(f"Agent-{i}: {folder}:{run}\n")
+        f.write(f"\n{status}\n")
+        f.write("-" * 60 + "\n")
+
+    # Scoreboard update
+    if result["success"] and args.update_scoreboard:
+        for i, (folder, run) in enumerate(agent_specs, 1):
+            key = f"Agent-{i}"
+            agent_key = f"{folder}:{run}"
+
+            placements = {}
+            raw_placements = agent_placements.get(key, {})
+            for p in ["1st", "2nd", "3rd", "4th", "5th", "6th"]:
+                placements[p] = int(round(raw_placements.get(p, 0)))
+
+            update_scoreboard_6p(
+                SCOREBOARD_PATH,
+                agent_key,
+                games_played=NUM_GAMES_PER_MATCH,
+                placements=placements,
+                points=int(round(agent_points.get(key, 0))),
+                score=agent_scores.get(key, 0.0),
+            )
+
+    print(f"\nLog saved to: {log_f}")
 
 
 if __name__ == "__main__":
