@@ -45,6 +45,11 @@ try:
 except (ValueError, TypeError):
     MATCH_TIME_LIMIT = 900
 
+try:
+    MAX_TURNS_PER_GAME = int(os.getenv("MAX_TURNS_PER_GAME", "100"))
+except (ValueError, TypeError):
+    MAX_TURNS_PER_GAME = 100
+
 BASE_DIR = Path(__file__).parent.parent
 RESULTS_DIR = BASE_DIR / "results" / "word_matrix"
 SCOREBOARD_PATH = BASE_DIR / "scoreboard" / "A6-scoreboard.txt"
@@ -409,7 +414,6 @@ def play_game(game_num, match_stats):
     game.display_board()
 
     # --- Game loop ---
-    MAX_TURNS_PER_GAME = 100
     turn_count = 0
 
     while not game.is_game_over() and turn_count < MAX_TURNS_PER_GAME:
@@ -765,6 +769,7 @@ def build_game_code(
     num_games: int,
     move_timeout: float,
     words_file_path: str,
+    max_turns_per_game: int = 100,
     forfeit_score: int = FORFEIT_SCORE,
     game_mode: str = "",
     agent1_name: str = "Agent-1",
@@ -779,6 +784,7 @@ def build_game_code(
         "\n"
         f"MOVE_TIMEOUT = {move_timeout}\n"
         f"NUM_GAMES = {num_games}\n"
+        f"MAX_TURNS_PER_GAME = {max_turns_per_game}\n"
         f'GAME_MODE = "{game_mode}"\n'
         f'AGENT1_NAME = "{agent1_name}"\n'
         f'AGENT2_NAME = "{agent2_name}"\n'
@@ -999,6 +1005,7 @@ async def main_async():
             num_games=1,
             move_timeout=99999,
             words_file_path=str(WORDS_FILE),
+            max_turns_per_game=MAX_TURNS_PER_GAME,
             game_mode=human_mode,
             agent1_name="Human",
             agent2_name="Bot" if human_mode == "humanvsbot" else "Agent",
@@ -1066,6 +1073,7 @@ async def main_async():
             code1, code2, extra_imports,
             NUM_GAMES_PER_MATCH, MOVE_TIME_LIMIT,
             str(WORDS_FILE),
+            max_turns_per_game=MAX_TURNS_PER_GAME,
             agent1_name=f"{folder1}:{run1}", agent2_name=f"{folder2}:{run2}",
         )
 
