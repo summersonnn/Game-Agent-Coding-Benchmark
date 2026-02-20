@@ -822,9 +822,8 @@ def build_game_code(
     for i, info in enumerate(agent_infos, 1):
         header += f'AGENT{i}_INFO = "{info}"\n'
 
-    parts = [header, extra_imports]
+    parts = [header, extra_imports, GAME_ENGINE_CODE]
     parts.extend(agent_codes)
-    parts.append(GAME_ENGINE_CODE)
     parts.append(MATCH_RUNNER_CODE)
 
     return "\n\n".join(parts)
@@ -1126,9 +1125,18 @@ async def main_async():
         print("\nFINAL RESULTS:")
         for res in results_list:
             print(f"  {res['key']} ({res['folder']}:{res['run']}): Pts={res['pts']:.1f} Score={res['sc']:.1f}")
+
+        # Print structured tags for matchmaker parsing
+        res_tag = ",".join([f"Agent-{i}={agent_points.get(f'Agent-{i}', 0):.1f}" for i in range(1, NUM_PLAYERS+1)])
+        print(f"RESULT:{res_tag}")
+        score_tag = ",".join([f"Agent-{i}={agent_scores.get(f'Agent-{i}', 0):.1f}" for i in range(1, NUM_PLAYERS+1)])
+        print(f"SCORE:{score_tag}")
+        print("--- MATCH STATISTICS ---")
+        print(result.get("stats_block", ""))
     else:
         status = f"FAILED: {result.get('error', 'Unknown')}"
         print(f"\nMATCH FAILED: {result.get('error', 'Unknown')}")
+        sys.exit(1)
 
     with open(log_f, "w") as f:
         f.write("Match Contenders:\n")

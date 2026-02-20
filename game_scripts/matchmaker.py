@@ -207,8 +207,14 @@ async def run_match_subprocess(
     label: str,
     semaphore: asyncio.Semaphore,
     start_time: float,
+    env_vars: dict[str, str] | None = None,
 ) -> dict:
     """Run a single match runner subprocess with concurrency control."""
+    import os
+    env = os.environ.copy()
+    if env_vars:
+        env.update(env_vars)
+
     async with semaphore:
         elapsed = time.time() - start_time
         elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
@@ -223,6 +229,7 @@ async def run_match_subprocess(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=env,
             )
             try:
                 stdout, stderr = await proc.communicate()
@@ -230,7 +237,7 @@ async def run_match_subprocess(
                 proc.kill()
                 await proc.communicate()
                 print(f"FAILED (timeout): {label}", flush=True)
-                return {"success": False, "label": label, "error": "timeout"}
+                return {"success": False, "label": label, "error": "timeout", "stdout": ""}
 
             success = proc.returncode == 0
             if success:
@@ -242,10 +249,11 @@ async def run_match_subprocess(
                 "success": success,
                 "label": label,
                 "error": stderr.decode(errors="replace")[:300] if not success else None,
+                "stdout": stdout.decode(errors="replace"),
             }
         except Exception as e:
             print(f"ERROR: {label} - {e}", flush=True)
-            return {"success": False, "label": label, "error": str(e)[:300]}
+            return {"success": False, "label": label, "error": str(e)[:300], "stdout": ""}
 
 
 # ---------------------------------------------------------------------------
@@ -522,6 +530,225 @@ async def run_tournament(
                 print(f"  - {r['label']}: {err}")
 
 
+async def run_a3_tournament(
+    game_id: str,
+    workers: int,
+    dry_run: bool,
+    health_check: bool = False,
+) -> None:
+    import os
+    import math
+
+    game = GAME_REGISTRY.get(game_id)
+    if not game:
+        print(f"ERROR: Unknown game_id {game_id}")
+        sys.exit(1)
+
+    game_name = game["name"]
+    match_script = SCRIPT_DIR / game["script"]
+
+    if not match_script.exists():
+        print(f"ERROR: Match script not found: {match_script}")
+        sys.exit(1)
+
+    agents = discover_agents(game_name)
+    if not agents:
+        print(f"ERROR: No agents found for {game_name} in {AGENTS_DIR}")
+        sys.exit(1)
+
+    if health_check:
+        if not verify_agent_syntax(game_name, agents):
+            sys.exit(1)
+
+    # Validate agent counts: Exactly 2 per model.
+    invalid_models = [m for m, rs in agents.items() if len(rs) != 2]
+    if invalid_models:
+        print(f"ERROR: A3 requires exactly 2 agents per model. Invalid models: {invalid_models}")
+        sys.exit(1)
+
+    models = sorted(agents.keys())
+    num_models = len(models)
+
+    # Validate models count is divisible by 3 to form 6-person pods.
+    if num_models % 3 != 0 or num_models == 0:
+        print(f"ERROR: A3 requires number of models to be a multiple of 3 (for 6-player games). Found {num_models}.")
+        sys.exit(1)
+
+    print(f"\nMATCHMAKER A3 - PHASE 1: Qualifiers")
+    print(f"Models: {num_models} (Total Agents: {num_models * 2})")
+
+    # Group into chunks of 3 models
+    random.shuffle(models)
+    groups = [models[i : i + 3] for i in range(0, num_models, 3)]
+    
+    commands_p1: list[tuple[list[str], str, list[tuple[str, int]]]] = []
+    for g in groups:
+        # Each group has 3 models. 2 agents per model = 6 players.
+        cmd = [sys.executable, str(match_script), "--agent"]
+        match_agents = []
+        for m in g:
+            match_agents.extend([(m, agents[m][0]), (m, agents[m][1])])
+            cmd.extend([f"{m}:{agents[m][0]}", f"{m}:{agents[m][1]}"])
+        # We do NOT run --update-scoreboard for Phase 1 as these are qualifiers 
+        # and do not reflect final standings across the board.
+        
+        label = " vs ".join(g)
+        commands_p1.append((cmd, label, match_agents))
+        
+    num_p1 = len(commands_p1)
+    print(f"Fixture: {num_p1} matches (Qualifiers)")
+    
+    if dry_run:
+        print("\n--- DRY RUN (Phase 1) ---")
+        for cmd_data in commands_p1:
+            print(f"  {cmd_data[1]}")
+        
+        # Expected Combinatorics Phase 2
+        combinations_count = math.comb(num_models, 6)
+        print(f"\n--- DRY RUN (Phase 2) ---")
+        print(f"Expected Matches: {combinations_count} combinations of winning agents")
+        return
+
+    # Execute Phase 1
+    # NUM_OF_GAMES_IN_A_MATCH is typically an env var. We bump it x10 for A3 Phase 1.
+    base_games = int(os.environ.get("NUM_OF_GAMES_IN_A_MATCH", "50"))
+    env_vars_p1 = {"NUM_OF_GAMES_IN_A_MATCH": str(base_games * 10)}
+    print(f"Config: {env_vars_p1['NUM_OF_GAMES_IN_A_MATCH']} games per Match (Phase 1 only)")
+
+    semaphore = asyncio.Semaphore(workers)
+    start_time = time.time()
+    
+    tasks = [
+        run_match_subprocess(cmd_data[0], i + 1, num_p1, cmd_data[1], semaphore, start_time, env_vars=env_vars_p1)
+        for i, cmd_data in enumerate(commands_p1)
+    ]
+    
+    try:
+        results = await asyncio.gather(*tasks)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\n\nInterrupted Phase 1 — cancelling remaining matches...")
+        for t in tasks:
+            if isinstance(t, asyncio.Task) and not t.done():
+                t.cancel()
+        sys.exit(1)
+
+    print(f"\n--- PHASE 1 RESULTS ---")
+    for r in results:
+        if not r.get("success"):
+            print(f"\nFailed Qualifier: {r['label']}\n{r.get('error')}")
+            sys.exit(1)
+        # Print output so user can read the standard scoreboard stats for this match
+        print(f"\n{'-'*60}\nQualifier Group: {r['label']}\n{'-'*60}")
+        print(r.get("stdout", ""))
+
+    print(f"\n--- PHASE 1 SELECTION ---")
+    # Automatic selection based on points
+    model_results: dict[str, list[tuple[int, float]]] = {m: [] for m in models}
+    
+    for i, r in enumerate(results):
+        stdout = r.get("stdout", "")
+        # RESULT:Agent-1=45.0,Agent-2=25.0,...
+        m_res = re.search(r"RESULT:([^ \n]+)", stdout)
+        if m_res:
+            parts = m_res.group(1).split(",")
+            match_agents = commands_p1[i][2]
+            for p in parts:
+                if "=" not in p: continue
+                agent_label, points_str = p.split("=")
+                agent_idx = int(agent_label.split("-")[1]) - 1
+                points = float(points_str)
+                model_name, run_id = match_agents[agent_idx]
+                model_results[model_name].append((run_id, points))
+
+    chosen_agents: list[tuple[str, int]] = []
+    print(f"{'Model':<40} | {'Run A (Pts)':<15} | {'Run B (Pts)':<15} | {'Winner'}")
+    print("-" * 85)
+    
+    for m in sorted(models):
+        res = sorted(model_results[m]) # [ (run1, pts1), (run2, pts2) ]
+        if len(res) != 2:
+            # Fallback if parsing failed for some reason
+            print(f"WARNING: Could not parse results for {m}. Defaulting to first run.")
+            winner_run = agents[m][0]
+            pts_a, pts_b = 0.0, 0.0
+        else:
+            run_a, pts_a = res[0]
+            run_b, pts_b = res[1]
+            if pts_a >= pts_b:
+                winner_run = run_a
+            else:
+                winner_run = run_b
+        
+        chosen_agents.append((m, winner_run))
+        a_str = f"{res[0][0]} ({res[0][1]:.1f})" if len(res)>0 else "N/A"
+        b_str = f"{res[1][0]} ({res[1][1]:.1f})" if len(res)>1 else "N/A"
+        print(f"{m:<40} | {a_str:<15} | {b_str:<15} | {winner_run}")
+                
+    # Phase 2
+    combinations = list(itertools.combinations(chosen_agents, 6))
+    num_p2 = len(combinations)
+    print(f"\nMATCHMAKER A3 - PHASE 2: Main Event")
+    print(f"Selected Agents: {len(chosen_agents)}")
+    print(f"Combinations: {num_p2} matches")
+    
+    while True:
+        proceed = input("Start Phase 2? [y/N]: ").strip().lower()
+        if proceed in ("y", "yes"):
+            break
+        elif proceed in ("n", "no", ""):
+            print("Aborting.")
+            sys.exit(0)
+
+    # Build P2 commands
+    commands_p2: list[tuple[list[str], str]] = []
+    for count_idx, group in enumerate(combinations):
+        cmd = [sys.executable, str(match_script), "--agent"]
+        cmd.extend(f"{f}:{r}" for f, r in group)
+        cmd.append("--update-scoreboard")
+        # Keep label short since there are 134k 
+        label = f"Match_{count_idx+1}"
+        commands_p2.append((cmd, label))
+
+    random.shuffle(commands_p2) # disperse model clustering evenly
+    semaphore_p2 = asyncio.Semaphore(workers)
+    start_time_p2 = time.time()
+    
+    # Phase 2: Hardcode to 1 game per match
+    env_vars_p2 = {"NUM_OF_GAMES_IN_A_MATCH": "1"}
+    print(f"Config: 1 game per Match (Phase 2 only)")
+    
+    tasks_p2 = [
+        run_match_subprocess(cmd, i + 1, num_p2, label, semaphore_p2, start_time_p2, env_vars=env_vars_p2)
+        for i, (cmd, label) in enumerate(commands_p2)
+    ]
+    
+    try:
+        results_p2 = await asyncio.gather(*tasks_p2)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\n\nInterrupted Phase 2 — cancelling remaining matches...")
+        for t in tasks_p2:
+            if isinstance(t, asyncio.Task) and not t.done():
+                t.cancel()
+        sys.exit(1)
+        
+    succeeded = sum(1 for r in results_p2 if r.get("success"))
+    failed = sum(1 for r in results_p2 if not r.get("success"))
+    duration = time.time() - start_time_p2
+    duration_str = time.strftime("%H:%M:%S", time.gmtime(duration))
+
+    print(f"\nPHASE 2 COMPLETE")
+    print(f"  Succeeded: {succeeded} | Failed: {failed}")
+    print(f"  Duration: {duration_str}")
+
+    if failed:
+        with open("a3_failed_matches.log", "w") as f:
+            for r in results_p2:
+                if not r.get("success"):
+                    err = r.get("error", "unknown")
+                    f.write(f"{r['label']}: {err}\n")
+        print("Failed matches written to a3_failed_matches.log")
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
@@ -576,17 +803,27 @@ def main() -> None:
     if args.new_model:
         new_models = [m.strip() for m in args.new_model.split(",") if m.strip()]
 
-    asyncio.run(
-        run_tournament(
-            args.game,
-            args.same_opponent_match,
-            args.workers,
-            args.dry_run,
-            new_models,
-            args.health,
-            args.random16,
+    if args.game == "A3":
+        asyncio.run(
+            run_a3_tournament(
+                args.game,
+                args.workers,
+                args.dry_run,
+                args.health,
+            )
         )
-    )
+    else:
+        asyncio.run(
+            run_tournament(
+                args.game,
+                args.same_opponent_match,
+                args.workers,
+                args.dry_run,
+                new_models,
+                args.health,
+                args.random16,
+            )
+        )
 
 
 if __name__ == "__main__":

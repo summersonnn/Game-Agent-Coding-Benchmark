@@ -31,9 +31,9 @@ load_dotenv()
 
 # Configuration
 try:
-    NUM_GAMES_PER_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
+    NUM_GAMES_PER_MATCH = int(int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100")) / 10)
 except (ValueError, TypeError):
-    NUM_GAMES_PER_MATCH = 100
+    NUM_GAMES_PER_MATCH = 10
 
 try:
     MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
