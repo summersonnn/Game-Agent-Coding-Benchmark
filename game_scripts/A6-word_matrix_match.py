@@ -409,7 +409,11 @@ def play_game(game_num, match_stats):
     game.display_board()
 
     # --- Game loop ---
-    while not game.is_game_over():
+    MAX_TURNS_PER_GAME = 100
+    turn_count = 0
+
+    while not game.is_game_over() and turn_count < MAX_TURNS_PER_GAME:
+        turn_count += 1
         agent_name = turn_order[current_idx]
         current_agent = agents[agent_name]
 
@@ -488,6 +492,8 @@ def play_game(game_num, match_stats):
     # --- Game over ---
     if game.total_passes >= 6:
         end_reason = "6 consecutive passes reached"
+    elif turn_count >= MAX_TURNS_PER_GAME:
+        end_reason = f"Max turn limit reached ({MAX_TURNS_PER_GAME})"
     else:
         end_reason = "No valid paths remaining"
 
