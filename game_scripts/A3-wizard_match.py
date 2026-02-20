@@ -480,16 +480,22 @@ def main():
     print(f"STATS:{','.join(stats_parts)}")
 
     print("--- MATCH STATISTICS ---")
-    for i in range(1, NUM_PLAYERS + 1):
-        s = match_stats[f"Agent-{i}"]
-        print(f"Agent-{i} make_move_crash: {s['make_move_crash']}")
-        print(f"Agent-{i} other_crash: {s['other_crash']}")
-        print(f"Agent-{i} crash (total): {s['crash']}")
-        print(f"Agent-{i} Timeouts: {s['timeout']}")
-        print(f"Agent-{i} Invalid: {s['invalid']}")
-        print(f"Agent-{i} Points: {s['points']:.1f}")
-        print(f"Agent-{i} Score: {s['score']:.1f}")
-        print(f"Agent-{i} Placements: 1st={s['1st']:.1f} 2nd={s['2nd']:.1f} 3rd={s['3rd']:.1f} 4th={s['4th']:.1f} 5th={s['5th']:.1f} 6th={s['6th']:.1f}")
+    # Sort agents by points (descending), then score (descending)
+    sorted_agents = sorted(
+        match_stats.keys(),
+        key=lambda k: (match_stats[k]["points"], match_stats[k]["score"]),
+        reverse=True
+    )
+    for agent_id in sorted_agents:
+        s = match_stats[agent_id]
+        print(f"{agent_id} make_move_crash: {s['make_move_crash']}")
+        print(f"{agent_id} other_crash: {s['other_crash']}")
+        print(f"{agent_id} crash (total): {s['crash']}")
+        print(f"{agent_id} Timeouts: {s['timeout']}")
+        print(f"{agent_id} Invalid: {s['invalid']}")
+        print(f"{agent_id} Points: {s['points']:.1f}")
+        print(f"{agent_id} Score: {s['score']:.1f}")
+        print(f"{agent_id} Placements: 1st={s['1st']:.1f} 2nd={s['2nd']:.1f} 3rd={s['3rd']:.1f} 4th={s['4th']:.1f} 5th={s['5th']:.1f} 6th={s['6th']:.1f}")
 
 
 if __name__ == "__main__":
@@ -1077,23 +1083,34 @@ async def main_async():
         agent_scores = result["agent_scores"]
         agent_placements = result["agent_placements"]
 
-        status = "Result:\n"
+        # Prepare list of results for sorting
+        results_list = []
         for i, (folder, run) in enumerate(agent_specs, 1):
             key = f"Agent-{i}"
             pts = agent_points.get(key, 0)
             sc = agent_scores.get(key, 0)
-            status += f"  {key} ({folder}:{run}): Pts={pts:.1f} Score={sc:.1f}\n"
+            results_list.append({
+                "key": key,
+                "folder": folder,
+                "run": run,
+                "pts": pts,
+                "sc": sc
+            })
+
+        # Sort by points (descending), then by score (descending)
+        results_list.sort(key=lambda x: (x["pts"], x["sc"]), reverse=True)
+
+        status = "Result:\n"
+        for res in results_list:
+            status += f"  {res['key']} ({res['folder']}:{res['run']}): Pts={res['pts']:.1f} Score={res['sc']:.1f}\n"
 
         game_log = result.get("log", "")
         if game_log:
             status += f"\n{game_log}\n"
 
         print("\nFINAL RESULTS:")
-        for i, (folder, run) in enumerate(agent_specs, 1):
-            key = f"Agent-{i}"
-            pts = agent_points.get(key, 0)
-            sc = agent_scores.get(key, 0)
-            print(f"  {key} ({folder}:{run}): Pts={pts:.1f} Score={sc:.1f}")
+        for res in results_list:
+            print(f"  {res['key']} ({res['folder']}:{res['run']}): Pts={res['pts']:.1f} Score={res['sc']:.1f}")
     else:
         status = f"FAILED: {result.get('error', 'Unknown')}"
         print(f"\nMATCH FAILED: {result.get('error', 'Unknown')}")
