@@ -35,9 +35,9 @@ NUM_PLAYERS = 6
 NUM_ROUNDS = 10
 
 try:
-    NUM_GAMES_PER_MATCH = int(int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100")) / 10)
+    NUM_GAMES_PER_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
 except (ValueError, TypeError):
-    NUM_GAMES_PER_MATCH = 10
+    NUM_GAMES_PER_MATCH = 100
 
 try:
     MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
@@ -116,6 +116,7 @@ class WizardGame:
 
         # Trick state
         self.current_trick = []
+        self.played_tricks = []
         self.current_player = 0
         self.trick_leader = 0
         self.round_start_player = 0
@@ -138,6 +139,7 @@ class WizardGame:
         self.cards_this_round = round_num
         self.bids = [None] * self.num_players
         self.tricks_won = [0] * self.num_players
+        self.played_tricks = []
 
         random.shuffle(self.deck)
         self.hands = [[] for _ in range(self.num_players)]
@@ -183,6 +185,7 @@ class WizardGame:
             "scores": self.total_scores[:],
             "round_start_player": self.round_start_player,
             "turn_order": [(self.round_start_player + i) % self.num_players for i in range(self.num_players)],
+            "played_tricks": [{"winner": t["winner"], "cards": t["cards"][:]} for t in self.played_tricks],
         }
 
     def _get_led_suit(self):
@@ -218,6 +221,7 @@ class WizardGame:
     def finish_trick(self):
         winner = self._determine_trick_winner()
         self.tricks_won[winner] += 1
+        self.played_tricks.append({"winner": winner, "cards": self.current_trick[:]})
         self.current_player = winner
         self.trick_leader = winner
         return winner

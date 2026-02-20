@@ -34,15 +34,18 @@ After dealing, the top card of the remaining deck is revealed:
 
 ## Bidding Phase
 
-Starting with the player to the dealer's left, each player states how many tricks they believe they will win.
+The dealer rotates one seat clockwise each round: in round 1 the dealer is seat 0, in round 2 seat 1, and so on (modulo 6). Bidding starts with the player immediately after the dealer and proceeds clockwise, so the dealer bids last.
+
+The `turn_order` field in the game state gives the exact seat sequence for the current round (e.g. `[2, 3, 4, 5, 0, 1]` means seat 2 bids first, seat 1 bids last). You can use this to know your position in the bidding order.
 
 **LEGAL BIDS**: Any integer from 0 to N, where N is the number of cards dealt this round.
 
-**THE HOOK RULE** (CRITICAL): The last player to bid (the dealer, Player-6) has one additional restriction:
+**THE HOOK RULE** (CRITICAL): The **last player to bid** (the dealer — whichever seat that is this round, given by `turn_order[-1]`) has one additional restriction:
 - They **CANNOT** bid a number that would make the sum of all bids equal the total number of tricks available.
-- Example: In Round 4 (4 tricks available), if the first 5 players bid [1, 0, 1, 1, 0] (sum = 3), then Player-6 **cannot** bid 1 (which would make the total 4). They must bid 0, 2, 3, or 4.
+- Example: In Round 4 (4 tricks available), if the first 5 players bid [1, 0, 1, 1, 0] (sum = 3), then the last bidder **cannot** bid 1 (which would make the total 4). They must bid 0, 2, 3, or 4.
 - This rule ensures that at least one player will not make their bid exactly.
 - If you are the last bidder and your returned bid violates this rule, it will be replaced with a random valid bid.
+- To detect whether you are the last bidder: check if `game_state["my_position"] == game_state["turn_order"][-1]`.
 
 **IMPORTANT**: You must return exactly one integer. Invalid bids (non-integers, negative numbers, or numbers greater than cards dealt) will be replaced with a random valid bid.
 
@@ -195,6 +198,9 @@ class WizardAgent:
                 "bids": [int or None, ...] (length 6, bids for all players, None if not yet bid),
                 "tricks_won": [int, ...] (length 6, tricks won by each player this round),
                 "scores": [int, ...] (length 6, total scores across all rounds),
+                "round_start_player": int (seat index of the first bidder this round),
+                "turn_order": [int, ...] (length 6, seat indices in bid/play order for this round),
+                "played_tricks": [{"winner": int, "cards": [(player_idx, Card), ...]}, ...] (completed tricks this round, in order),
             }
         
         Returns:
@@ -230,10 +236,10 @@ class WizardAgent:
    - Number of Aces in other suits
    - Void suits (you can trump in)
 
-2. **Playing**: 
+2. **Playing**:
    - If trying to win a trick: Play high cards or Wizards
    - If trying to avoid winning: Play Jesters or low cards
-   - Track which cards have been played
+   - Use `played_tricks` to track which cards have already been played — this lets you deduce which high cards are still live, identify opponent void suits, and calculate safe plays
    - Remember other players' bids to predict their strategy
 
 3. **Scoring**: Bidding 0 and achieving it gives 20 points - a safe strategy with weak hands

@@ -4,7 +4,7 @@
 
 A1-Battleship: 2
 A2-TicTacToe: 2
-A3-Wizard: 5
+A3-Wizard: 6
 A4-WordFinder: 3
 A5-Connect4RandomStart: 2
 A6-WordMatrixGame: 5
