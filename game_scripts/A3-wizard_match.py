@@ -118,6 +118,7 @@ class WizardGame:
         self.current_trick = []
         self.current_player = 0
         self.trick_leader = 0
+        self.round_start_player = 0
 
     def _create_deck(self):
         """Create a full 60-card Wizard deck."""
@@ -159,7 +160,8 @@ class WizardGame:
         else:
             self.trump_suit = None
 
-        self.current_player = 0
+        self.round_start_player = (round_num - 1) % self.num_players
+        self.current_player = self.round_start_player
 
     def record_bid(self, player_idx, bid):
         self.bids[player_idx] = bid
@@ -179,6 +181,8 @@ class WizardGame:
             "bids": self.bids[:],
             "tricks_won": self.tricks_won[:],
             "scores": self.total_scores[:],
+            "round_start_player": self.round_start_player,
+            "turn_order": [(self.round_start_player + i) % self.num_players for i in range(self.num_players)],
         }
 
     def _get_led_suit(self):
@@ -351,8 +355,11 @@ def play_game(game_num, match_stats):
         game.start_round(round_num)
         print(f"Round {round_num} ({round_num} cards) - Trump: {game.trump_suit if game.trump_suit else 'None'}")
 
-        # Bidding phase
-        for seat_idx in range(NUM_PLAYERS):
+        # Bidding phase - starts from round_start_player, rotates clockwise
+        turn_order = [(game.round_start_player + i) % NUM_PLAYERS for i in range(NUM_PLAYERS)]
+        print(f"Turn order: {' -> '.join(agent_labels[s] for s in turn_order)}")
+        for i in range(NUM_PLAYERS):
+            seat_idx = turn_order[i]
             agent = agents[seat_idx]
             label = agent_labels[seat_idx]
             game_state = game.get_game_state(seat_idx, "bid")
@@ -363,7 +370,7 @@ def play_game(game_num, match_stats):
                 bid = random.randint(0, game.cards_this_round)
 
             # Hook rule: last bidder cannot make total bids equal total tricks
-            if seat_idx == NUM_PLAYERS - 1:
+            if i == NUM_PLAYERS - 1:
                 current_sum = sum(b for b in game.bids if b is not None)
                 forbidden_bid = game.cards_this_round - current_sum
                 if 0 <= forbidden_bid <= game.cards_this_round and bid == forbidden_bid:
@@ -602,9 +609,13 @@ if __name__ == "__main__":
             if isinstance(agent, HumanAgent):
                 print(f"\n{agent.name}'s hand: {[str(c) for c in game.hands[i]]}")
 
-        # Bidding
-        for i, agent in enumerate(agents):
-            game_state = game.get_game_state(i, "bid")
+        # Bidding - starts from round_start_player, rotates clockwise
+        turn_order = [(game.round_start_player + i) % NUM_PLAYERS for i in range(NUM_PLAYERS)]
+        print(f"Turn order: {' -> '.join(agents[s].name for s in turn_order)}")
+        for i in range(NUM_PLAYERS):
+            seat_idx = turn_order[i]
+            agent = agents[seat_idx]
+            game_state = game.get_game_state(seat_idx, "bid")
             bid = agent.make_move("bid", game_state)
             if not isinstance(bid, int) or bid < 0 or bid > game.cards_this_round:
                 bid = random.randint(0, game.cards_this_round)
@@ -616,7 +627,7 @@ if __name__ == "__main__":
                     valid = [b for b in range(0, game.cards_this_round + 1) if b != forbidden]
                     bid = random.choice(valid) if valid else 0
                     print(f"(Hook rule applied, bid changed to {bid})")
-            game.record_bid(i, bid)
+            game.record_bid(seat_idx, bid)
             print(f"{agent.name} bids: {bid}")
 
         print(f"All bids: {game.bids}")
