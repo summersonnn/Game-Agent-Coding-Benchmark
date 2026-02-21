@@ -437,9 +437,9 @@ def play_game(game_num, match_stats):
         match_stats[white_name]["other_crash"] += 1
         match_stats[black_name]["wins"] += 1
         match_stats[black_name]["points"] += 3
-        match_stats[black_name]["score"] += 12
+        match_stats[black_name]["score"] += 10
         match_stats[white_name]["losses"] += 1
-        match_stats[white_name]["score"] -= 12
+        match_stats[white_name]["score"] -= 10
 
         print("Final Position: N/A (initialization crash)")
         print("-" * 40)
@@ -450,8 +450,8 @@ def play_game(game_num, match_stats):
         print(f"{white_name}: 0")
         print("-" * 40)
         print("Scores:")
-        print(f"{black_name}: 12")
-        print(f"{white_name}: -12")
+        print(f"{black_name}: 10")
+        print(f"{white_name}: -10")
         print("=" * 60)
         return black_name
 
@@ -462,9 +462,9 @@ def play_game(game_num, match_stats):
         match_stats[black_name]["other_crash"] += 1
         match_stats[white_name]["wins"] += 1
         match_stats[white_name]["points"] += 3
-        match_stats[white_name]["score"] += 12
+        match_stats[white_name]["score"] += 10
         match_stats[black_name]["losses"] += 1
-        match_stats[black_name]["score"] -= 12
+        match_stats[black_name]["score"] -= 10
 
         print("Final Position: N/A (initialization crash)")
         print("-" * 40)
@@ -475,8 +475,8 @@ def play_game(game_num, match_stats):
         print(f"{black_name}: 0")
         print("-" * 40)
         print("Scores:")
-        print(f"{white_name}: 12")
-        print(f"{black_name}: -12")
+        print(f"{white_name}: 10")
+        print(f"{black_name}: -10")
         print("=" * 60)
         return white_name
 

@@ -62,7 +62,7 @@ WORDS_FILE = BASE_DIR / "game_scripts" / "words_small.txt"
 INVALID_PENALTY = 10
 
 # Max tie-breaker score used for forfeit games
-FORFEIT_SCORE = 12
+FORFEIT_SCORE = 250
 
 MODE_TITLES = {
     "humanvsbot": "Human vs Random Bot",

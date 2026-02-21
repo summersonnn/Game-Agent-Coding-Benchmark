@@ -65,7 +65,7 @@ MODE_TITLES = {
 }
 
 # Max possible tie-breaker score (used for init-crash forfeits; unbounded game)
-FORFEIT_SCORE = 12
+FORFEIT_SCORE = 500
 
 # Max rounds per game (each round = 1 turn per player = 2 individual turns)
 MAX_ROUNDS = 100
@@ -79,7 +79,7 @@ GAME_ENGINE_CODE = r'''
 INVALID_PENALTY = -10
 
 # Max possible tie-breaker score for init-crash forfeits
-FORFEIT_SCORE = 12
+FORFEIT_SCORE = 500
 
 # Max rounds per game (50 rounds = 100 individual turns)
 MAX_ROUNDS = 100

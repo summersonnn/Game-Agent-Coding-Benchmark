@@ -164,9 +164,9 @@ def play_game(game_num, match_stats):
         winner_name, loser_name = yellow_name, red_name
         match_stats[winner_name]["wins"] += 1
         match_stats[winner_name]["points"] += 3
-        match_stats[winner_name]["score"] += 41
+        match_stats[winner_name]["score"] += 35
         match_stats[loser_name]["losses"] += 1
-        match_stats[loser_name]["score"] -= 41
+        match_stats[loser_name]["score"] -= 35
         print("Final Position: N/A (initialization crash)")
         print("----------------------------------------")
         print(f"Final Result: {winner_name} wins. (opponent crashed)")
@@ -176,8 +176,8 @@ def play_game(game_num, match_stats):
         print(f"{loser_name}: 0")
         print("----------------------------------------")
         print("Scores:")
-        print(f"{winner_name}: 41")
-        print(f"{loser_name}: -41")
+        print(f"{winner_name}: 35")
+        print(f"{loser_name}: -35")
         print("============================================================")
         return winner_name
 
@@ -189,9 +189,9 @@ def play_game(game_num, match_stats):
         winner_name, loser_name = red_name, yellow_name
         match_stats[winner_name]["wins"] += 1
         match_stats[winner_name]["points"] += 3
-        match_stats[winner_name]["score"] += 41
+        match_stats[winner_name]["score"] += 35
         match_stats[loser_name]["losses"] += 1
-        match_stats[loser_name]["score"] -= 41
+        match_stats[loser_name]["score"] -= 35
         print("Final Position: N/A (initialization crash)")
         print("----------------------------------------")
         print(f"Final Result: {winner_name} wins. (opponent crashed)")
@@ -201,8 +201,8 @@ def play_game(game_num, match_stats):
         print(f"{loser_name}: 0")
         print("----------------------------------------")
         print("Scores:")
-        print(f"{winner_name}: 41")
-        print(f"{loser_name}: -41")
+        print(f"{winner_name}: 35")
+        print(f"{loser_name}: -35")
         print("============================================================")
         return winner_name
 
