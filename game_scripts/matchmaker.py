@@ -767,7 +767,7 @@ def main() -> None:
     parser.add_argument(
         "--same_opponent_match",
         type=int,
-        default=4,
+        default=8,
         help="Times each cross-model agent pair faces each other (default: 1)",
     )
     parser.add_argument(

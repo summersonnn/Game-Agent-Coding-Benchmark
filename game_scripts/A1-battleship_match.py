@@ -69,6 +69,11 @@ GAME_CODE_TEMPLATE = '''
 import sys
 import random
 import signal
+import time
+import collections
+import math
+import itertools
+import copy
 from collections import deque
 
 # Move timeout in seconds
