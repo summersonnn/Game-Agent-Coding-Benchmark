@@ -8,11 +8,11 @@ The live league standings can be accessed at [gameagentcodingleague.com](https:/
 
 ## Features
 
-- **5 Competitive Games**: Battleship, TicTacToe, WordFinder, Connect4, SurroundMorris.
-- **3 Coming Soon** *(not yet ready)*: Wizard, WordMatrix, 2x8 Mini Chess.
+- **8 Competitive Games**: Battleship, TicTacToe, Wizard, WordFinder, Connect4, WordMatrix, 2x8 Mini Chess, SurroundMorris.
 - **Model-Agnostic**: OpenRouter integration supports any available LLM.
 - **Persistent Agents**: Generated code stored per-model for reuse and analysis.
-- **Football-Style Scoring**: Win = 3 pts, Draw = 1 pt, Loss = 0 pts with goal-difference tiebreaker.
+- **Points-Based Scoring**: All matches, except for the A3 game, follow the standard scoring format: a win earns 3 points, a draw earns 1 point, and a loss earns 0 points, with goal difference used to break ties.
+The A3 game uses a different approach — there are no win, loss, or draw outcomes. Instead, the six agents are ranked from first to last: the top agent receives 5 points, the second earns 4 points, and the points continue decreasing by one down to 0 points for the last-place agent.
 - **Tournament Automation**: Round-robin matchmaker with configurable concurrency.
 
 ---
@@ -140,9 +140,9 @@ uv run game_scripts/matchmaker.py --game A8 --health
 
 | Argument | Type | Default | Description |
 |---|---|---|---|
-| `--game` | str | required | Game ID: A1, A2, A4, A5, A8 |
-| `--same_opponent_match` | int | 2 | Minimum times each cross-model pair must meet |
-| `--workers` | int | 16 | Max concurrent match subprocesses |
+| `--game` | str | required | Game ID: A1, A2, A3, A4, A5, A6, A7, A8 |
+| `--same_opponent_match` | int | 8 | Minimum times each cross-model pair must meet |
+| `--workers` | int | 24 | Max concurrent match subprocesses |
 | `--dry-run` | flag | false | Print fixture list without executing |
 | `--new-model` | str | — | Comma-separated model folder names; only generate fixtures involving these models |
 | `--health` | flag | false | Run syntax + exception-handler checks on all agents before execution |
@@ -255,4 +255,4 @@ One model ID per line.
 
 ### `config/max_tokens.txt`
 
-Per-game token multipliers applied to `MODEL_MAX_TOKENS`. Example: `A1: 4` means Battleship generation uses `4 × MODEL_MAX_TOKENS` tokens.
+Per-game token multipliers applied to `MODEL_MAX_TOKENS`. Example: `A1-Battleship: 2` means Battleship generation uses `2 × MODEL_MAX_TOKENS` tokens.
