@@ -1181,16 +1181,13 @@ async def main_async():
                     score=agent_scores.get(key, 0.0),
                 )
 
-    print("\nFINAL AGGREGATED RESULTS:")
-    final_list = []
-    for i, (folder, run) in enumerate(agent_specs, 1):
-        key = f"Agent-{i}"
-        final_list.append({"key": key, "folder": folder, "run": run, "pts": overall_agent_points[key], "sc": overall_agent_scores[key]})
-    final_list.sort(key=lambda x: (x["pts"], x["sc"]), reverse=True)
-    for res in final_list:
-         print(f"  {res['key']} ({res['folder']}:{res['run']}): Pts={res['pts']:.1f} Score={res['sc']:.1f}")
+    # Print structured output for matchmaker parsing
+    result_parts = [f"Agent-{i}={overall_agent_points[f'Agent-{i}']:.1f}" for i in range(1, NUM_PLAYERS + 1)]
+    print(f"\nRESULT:{','.join(result_parts)}")
+    
+    score_parts = [f"Agent-{i}={overall_agent_scores[f'Agent-{i}']:.1f}" for i in range(1, NUM_PLAYERS + 1)]
+    print(f"SCORE:{','.join(score_parts)}")
 
-    # Just dummy exit to skip the monolithic old print block
     return
 
 
