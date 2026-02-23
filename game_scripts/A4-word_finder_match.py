@@ -873,6 +873,10 @@ async def main_async():
         "--update-scoreboard", action="store_true",
         help="Write results to scoreboard (default: off; enabled by matchmaker)",
     )
+    parser.add_argument(
+        "--parallel", type=int, default=4,
+        help="Number of matches to run in parallel",
+    )
     args = parser.parse_args()
 
     # --- Human play modes ---
@@ -950,11 +954,14 @@ async def main_async():
     if not folder1 or not folder2:
         sys.exit(1)
 
+    runs_explicitly_specified = bool(runs1 or runs2)
+
     if not runs1:
         runs1 = get_available_runs(folder1, GAME_NAME)
     if not runs2:
         runs2 = get_available_runs(folder2, GAME_NAME)
 
+    # Match the number of runs
     num_matches = min(len(runs1), len(runs2))
     if len(runs1) != len(runs2):
         logger.warning(
@@ -962,8 +969,13 @@ async def main_async():
             folder1, len(runs1), folder2, len(runs2), num_matches,
         )
 
-    runs1 = runs1[:num_matches]
-    runs2 = runs2[:num_matches]
+    if not runs_explicitly_specified:
+        runs1 = runs1[:num_matches] * args.parallel
+        runs2 = runs2[:num_matches] * args.parallel
+    else:
+        runs1 = runs1[:num_matches]
+        runs2 = runs2[:num_matches]
+    num_matches = len(runs1)
 
     print("\n" + "=" * 60)
     print("WORDFINDER MATCH - STORED AGENTS")
@@ -978,6 +990,7 @@ async def main_async():
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
     match_tasks = []
+    semaphore = asyncio.Semaphore(args.parallel)
 
     for i in range(num_matches):
         run1 = runs1[i]
@@ -1000,13 +1013,19 @@ async def main_async():
             agent1_name=f"{folder1}:{run1}", agent2_name=f"{folder2}:{run2}",
         )
 
-        match_tasks.append(run_match_async(game_code, i + 1, (run1, run2)))
+        async def sem_task(gc, mid, rids):
+            async with semaphore:
+                return await run_match_async(gc, mid, rids)
+        
+        match_tasks.append(sem_task(game_code, i + 1, (run1, run2)))
 
     if not match_tasks:
         print("No valid matches to run.")
         return
 
-    print(f"\nRunning {len(match_tasks)} matches in parallel...")
+    match_word = "match" if len(match_tasks) == 1 else "matches"
+    parallel_info = f" (up to {args.parallel} in parallel)" if len(match_tasks) > 1 else ""
+    print(f"\nRunning {len(match_tasks)} {match_word}{parallel_info}...")
     results = await asyncio.gather(*match_tasks)
 
     # Process results and write per-match log files

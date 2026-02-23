@@ -487,8 +487,8 @@ def main():
     score_parts = [f"Agent-{i}={match_stats[f'Agent-{i}']['score']:.1f}" for i in range(1, NUM_PLAYERS + 1)]
     print(f"SCORE:{','.join(score_parts)}")
 
-    stats_parts = [f"Agent-{i}={match_stats[f'Agent-{i}']}" for i in range(1, NUM_PLAYERS + 1)]
-    print(f"STATS:{','.join(stats_parts)}")
+    for i in range(1, NUM_PLAYERS + 1):
+        print(f"STATS:Agent-{i}={match_stats[f'Agent-{i}']}")
 
     print("--- MATCH STATISTICS ---")
     # Sort agents by points (descending), then score (descending)
@@ -980,6 +980,10 @@ async def main_async():
         "--update-scoreboard", action="store_true",
         help="Write results to scoreboard (default: off; enabled by matchmaker)",
     )
+    parser.add_argument(
+        "--parallel", type=int, default=4,
+        help="Number of matches to run in parallel",
+    )
     args = parser.parse_args()
 
     # --- Human modes ---
@@ -1091,86 +1095,103 @@ async def main_async():
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
     run_ids = [run for _, run in agent_specs]
-    result = run_match(game_code, 1, run_ids)
+    match_tasks = []
+    semaphore = asyncio.Semaphore(args.parallel)
 
-    # Build log filename
+    async def sem_task(gc, mid, rids):
+        async with semaphore:
+            return await run_match_async(gc, mid, rids)
+
+    num_matches = 1
+    for i in range(num_matches):
+        match_tasks.append(sem_task(game_code, i + 1, run_ids))
+
+    match_word = "match" if num_matches == 1 else "matches"
+    parallel_info = f" (up to {args.parallel} in parallel)" if num_matches > 1 else ""
+    print(f"\nRunning {num_matches} {match_word}{parallel_info}...")
+    results = await asyncio.gather(*match_tasks)
+
+    # Accumulate results
+    overall_agent_points = {f"Agent-{i}": 0.0 for i in range(1, NUM_PLAYERS+1)}
+    overall_agent_scores = {f"Agent-{i}": 0.0 for i in range(1, NUM_PLAYERS+1)}
+    
     agent_suffix = "_vs_".join(f"{f}:{r}" for f, r in agent_specs)
-    log_f = RESULTS_DIR / f"{ts}_{agent_suffix}_match.txt"
+    
+    for result in sorted(results, key=lambda x: x["match_id"]):
+        match_id = result["match_id"]
+        log_f = RESULTS_DIR / f"{ts}_{agent_suffix}_match_{match_id}.txt"
 
-    if result["success"]:
-        agent_points = result["agent_points"]
-        agent_scores = result["agent_scores"]
-        agent_placements = result["agent_placements"]
+        if result["success"]:
+            agent_points = result["agent_points"]
+            agent_scores = result["agent_scores"]
+            agent_placements = result["agent_placements"]
 
-        # Prepare list of results for sorting
-        results_list = []
-        for i, (folder, run) in enumerate(agent_specs, 1):
-            key = f"Agent-{i}"
-            pts = agent_points.get(key, 0)
-            sc = agent_scores.get(key, 0)
-            results_list.append({
-                "key": key,
-                "folder": folder,
-                "run": run,
-                "pts": pts,
-                "sc": sc
-            })
+            # Merge points
+            for k in overall_agent_points:
+                overall_agent_points[k] += agent_points.get(k, 0)
+                overall_agent_scores[k] += agent_scores.get(k, 0)
+                
+            results_list = []
+            for i, (folder, run) in enumerate(agent_specs, 1):
+                key = f"Agent-{i}"
+                pts = agent_points.get(key, 0)
+                sc = agent_scores.get(key, 0)
+                results_list.append({"key": key, "folder": folder, "run": run, "pts": pts, "sc": sc})
+            
+            results_list.sort(key=lambda x: (x["pts"], x["sc"]), reverse=True)
 
-        # Sort by points (descending), then by score (descending)
-        results_list.sort(key=lambda x: (x["pts"], x["sc"]), reverse=True)
+            status = "Result:\n"
+            for res in results_list:
+                status += f"  {res['key']} ({res['folder']}:{res['run']}): Pts={res['pts']:.1f} Score={res['sc']:.1f}\n"
+            
+            game_log = result.get("log", "")
+            if game_log:
+                status += f"\n{game_log}\n"
+        else:
+            status = f"FAILED: {result.get('error', 'Unknown')}\n"
+            if result.get("log"):
+                status += f"\nLog:\n{result['log']}\n"
 
-        status = "Result:\n"
-        for res in results_list:
-            status += f"  {res['key']} ({res['folder']}:{res['run']}): Pts={res['pts']:.1f} Score={res['sc']:.1f}\n"
+        with open(log_f, "w") as f:
+            f.write("Match Contenders:\n")
+            for i, (folder, run) in enumerate(agent_specs, 1):
+                f.write(f"Agent-{i}: {folder}:{run}\n")
+            f.write(f"\n{status}\n")
+            f.write("-" * 60 + "\n")
+            
+        print(f"Match {match_id} completed. Log saved to {log_f}")
 
-        game_log = result.get("log", "")
-        if game_log:
-            status += f"\n{game_log}\n"
+        # Scoreboard update
+        if result["success"] and args.update_scoreboard:
+            for i, (folder, run) in enumerate(agent_specs, 1):
+                key = f"Agent-{i}"
+                agent_key = f"{folder}:{run}"
 
-        print("\nFINAL RESULTS:")
-        for res in results_list:
-            print(f"  {res['key']} ({res['folder']}:{res['run']}): Pts={res['pts']:.1f} Score={res['sc']:.1f}")
+                placements = {}
+                raw_placements = agent_placements.get(key, {})
+                for p in ["1st", "2nd", "3rd", "4th", "5th", "6th"]:
+                    placements[p] = int(round(raw_placements.get(p, 0)))
 
-        # Print structured tags for matchmaker parsing
-        res_tag = ",".join([f"Agent-{i}={agent_points.get(f'Agent-{i}', 0):.1f}" for i in range(1, NUM_PLAYERS+1)])
-        print(f"RESULT:{res_tag}")
-        score_tag = ",".join([f"Agent-{i}={agent_scores.get(f'Agent-{i}', 0):.1f}" for i in range(1, NUM_PLAYERS+1)])
-        print(f"SCORE:{score_tag}")
-        print("--- MATCH STATISTICS ---")
-        print(result.get("stats_block", ""))
-    else:
-        status = f"FAILED: {result.get('error', 'Unknown')}"
-        print(f"\nMATCH FAILED: {result.get('error', 'Unknown')}")
-        sys.exit(1)
+                update_scoreboard_6p(
+                    SCOREBOARD_PATH,
+                    agent_key,
+                    games_played=NUM_GAMES_PER_MATCH,
+                    placements=placements,
+                    points=int(round(agent_points.get(key, 0))),
+                    score=agent_scores.get(key, 0.0),
+                )
 
-    with open(log_f, "w") as f:
-        f.write("Match Contenders:\n")
-        for i, (folder, run) in enumerate(agent_specs, 1):
-            f.write(f"Agent-{i}: {folder}:{run}\n")
-        f.write(f"\n{status}\n")
-        f.write("-" * 60 + "\n")
+    print("\nFINAL AGGREGATED RESULTS:")
+    final_list = []
+    for i, (folder, run) in enumerate(agent_specs, 1):
+        key = f"Agent-{i}"
+        final_list.append({"key": key, "folder": folder, "run": run, "pts": overall_agent_points[key], "sc": overall_agent_scores[key]})
+    final_list.sort(key=lambda x: (x["pts"], x["sc"]), reverse=True)
+    for res in final_list:
+         print(f"  {res['key']} ({res['folder']}:{res['run']}): Pts={res['pts']:.1f} Score={res['sc']:.1f}")
 
-    # Scoreboard update
-    if result["success"] and args.update_scoreboard:
-        for i, (folder, run) in enumerate(agent_specs, 1):
-            key = f"Agent-{i}"
-            agent_key = f"{folder}:{run}"
-
-            placements = {}
-            raw_placements = agent_placements.get(key, {})
-            for p in ["1st", "2nd", "3rd", "4th", "5th", "6th"]:
-                placements[p] = int(round(raw_placements.get(p, 0)))
-
-            update_scoreboard_6p(
-                SCOREBOARD_PATH,
-                agent_key,
-                games_played=NUM_GAMES_PER_MATCH,
-                placements=placements,
-                points=int(round(agent_points.get(key, 0))),
-                score=agent_scores.get(key, 0.0),
-            )
-
-    print(f"\nLog saved to: {log_f}")
+    # Just dummy exit to skip the monolithic old print block
+    return
 
 
 if __name__ == "__main__":
