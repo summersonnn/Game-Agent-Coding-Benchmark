@@ -24,6 +24,7 @@ sys.path.append(str(Path(__file__).parent.parent / "utils"))
 from model_api import ModelAPI
 from logging_config import setup_logging
 from scoreboard import update_scoreboard
+from agent_loader import load_stored_agent, consolidate_imports
 
 logger = setup_logging(__name__)
 
@@ -1223,82 +1224,6 @@ def get_available_runs(model_folder: str, game: str) -> list[int]:
     return sorted(runs)
 
 
-def load_stored_agent(
-    model_folder: str, game: str, run: int, agent_idx: int
-) -> tuple[str, str]:
-    """Load agent code from a stored file and extract ONLY the agent class."""
-    agent_file = AGENTS_DIR / model_folder / f"{game}_{run}.py"
-
-    if not agent_file.exists():
-        logger.error("Agent file not found: %s", agent_file)
-        return "", ""
-
-    content = agent_file.read_text()
-    lines = content.split("\n")
-
-    # Skip the header docstring
-    code_start = 0
-    in_docstring = False
-    for i, line in enumerate(lines):
-        if '"""' in line:
-            if in_docstring:
-                code_start = i + 1
-                break
-            else:
-                in_docstring = True
-
-    code_lines = lines[code_start:]
-
-    # Extract imports before the class
-    imports = []
-    class_start_idx = None
-
-    for i, line in enumerate(code_lines):
-        stripped = line.strip()
-
-        if stripped.startswith("class TwoByEightChessAgent"):
-            class_start_idx = i
-            break
-
-        if stripped.startswith("import ") or stripped.startswith("from "):
-            if "random" not in stripped:
-                imports.append(stripped)
-
-    if class_start_idx is None:
-        logger.error("No TwoByEightChessAgent class found in %s", agent_file)
-        return "", ""
-
-    # Extract ONLY the TwoByEightChessAgent class
-    class_lines = []
-    base_indent = 0
-
-    for i in range(class_start_idx, len(code_lines)):
-        line = code_lines[i]
-        stripped = line.strip()
-
-        if i == class_start_idx:
-            class_lines.append(line)
-            base_indent = len(line) - len(line.lstrip())
-            continue
-
-        if not stripped or stripped.startswith("#"):
-            class_lines.append(line)
-            continue
-
-        current_indent = len(line) - len(line.lstrip())
-        if current_indent <= base_indent:
-            break
-
-        class_lines.append(line)
-
-    agent_code = "\n".join(class_lines)
-    agent_code = re.sub(
-        r"\bTwoByEightChessAgent\b", f"TwoByEightChessAgent_{agent_idx}", agent_code
-    )
-
-    return agent_code.strip(), "\n".join(imports)
-
-
 def parse_agent_spec(spec: str) -> tuple[str, list[int]]:
     """Parse agent spec (model:run1:run2) into model pattern and list of runs."""
     parts = spec.split(":")
@@ -1528,15 +1453,14 @@ async def main_async():
         run1 = runs1[i]
         run2 = runs2[i]
 
-        code1, imp1 = load_stored_agent(folder1, GAME_NAME, run1, 1)
-        code2, imp2 = load_stored_agent(folder2, GAME_NAME, run2, 2)
+        code1, imp1 = load_stored_agent(folder1, GAME_NAME, run1, 1, "TwoByEightChessAgent")
+        code2, imp2 = load_stored_agent(folder2, GAME_NAME, run2, 2, "TwoByEightChessAgent")
 
         if not code1 or not code2:
             print(f"  FAILED to load match {i + 1}")
             continue
 
-        all_imports = set(imp1.split("\n") + imp2.split("\n"))
-        extra_imports = "\n".join(imp for imp in all_imports if imp.strip())
+        extra_imports = consolidate_imports(imp1, imp2)
 
         agent1_info = f"{folder1}:{run1}"
         agent2_info = f"{folder2}:{run2}"

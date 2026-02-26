@@ -24,6 +24,9 @@ sys.path.append(str(Path(__file__).parent.parent / "utils"))
 from model_api import ModelAPI
 from logging_config import setup_logging
 from scoreboard import update_scoreboard
+from agent_loader import load_stored_agent, consolidate_imports, COMMON_HEADER_IMPORTS
+
+A1_HEADER_IMPORTS = COMMON_HEADER_IMPORTS | {"from collections import deque"}
 
 logger = setup_logging(__name__)
 
@@ -76,7 +79,6 @@ import itertools
 import copy
 from collections import deque
 
-# Move timeout in seconds
 # Move timeout in seconds
 MOVE_TIMEOUT = {move_timeout}
 GAME_MODE = "{game_mode}"
@@ -842,92 +844,6 @@ def get_available_runs(model_folder: str, game: str) -> list[int]:
     return sorted(runs)
 
 
-def load_stored_agent(model_folder: str, game: str, run: int, agent_idx: int) -> tuple[str, str]:
-    """Load agent code from a stored file and extract ONLY the agent class."""
-    agent_file = AGENTS_DIR / model_folder / f"{game}_{run}.py"
-    
-    if not agent_file.exists():
-        logger.error("Agent file not found: %s", agent_file)
-        return "", ""
-    
-    content = agent_file.read_text()
-    lines = content.split("\n")
-    
-    # Skip the header docstring
-    code_start = 0
-    in_docstring = False
-    for i, line in enumerate(lines):
-        if '"""' in line:
-            if in_docstring:
-                code_start = i + 1
-                break
-            else:
-                in_docstring = True
-    
-    code_lines = lines[code_start:]
-    
-    # Extract imports (before the class)
-    imports = []
-    class_start_idx = None
-    
-    for i, line in enumerate(code_lines):
-        stripped = line.strip()
-        
-        # Find where BattleshipAgent class starts
-        if stripped.startswith("class BattleshipAgent"):
-            class_start_idx = i
-            break
-            
-        # Collect imports before the class
-        if stripped.startswith("import ") or stripped.startswith("from "):
-            if "random" not in stripped and "collections" not in stripped:
-                imports.append(stripped)
-    
-    if class_start_idx is None:
-        logger.error("No BattleshipAgent class found in %s", agent_file)
-        return "", ""
-    
-    # Extract ONLY the BattleshipAgent class (stop at next top-level class/function/main)
-    class_lines = []
-    in_class = False
-    base_indent = 0
-    
-    for i in range(class_start_idx, len(code_lines)):
-        line = code_lines[i]
-        stripped = line.strip()
-        
-        # Class definition line
-        if i == class_start_idx:
-            class_lines.append(line)
-            in_class = True
-            # Get the base indentation (should be 0 for top-level class)
-            base_indent = len(line) - len(line.lstrip())
-            continue
-        
-        # Always include empty lines and comments
-        if not stripped or stripped.startswith("#"):
-            class_lines.append(line)
-            continue
-        
-        # Calculate current indentation
-        current_indent = len(line) - len(line.lstrip())
-        
-        # Stop if we hit another top-level (or less indented) definition
-        if current_indent <= base_indent:
-            # This is a top-level statement - stop here
-            break
-            
-        # We're still inside the class - add the line
-        class_lines.append(line)
-    
-    agent_code = "\n".join(class_lines)
-    
-    # Rename BattleshipAgent to BattleshipAgent_{agent_idx}
-    agent_code = re.sub(r"\bBattleshipAgent\b", f"BattleshipAgent_{agent_idx}", agent_code)
-    
-    return agent_code.strip(), "\n".join(imports)
-
-
 def parse_agent_spec(spec: str) -> tuple[str, list[int]]:
     """Parse agent spec (model:run1:run2) into model pattern and list of runs."""
     parts = spec.split(":")
@@ -1093,6 +1009,10 @@ async def main_async():
     human_group.add_argument("--humanvshuman", action="store_true", help="Two humans play at the same terminal")
     human_group.add_argument("--humanvsagent", action="store_true", help="Play against a stored agent (requires --agent with 1 spec)")
     parser.add_argument(
+        "--parallel", type=int, default=4,
+        help="Number of matches to run in parallel",
+    )
+    parser.add_argument(
         "--update-scoreboard", action="store_true",
         help="Write results to scoreboard (default: off; enabled by matchmaker)",
     )
@@ -1133,7 +1053,7 @@ async def main_async():
                  print(f"ERROR: No runs found for {folder}/{GAME_NAME}")
                  sys.exit(1)
              
-             agent_code, agent_imports = load_stored_agent(folder, GAME_NAME, runs[0], 1)
+             agent_code, agent_imports = load_stored_agent(folder, GAME_NAME, runs[0], 1, "BattleshipAgent")
              if not agent_code:
                  print(f"ERROR: Failed to load agent from {folder}")
                  sys.exit(1)
@@ -1208,15 +1128,14 @@ async def main_async():
         run1 = runs1[i]
         run2 = runs2[i]
         
-        code1, imp1 = load_stored_agent(folder1, GAME_NAME, run1, 1)
-        code2, imp2 = load_stored_agent(folder2, GAME_NAME, run2, 2)
-        
+        code1, imp1 = load_stored_agent(folder1, GAME_NAME, run1, 1, "BattleshipAgent")
+        code2, imp2 = load_stored_agent(folder2, GAME_NAME, run2, 2, "BattleshipAgent")
+
         if not code1 or not code2:
             print(f"  FAILED to load match {i+1}: Could not load agent code.")
             continue
 
-        all_imports = set(imp1.split("\n") + imp2.split("\n"))
-        extra_imports = "\n".join(imp for imp in all_imports if imp.strip())
+        extra_imports = consolidate_imports(imp1, imp2, A1_HEADER_IMPORTS)
 
         agent1_name = f"{folder1}:{run1}"
         agent2_name = f"{folder2}:{run2}"

@@ -195,15 +195,26 @@ def extract_agent_code(response: str, game_name: str) -> tuple[str, str]:
     
     if not code:
         return "", ""
-    
-    # Extract imports (excluding random which is usually in template)
-    imports = []
-    for line in response.split("\n"):
-        line = line.strip()
-        if (line.startswith("import ") or line.startswith("from ")) and "random" not in line:
-            imports.append(line)
-    
-    return code.strip(), "\n".join(imports)
+
+    # Split imports out of the code block to avoid duplication in the
+    # saved file (imports are written separately above the class).
+    seen: set[str] = set()
+    imports: list[str] = []
+    code_body: list[str] = []
+    for line in code.strip().split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("import ") or stripped.startswith("from "):
+            if stripped not in seen:
+                seen.add(stripped)
+                imports.append(stripped)
+        else:
+            code_body.append(line)
+
+    # Remove leading blank lines left after stripping imports
+    while code_body and not code_body[0].strip():
+        code_body.pop(0)
+
+    return "\n".join(code_body).strip(), "\n".join(imports)
 
 
 async def prompt_model(
