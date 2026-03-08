@@ -58,13 +58,13 @@ Edit `config/models.txt` — one model ID per line.
 # All active models, all games
 uv run utils/populate_agents.py --all
 
-# Specific models by substring or index from models.txt
+# Specific models by substring
 uv run utils/populate_agents.py --model mistral deepseek
 
 # Filter to specific games
-uv run utils/populate_agents.py --games A1,A8
+uv run utils/populate_agents.py --game A1,A8
 
-# Override run count (adds to existing runs, does not overwrite)
+# Override run count
 uv run utils/populate_agents.py --all --runs 2
 
 # Interactive model selection (no args)
@@ -73,8 +73,6 @@ uv run utils/populate_agents.py
 
 **Model selection rules:**
 - `--model mistral` matches any model name containing "mistral" (case-insensitive).
-- `--model 0` selects the model at index 0 in `models.txt`.
-
 - If a substring matches multiple models, an interactive prompt resolves the ambiguity.
 
 **Output:** `agents/<sanitized_model_name>/<game_id>_<run>.py`

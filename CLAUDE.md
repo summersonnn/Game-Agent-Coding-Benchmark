@@ -24,38 +24,38 @@ Ad-hoc scripts for investigating data or debugging match infrastructure. These a
 | `filter_words.py` | Regenerates `game_scripts/words_small.txt` from `game_scripts/words.txt`; filters to 3–8 char alphabetic words with no triple-identical consecutive letters. Run this if `words_small.txt` is missing or corrupted. |
 
 ```bash
-uv run python tools/spot_inconsistent_performances.py          # all games
-uv run python tools/spot_inconsistent_performances.py --game A5
-uv run python tools/filter_words.py
+uv run tools/spot_inconsistent_performances.py          # all games
+uv run tools/spot_inconsistent_performances.py --game A5
+uv run tools/filter_words.py
 ```
 
 ## Entry Points
 
 **Agent Generation:**
 ```bash
-uv run python utils/populate_agents.py --all                    # All models, all games
-uv run python utils/populate_agents.py --model mistral gpt      # Specific models
-uv run python utils/populate_agents.py --games A1,A2 --runs 3   # Specific games
+uv run utils/populate_agents.py --all                           # All models, all games
+uv run utils/populate_agents.py --model mistral gpt             # Specific models
+uv run utils/populate_agents.py --game A1,A2 --runs 3           # Specific games
 ```
 
 **Running Individual Matches:**
 ```bash
-uv run python game_scripts/A1-battleship_match.py --agent model1:1 model2:1
-uv run python game_scripts/A2-tictactoe_match.py --agent model1:1 model2:1
-uv run python game_scripts/A4-word_finder_match.py --agent model1:1 model2:1
-uv run python game_scripts/A5-connect4_match.py --agent model1:1 model2:1
-uv run python game_scripts/A6-word_matrix_match.py --agent model1:1 model2:1
-uv run python game_scripts/A7-twobyeight_chess_match.py --agent model1:1 model2:1
-uv run python game_scripts/A8-surround_morris_match.py --agent model1:1 model2:1
+uv run game_scripts/A1-battleship_match.py --agent model1:1 model2:1
+uv run game_scripts/A2-tictactoe_match.py --agent model1:1 model2:1
+uv run game_scripts/A4-word_finder_match.py --agent model1:1 model2:1
+uv run game_scripts/A5-connect4_match.py --agent model1:1 model2:1
+uv run game_scripts/A6-word_matrix_match.py --agent model1:1 model2:1
+uv run game_scripts/A7-twobyeight_chess_match.py --agent model1:1 model2:1
+uv run game_scripts/A8-surround_morris_match.py --agent model1:1 model2:1
 ```
 
 > Individual match runners also accept `--update-scoreboard` to persist results to the scoreboard file. Omit it for ad-hoc test matches; the matchmaker appends it automatically for tournament runs.
 
 **Running Tournaments (Matchmaker):**
 ```bash
-uv run python game_scripts/matchmaker.py --game A8 --same_opponent_match 4
-uv run python game_scripts/matchmaker.py --game A8 --dry-run
-uv run python game_scripts/matchmaker.py --game A8 --new-model new-model-folder --health
+uv run game_scripts/matchmaker.py --game A8 --same_opponent_match 4
+uv run game_scripts/matchmaker.py --game A8 --dry-run
+uv run game_scripts/matchmaker.py --game A8 --new-model new-model-folder --health
 ```
 
 **Agent Enhancement:**
@@ -314,19 +314,19 @@ class SurroundMorrisAgent:
 
 **Single match (2 agents):**
 ```bash
-uv run python game_scripts/A8-surround_morris_match.py --agent model1:1 model2:2
+uv run game_scripts/A8-surround_morris_match.py --agent model1:1 model2:2
 ```
 
 **Human play modes:**
 ```bash
-uv run python game_scripts/A8-surround_morris_match.py --humanvsbot       # vs random
-uv run python game_scripts/A8-surround_morris_match.py --humanvshuman    # local 2P
-uv run python game_scripts/A8-surround_morris_match.py --humanvsagent --agent model:1
+uv run game_scripts/A8-surround_morris_match.py --humanvsbot       # vs random
+uv run game_scripts/A8-surround_morris_match.py --humanvshuman    # local 2P
+uv run game_scripts/A8-surround_morris_match.py --humanvsagent --agent model:1
 ```
 
 **Tournament (all cross-model pairings):**
 ```bash
-uv run python game_scripts/matchmaker.py --game A8 --same_opponent_match 4 --workers 4
+uv run game_scripts/matchmaker.py --game A8 --same_opponent_match 4 --workers 4
 ```
 
 #### Match Output Format

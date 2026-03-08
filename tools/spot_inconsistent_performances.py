@@ -1,6 +1,6 @@
 # Scans all scoreboard files and reports same-model agents with divergent rankings.
 # An "inconsistency" is when two runs of the same model differ in rank by more than 10.
-# Run explicitly: uv run python tools/spot_inconsistent_performances.py [--game A1]
+# Run explicitly: uv run tools/spot_inconsistent_performances.py [--game A1]
 
 from __future__ import annotations
 

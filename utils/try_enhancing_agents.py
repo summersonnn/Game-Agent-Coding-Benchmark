@@ -69,14 +69,7 @@ def resolve_models(api: ModelAPI, model_args: list[str]) -> list[str]:
 
     selected: list[str] = []
     for query in model_args:
-        if query.isdigit():
-            idx = int(query)
-            if 0 <= idx < len(api.all_models):
-                selected.append(api.all_models[idx])
-            else:
-                print(f"WARNING: Model index {idx} out of range, skipping")
-            continue
-
+        # Substring matching
         matches = [m for m in api.all_models if query.lower() in m.lower()]
         if not matches:
             print(f"WARNING: No model matches substring '{query}', skipping")
@@ -548,7 +541,7 @@ async def main_async() -> None:
         type=str,
         nargs="+",
         required=True,
-        help="Model substrings, indices, or 'all'",
+        help="Model names or substrings, or 'all'",
     )
     parser.add_argument(
         "--game",

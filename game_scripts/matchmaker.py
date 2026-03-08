@@ -768,13 +768,13 @@ def main() -> None:
         "--same_opponent_match",
         type=int,
         default=8,
-        help="Times each cross-model agent pair faces each other (default: 1)",
+        help="Times each cross-model agent pair faces each other (default: 8)",
     )
     parser.add_argument(
         "--workers",
         type=int,
         default=24,
-        help="Max concurrent match subprocesses (default: 16)",
+        help="Max concurrent match subprocesses (default: 24)",
     )
     parser.add_argument(
         "--dry-run",

@@ -5,9 +5,9 @@ Sends game prompts to selected models and saves the extracted agent code to the
 agents/ directory, organized by model and game with numbered runs.
 
 Usage:
-    uv run python utils/populate_agents.py --all           # All models, all games
-    uv run python utils/populate_agents.py --model 0 1 2   # Specific models by index
-    uv run python utils/populate_agents.py --games A1,A3   # Specific games by prefix
+    uv run utils/populate_agents.py --all            # All models, all games
+    uv run utils/populate_agents.py --model mistral  # Specific models by substring
+    uv run utils/populate_agents.py --game A1,A3     # Specific games by prefix
 """
 
 import argparse
@@ -347,11 +347,7 @@ Generated: {timestamp}
 
 def select_models_interactive(api: ModelAPI) -> list[str]:
     """Interactive model selection using substring matching."""
-    print("\nAvailable models:")
-    for i, model in enumerate(api.all_models):
-        print(f"  [{i}] {model}")
-    
-    print("\nEnter model substrings (space-separated), indices, or 'all' for all active models:")
+    print("\nEnter model substrings (space-separated) or 'all' for all active models:")
     choice = input("> ").strip().lower()
     
     if choice == "all":
@@ -361,17 +357,7 @@ def select_models_interactive(api: ModelAPI) -> list[str]:
     queries = choice.split()
     
     for query in queries:
-        # Check if it's an index
-        if query.isdigit():
-            idx = int(query)
-            if 0 <= idx < len(api.all_models):
-                model = api.all_models[idx]
-                selected_models.append(model)
-            else:
-                print(f"WARNING: Model index {idx} out of range, skipping")
-            continue
-            
-        # Otherwise, treat as substring
+        # Substring matching
         matches = [m for m in api.all_models if query in m.lower()]
         if not matches:
             print(f"WARNING: No model matches substring '{query}', skipping")
@@ -401,10 +387,10 @@ def main():
         "--model",
         type=str,
         nargs="+",
-        help="Model substrings or indices to use (e.g., --model mistral gpt-5)"
+        help="Model names or substrings to use (e.g., --model mistral gpt-5)"
     )
     parser.add_argument(
-        "--games",
+        "--games", "--game",
         type=str,
         help="Comma-separated game prefixes (e.g., --games A1,A3)"
     )
@@ -430,16 +416,6 @@ def main():
     elif args.model is not None:
         models = []
         for query in args.model:
-            # Check if it's an index
-            if query.isdigit():
-                idx = int(query)
-                if 0 <= idx < len(api.all_models):
-                    model = api.all_models[idx]
-                    models.append(model)
-                else:
-                    print(f"WARNING: Model index {idx} out of range, skipping")
-                continue
-
             # Substring matching
             matches = [m for m in api.all_models if query.lower() in m.lower()]
             if not matches:

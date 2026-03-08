@@ -1,6 +1,6 @@
 """
 Model-agnostic API caller for OpenRouter integration.
-Supports model selection by index and detailed reasoning retrieval.
+Supports model selection by name and detailed reasoning retrieval.
 Manages API configuration via environment variables and local files.
 """
 
@@ -115,7 +115,6 @@ class ModelAPI:
     async def call(
         self, 
         prompt: str, 
-        model_index: Optional[int] = None, 
         model_name: Optional[str] = None,
         reasoning: bool = True, 
         **kwargs: Any
@@ -125,7 +124,7 @@ class ModelAPI:
         
         Args:
             prompt: The user prompt.
-            model_index: Index of the model in models.txt (0-based).
+            model_name: Name of the model from models.txt.
             reasoning: Whether to enable reasoning via extra_body.
             **kwargs: Additional parameters to override defaults.
             
@@ -138,11 +137,8 @@ class ModelAPI:
         if model_name:
             selected_model = model_name
         else:
-            if model_index is None:
-                model_index = 0
-            if model_index < 0 or model_index >= len(self.models):
-                raise IndexError(f"Model index {model_index} out of range (0-{len(self.models)-1})")
-            selected_model = self.models[model_index]
+            selected_model = self.models[0]
+        
         
         # Build messages
         messages: List[ChatCompletionMessageParam] = [
@@ -254,7 +250,7 @@ if __name__ == "__main__":
     try:
         api = ModelAPI()
         logger.info("Loaded %d models.", len(api.models))
-        for i, m in enumerate(api.models):
-            logger.info("[%d] %s", i, m)
+        for m in api.models:
+            logger.info("  - %s", m)
     except Exception as e:
         logger.error("Initialization error: %s", e)
