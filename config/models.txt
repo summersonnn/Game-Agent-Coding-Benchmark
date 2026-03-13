@@ -9,6 +9,7 @@ anthropic/claude-sonnet-4.6
 anthropic/claude-haiku-4.5
 x-ai/grok-4
 x-ai/grok-4.1-fast
+x-ai/grok-4.20-beta
 openai/gpt-oss-120b@preset/fp8
 z-ai/glm-5@preset/fp8-speedy
 moonshotai/kimi-k2.5

@@ -3,6 +3,11 @@ This script parses game logs to aggregate failure statistics across agents.
 It reads through all text logs for a specified game, extracting 'timeout', 
 'invalid', 'make_move_crash', and 'crash' counts for each agent, and prints 
 the sorted aggregated results, skipping any agents with zero occurrences.
+
+Usage examples:
+    uv run utils/find_timeouts.py --game battleship
+    uv run utils/find_timeouts.py --game connect4
+    uv run utils/find_timeouts.py --game tictactoe
 """
 
 import argparse

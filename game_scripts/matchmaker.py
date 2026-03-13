@@ -569,17 +569,23 @@ async def run_a3_tournament(
     models = sorted(agents.keys())
     num_models = len(models)
 
-    # Validate models count is divisible by 3 to form 6-person pods.
-    if num_models % 3 != 0 or num_models == 0:
-        print(f"ERROR: A3 requires number of models to be a multiple of 3 (for 6-player games). Found {num_models}.")
+    if num_models < 3:
+        print(f"ERROR: A3 requires at least 3 models for 6-player games. Found {num_models}.")
         sys.exit(1)
 
     print(f"\nMATCHMAKER A3 - PHASE 1: Qualifiers")
     print(f"Models: {num_models} (Total Agents: {num_models * 2})")
 
-    # Group into chunks of 3 models
+    # Group into chunks of 3 models; pad the last group if needed.
     random.shuffle(models)
     groups = [models[i : i + 3] for i in range(0, num_models, 3)]
+    if len(groups[-1]) < 3:
+        remainder = groups[-1]
+        pad_pool = [m for m in models if m not in remainder]
+        pad_count = 3 - len(remainder)
+        remainder.extend(random.sample(pad_pool, pad_count))
+        groups[-1] = remainder
+        print(f"Note: Last qualifier group padded with {pad_count} extra model(s) for a full 6-player table.")
     
     commands_p1: list[tuple[list[str], str, list[tuple[str, int]]]] = []
     for g in groups:
