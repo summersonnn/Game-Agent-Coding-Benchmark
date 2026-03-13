@@ -1516,6 +1516,7 @@ async def main_async():
                 f.write("-" * 60 + "\n")
 
             print(f"  Match {match_id} ({folder1}:{run1} vs {folder2}:{run2}): Pts {p1}-{p2}")
+            print(f"MINI:{folder1}:{run1}={p1},{s1}|{folder2}:{run2}={p2},{s2}")
         else:
             print(f"  Match {match_id} ({folder1}:{run1} vs {folder2}:{run2}): FAILED - {result.get('error')}")
 

@@ -1192,6 +1192,8 @@ async def main_async():
             status = f"FAILED: {result.get('error', 'Unknown')}"
 
         print(f"Match {match_id} Completed. Pts {p1}-{p2}")
+        if result["success"]:
+            print(f"MINI:{folder1}:{run1}={p1},{s1}|{folder2}:{run2}={p2},{s2}")
 
         with open(log_f, "w") as f:
             f.write("Match Contenders:\n")

@@ -859,6 +859,8 @@ async def main_async():
             total_pts2 += p2
 
             print(f"  Match {m_id} ({folder1}:{r1} vs {folder2}:{r2}): {p1} - {p2}")
+            s1, s2 = res["agent1_score"], res["agent2_score"]
+            print(f"MINI:{folder1}:{r1}={p1},{s1}|{folder2}:{r2}={p2},{s2}")
 
             status = "Result:\n"
             status += f"{folder1}:{res['agent1_run_id']} : Pts: {res['agent1_points']} - Score: {res['agent1_score']}\n"

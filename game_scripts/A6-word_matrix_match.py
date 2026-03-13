@@ -1073,6 +1073,8 @@ async def main_async():
                 f.write(f"FAILED: {result.get('error', 'Unknown')}\n")
 
         print(f"Match {match_id} Completed. Pts {p1}-{p2}")
+        if result["success"]:
+            print(f"MINI:{folder1}:{run1}={p1},{s1}|{folder2}:{run2}={p2},{s2}")
 
         if result["success"] and args.update_scoreboard:
             agent1_key = f"{folder1}:{run1}"

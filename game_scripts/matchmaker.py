@@ -105,6 +105,18 @@ def generate_2p_fixtures(
     return fixtures
 
 
+def generate_mini_fixtures(
+    agents: dict[str, list[int]],
+    same_opponent_match: int,
+) -> list[tuple[tuple[str, int], tuple[str, int]]]:
+    """All agent pairs (including same-model), repeated same_opponent_match times."""
+    flat = [(folder, run) for folder, runs in agents.items() for run in runs]
+    pairs = list(itertools.combinations(flat, 2))
+    fixtures = pairs * same_opponent_match
+    random.shuffle(fixtures)
+    return fixtures
+
+
 # ---------------------------------------------------------------------------
 # Fixture generation — 6-player (A3 Wizard)
 # ---------------------------------------------------------------------------
@@ -382,6 +394,69 @@ def verify_agent_syntax(game_name: str, agents: dict[str, list[int]]) -> bool:
     return passed
 
 
+def _print_mini_league_standings(results: list[dict]) -> None:
+    """Parse MINI: lines from match runner stdout and display standings.
+
+    Each match runner emits per-match lines in the format:
+      MINI:{agent1}={pts1},{score1}|{agent2}={pts2},{score2}
+    """
+    standings: dict[str, dict] = {}
+    pat = re.compile(
+        r"^MINI:(.+?)=(\d+),(-?[\d.]+)\|(.+?)=(\d+),(-?[\d.]+)$"
+    )
+
+    for r in results:
+        if not r.get("success"):
+            continue
+        stdout = r.get("stdout", "")
+        for line in stdout.splitlines():
+            m = pat.match(line.strip())
+            if not m:
+                continue
+            agent1, pts1, score1 = m.group(1), int(m.group(2)), float(m.group(3))
+            agent2, pts2, score2 = m.group(4), int(m.group(5)), float(m.group(6))
+
+            for agent, pts, score in [
+                (agent1, pts1, score1),
+                (agent2, pts2, score2),
+            ]:
+                if agent not in standings:
+                    standings[agent] = {"points": 0, "score": 0.0, "matches": 0}
+                standings[agent]["points"] += pts
+                standings[agent]["score"] += score
+                standings[agent]["matches"] += 1
+
+    if not standings:
+        return
+
+    ranked = sorted(
+        standings.items(),
+        key=lambda x: (x[1]["points"], x[1]["score"]),
+        reverse=True,
+    )
+
+    print(f"\n{'='*80}")
+    print("MINI LEAGUE STANDINGS")
+    print(f"{'='*80}")
+
+    agent_col = max(len(a) for a, _ in ranked)
+    agent_col = max(agent_col, 5)
+    header = (
+        f"{'#':<4} {'Agent':<{agent_col}}  "
+        f"{'Matches':>7}  {'Points':>6}  {'Score':>8}"
+    )
+    print(header)
+    print("-" * len(header))
+
+    for rank, (agent, s) in enumerate(ranked, 1):
+        print(
+            f"{rank:<4} {agent:<{agent_col}}  "
+            f"{s['matches']:>7}  {s['points']:>6}  {s['score']:>8.1f}"
+        )
+
+    print(f"{'='*80}")
+
+
 async def run_tournament(
     game_id: str,
     same_opponent_match: int,
@@ -390,6 +465,7 @@ async def run_tournament(
     new_models: list[str] | None = None,
     health_check: bool = False,
     random16: bool = False,
+    mini_agents: dict[str, list[int]] | None = None,
 ) -> None:
     game = GAME_REGISTRY[game_id]
     game_name = game["name"]
@@ -400,10 +476,13 @@ async def run_tournament(
         print(f"ERROR: Match script not found: {match_script}")
         sys.exit(1)
 
-    agents = discover_agents(game_name)
-    if not agents:
-        print(f"ERROR: No agents found for {game_name} in {AGENTS_DIR}")
-        sys.exit(1)
+    if mini_agents is not None:
+        agents = mini_agents
+    else:
+        agents = discover_agents(game_name)
+        if not agents:
+            print(f"ERROR: No agents found for {game_name} in {AGENTS_DIR}")
+            sys.exit(1)
 
     if health_check:
         if not verify_agent_syntax(game_name, agents):
@@ -419,7 +498,11 @@ async def run_tournament(
     total_agents = sum(len(runs) for runs in agents.values())
     num_models = len(agents)
 
-    if num_models < 2:
+    if mini_agents is not None:
+        if total_agents < 2:
+            print(f"ERROR: Need 2+ agents for mini league, got {total_agents}")
+            sys.exit(1)
+    elif num_models < 2:
         print(f"ERROR: Need 2+ models for cross-model pairings, found {num_models}")
         sys.exit(1)
 
@@ -428,26 +511,37 @@ async def run_tournament(
         sys.exit(1)
 
     # Generate fixtures
-    mode_label = f" [incremental: {', '.join(new_models)}]" if new_models else ""
+    if mini_agents is not None:
+        mode_label = " [mini league]"
+    elif new_models:
+        mode_label = f" [incremental: {', '.join(new_models)}]"
+    else:
+        mode_label = ""
 
     if players == 2:
-        fixtures_2p = generate_2p_fixtures(agents, same_opponent_match, new_models)
+        if mini_agents is not None:
+            fixtures_2p = generate_mini_fixtures(agents, same_opponent_match)
+        else:
+            fixtures_2p = generate_2p_fixtures(agents, same_opponent_match, new_models)
         if random16 and len(fixtures_2p) > 16:
             fixtures_2p = random.sample(fixtures_2p, 16)
         total_matches = len(fixtures_2p)
         # Compute unique pairings for display
         flat_agents = [(f, r) for f, rs in agents.items() for r in rs]
-        all_pairs = [
-            (a, b)
-            for a, b in itertools.combinations(flat_agents, 2)
-            if a[0] != b[0]
-        ]
-        if new_models:
-            nm_set = set(new_models)
+        if mini_agents is not None:
+            all_pairs = list(itertools.combinations(flat_agents, 2))
+        else:
             all_pairs = [
-                (a, b) for a, b in all_pairs
-                if a[0] in nm_set or b[0] in nm_set
+                (a, b)
+                for a, b in itertools.combinations(flat_agents, 2)
+                if a[0] != b[0]
             ]
+            if new_models:
+                nm_set = set(new_models)
+                all_pairs = [
+                    (a, b) for a, b in all_pairs
+                    if a[0] in nm_set or b[0] in nm_set
+                ]
         unique_pairs = len(all_pairs)
         print(f"\nMATCHMAKER - {game_name}{mode_label}")
         print(f"Agents: {total_agents} ({num_models} models)")
@@ -482,15 +576,17 @@ async def run_tournament(
                 "--agent",
                 f"{a[0]}:{a[1]}",
                 f"{b[0]}:{b[1]}",
-                "--update-scoreboard",
             ]
+            if mini_agents is None:
+                cmd.append("--update-scoreboard")
             label = f"{a[0]}:{a[1]} vs {b[0]}:{b[1]}"
             commands.append((cmd, label))
     else:
         for group in fixtures_6p:
             cmd = [sys.executable, str(match_script), "--agent"]
             cmd.extend(f"{f}:{r}" for f, r in group)
-            cmd.append("--update-scoreboard")
+            if mini_agents is None:
+                cmd.append("--update-scoreboard")
             label = " vs ".join(f"{f}:{r}" for f, r in group)
             commands.append((cmd, label))
 
@@ -528,6 +624,9 @@ async def run_tournament(
             if not r.get("success"):
                 err = r.get("error", "unknown")
                 print(f"  - {r['label']}: {err}")
+
+    if mini_agents is not None and results:
+        _print_mini_league_standings(results)
 
 
 async def run_a3_tournament(
@@ -803,13 +902,76 @@ def main() -> None:
         action="store_true",
         help="Randomly select 16 matches and run them",
     )
+    parser.add_argument(
+        "--mini",
+        action="store_true",
+        help="Run a mini league among explicitly selected agents (requires --agent)",
+    )
+    parser.add_argument(
+        "--agent",
+        nargs="+",
+        metavar="MODEL:RUN",
+        help="Agents for mini league: MODEL:RUN pairs (e.g. modelA:1 modelB:2) "
+        "or a single model name substring to grab all its agents (e.g. pro)",
+    )
     args = parser.parse_args()
 
     new_models = None
     if args.new_model:
         new_models = [m.strip() for m in args.new_model.split(",") if m.strip()]
 
+    # Mini league validation
+    if args.mini and not args.agent:
+        parser.error("--mini requires --agent to specify participants")
+    if args.agent and not args.mini:
+        parser.error("--agent is only used with --mini")
+    if args.mini and args.new_model:
+        parser.error("--mini and --new-model are mutually exclusive")
+
+    # Build mini league agents dict from --agent specs
+    mini_agents: dict[str, list[int]] | None = None
+    if args.mini:
+        game_name = GAME_REGISTRY[args.game]["name"]
+        mini_agents = {}
+
+        # Single arg without ":" — treat as model name substring, grab all its agents
+        if len(args.agent) == 1 and ":" not in args.agent[0]:
+            query = args.agent[0].lower()
+            all_agents = discover_agents(game_name)
+            matched = {
+                folder: runs for folder, runs in all_agents.items()
+                if query in folder.lower()
+            }
+            if not matched:
+                print(f"ERROR: No model folder matching '{args.agent[0]}' found for {game_name}")
+                print(f"  Available: {', '.join(sorted(all_agents.keys()))}")
+                sys.exit(1)
+            mini_agents = matched
+            flat = [(f, r) for f, rs in mini_agents.items() for r in rs]
+            print(f"Mini league: matched {len(flat)} agents from {list(mini_agents.keys())}")
+        else:
+            for spec in args.agent:
+                if ":" not in spec:
+                    parser.error(f"Invalid agent spec '{spec}', expected MODEL:RUN")
+                model, run_str = spec.rsplit(":", 1)
+                try:
+                    run_id = int(run_str)
+                except ValueError:
+                    parser.error(f"Invalid run ID in '{spec}', expected integer")
+                # Validate agent file exists
+                agent_file = AGENTS_DIR / model / f"{game_name}_{run_id}.py"
+                if not agent_file.exists():
+                    print(f"ERROR: Agent file not found: {agent_file}")
+                    sys.exit(1)
+                mini_agents.setdefault(model, []).append(run_id)
+            # Sort runs for consistency
+            for runs in mini_agents.values():
+                runs.sort()
+
     if args.game == "A3":
+        if args.mini:
+            print("ERROR: --mini is not supported for A3 (6-player game)")
+            sys.exit(1)
         asyncio.run(
             run_a3_tournament(
                 args.game,
@@ -828,6 +990,7 @@ def main() -> None:
                 new_models,
                 args.health,
                 args.random16,
+                mini_agents,
             )
         )
 
