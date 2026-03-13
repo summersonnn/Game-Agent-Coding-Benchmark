@@ -51,6 +51,43 @@ GAME_REGISTRY: dict[str, dict] = {
 # ---------------------------------------------------------------------------
 
 
+def resolve_model_folder(pattern: str) -> str:
+    """Resolve a model pattern to an exact folder name via substring match.
+
+    Exact match is tried first, then case-insensitive substring. If multiple
+    folders match, the user is prompted to choose interactively.
+    Exits on zero matches.
+    """
+    exact = AGENTS_DIR / pattern
+    if exact.is_dir():
+        return pattern
+
+    matches = [
+        d.name for d in sorted(AGENTS_DIR.iterdir())
+        if d.is_dir() and pattern.lower() in d.name.lower()
+    ]
+
+    if not matches:
+        print(f"ERROR: No model folder matches '{pattern}'")
+        print(f"  Available: {', '.join(d.name for d in sorted(AGENTS_DIR.iterdir()) if d.is_dir())}")
+        sys.exit(1)
+
+    if len(matches) == 1:
+        return matches[0]
+
+    # Interactive disambiguation
+    print(f"\nSubstring '{pattern}' matches multiple folders:")
+    for i, m in enumerate(matches):
+        print(f"  [{i}] {m}")
+    while True:
+        choice = input(f"Select index (0-{len(matches)-1}) or Enter to cancel: ").strip()
+        if not choice:
+            sys.exit(0)
+        if choice.isdigit() and 0 <= int(choice) < len(matches):
+            return matches[int(choice)]
+        print("Invalid selection.")
+
+
 def discover_agents(game_name: str) -> dict[str, list[int]]:
     """Scan agents/*/ for files matching {game_name}_{run}.py.
 
@@ -936,29 +973,24 @@ def main() -> None:
 
         # Single arg without ":" — treat as model name substring, grab all its agents
         if len(args.agent) == 1 and ":" not in args.agent[0]:
-            query = args.agent[0].lower()
+            model = resolve_model_folder(args.agent[0])
             all_agents = discover_agents(game_name)
-            matched = {
-                folder: runs for folder, runs in all_agents.items()
-                if query in folder.lower()
-            }
-            if not matched:
-                print(f"ERROR: No model folder matching '{args.agent[0]}' found for {game_name}")
-                print(f"  Available: {', '.join(sorted(all_agents.keys()))}")
+            if model not in all_agents:
+                print(f"ERROR: No agents found for '{model}' in game {game_name}")
                 sys.exit(1)
-            mini_agents = matched
+            mini_agents = {model: all_agents[model]}
             flat = [(f, r) for f, rs in mini_agents.items() for r in rs]
             print(f"Mini league: matched {len(flat)} agents from {list(mini_agents.keys())}")
         else:
             for spec in args.agent:
                 if ":" not in spec:
                     parser.error(f"Invalid agent spec '{spec}', expected MODEL:RUN")
-                model, run_str = spec.rsplit(":", 1)
+                model_pattern, run_str = spec.rsplit(":", 1)
                 try:
                     run_id = int(run_str)
                 except ValueError:
                     parser.error(f"Invalid run ID in '{spec}', expected integer")
-                # Validate agent file exists
+                model = resolve_model_folder(model_pattern)
                 agent_file = AGENTS_DIR / model / f"{game_name}_{run_id}.py"
                 if not agent_file.exists():
                     print(f"ERROR: Agent file not found: {agent_file}")
