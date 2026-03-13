@@ -802,12 +802,18 @@ async def run_a3_tournament(
                 model_name, run_id = match_agents[agent_idx]
                 model_results[model_name].append((run_id, points))
 
+    # Aggregate points per run_id (models in padded groups appear multiple times)
+    model_agg: dict[str, dict[int, float]] = {m: {} for m in models}
+    for m in models:
+        for run_id, pts in model_results[m]:
+            model_agg[m][run_id] = model_agg[m].get(run_id, 0.0) + pts
+
     chosen_agents: list[tuple[str, int]] = []
     print(f"{'Model':<40} | {'Run A (Pts)':<15} | {'Run B (Pts)':<15} | {'Winner'}")
     print("-" * 85)
-    
+
     for m in sorted(models):
-        res = sorted(model_results[m]) # [ (run1, pts1), (run2, pts2) ]
+        res = sorted(model_agg[m].items())  # [ (run1, total_pts1), (run2, total_pts2) ]
         if len(res) != 2:
             # Fallback if parsing failed for some reason
             print(f"WARNING: Could not parse results for {m}. Defaulting to first run.")
@@ -820,7 +826,7 @@ async def run_a3_tournament(
                 winner_run = run_a
             else:
                 winner_run = run_b
-        
+
         chosen_agents.append((m, winner_run))
         a_str = f"{res[0][0]} ({res[0][1]:.1f})" if len(res)>0 else "N/A"
         b_str = f"{res[1][0]} ({res[1][1]:.1f})" if len(res)>1 else "N/A"
