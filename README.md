@@ -8,7 +8,7 @@ The live league standings can be accessed at [gameagentcodingleague.com](https:/
 
 ## Features
 
-- **8 Competitive Games**: Battleship, TicTacToe, Wizard, WordFinder, Connect4, WordMatrix, 2x8 Mini Chess, SurroundMorris.
+- **7 Competitive Games**: Battleship, TicTacToe, Wizard, Connect4, WordMatrix, 2x8 Mini Chess, SurroundMorris.
 - **Model-Agnostic**: OpenRouter integration supports any available LLM.
 - **Persistent Agents**: Generated code stored per-model for reuse and analysis.
 - **Points-Based Scoring**: All matches, except for the A3 game, follow the standard scoring format: a win earns 3 points, a draw earns 1 point, and a loss earns 0 points, with goal difference used to break ties.
@@ -138,7 +138,7 @@ uv run game_scripts/matchmaker.py --game A8 --health
 
 | Argument | Type | Default | Description |
 |---|---|---|---|
-| `--game` | str | required | Game ID: A1, A2, A3, A4, A5, A6, A7, A8 |
+| `--game` | str | required | Game ID: A1, A2, A3, A5, A6, A7, A8 |
 | `--same_opponent_match` | int | 8 | Minimum times each cross-model pair must meet |
 | `--workers` | int | 24 | Max concurrent match subprocesses |
 | `--dry-run` | flag | false | Print fixture list without executing |
@@ -179,10 +179,10 @@ The matchmaker is a scheduler only. Each subprocess call to a match runner handl
 
 ```bash
 # Enhance a specific model on a specific game
-uv run utils/try_enhancing_agents.py --model mistral --game A4
+uv run utils/try_enhancing_agents.py --model mistral --game A5
 
 # Enhance multiple models across multiple games
-uv run utils/try_enhancing_agents.py --model mistral minimax --game A1,A4
+uv run utils/try_enhancing_agents.py --model mistral minimax --game A1,A5
 
 # Enhance all models on all 2-player games
 uv run utils/try_enhancing_agents.py --model all --game all

@@ -24,7 +24,6 @@ GAME_REGISTRY: dict[str, dict] = {
     "A1": {"name": "A1-Battleship", "script": "A1-battleship_match.py", "players": 2},
     "A2": {"name": "A2-TicTacToe", "script": "A2-tictactoe_match.py", "players": 2},
     "A3": {"name": "A3-Wizard", "script": "A3-wizard_match.py", "players": 6},
-    "A4": {"name": "A4-WordFinder", "script": "A4-word_finder_match.py", "players": 2},
     "A5": {
         "name": "A5-Connect4RandomStart",
         "script": "A5-connect4_match.py",

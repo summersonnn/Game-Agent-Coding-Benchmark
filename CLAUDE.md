@@ -7,7 +7,7 @@ Benchmarking framework for evaluating LLMs in competitive multi-agent game envir
 ```
 agents/           # Generated agent code (organized by model name)
 config/           # Configuration: models.txt, max_tokens.txt
-games/            # Game prompts/rules (A1-Battleship, A2-TicTacToe, A4-WordFinder, ...)
+games/            # Game prompts/rules (A1-Battleship, A2-TicTacToe, ...)
 results/          # Match logs and outcomes
 tools/            # One-off diagnostic and analysis scripts (not part of the main pipeline)
 utils/            # Core logic - API client, match runners, agent generation
@@ -21,12 +21,10 @@ Ad-hoc scripts for investigating data or debugging match infrastructure. These a
 |--------|---------|
 | `debug_syntax.py` | Validates that two agent files can be merged into a single game script without syntax errors; mirrors the code-injection logic used by match runners |
 | `spot_inconsistent_performances.py` | Scans scoreboard files and reports same-model agents whose ranks diverge by more than 10 positions, flagging potentially inconsistent runs |
-| `filter_words.py` | Regenerates `game_scripts/words_small.txt` from `game_scripts/words.txt`; filters to 3–8 char alphabetic words with no triple-identical consecutive letters. Run this if `words_small.txt` is missing or corrupted. |
 
 ```bash
 uv run tools/spot_inconsistent_performances.py          # all games
 uv run tools/spot_inconsistent_performances.py --game A5
-uv run tools/filter_words.py
 ```
 
 ## Entry Points
@@ -42,7 +40,6 @@ uv run utils/populate_agents.py --game A1,A2 --runs 3           # Specific games
 ```bash
 uv run game_scripts/A1-battleship_match.py --agent model1:1 model2:1
 uv run game_scripts/A2-tictactoe_match.py --agent model1:1 model2:1
-uv run game_scripts/A4-word_finder_match.py --agent model1:1 model2:1
 uv run game_scripts/A5-connect4_match.py --agent model1:1 model2:1
 uv run game_scripts/A6-word_matrix_match.py --agent model1:1 model2:1
 uv run game_scripts/A7-twobyeight_chess_match.py --agent model1:1 model2:1
@@ -60,8 +57,8 @@ uv run game_scripts/matchmaker.py --game A8 --new-model new-model-folder --healt
 
 **Agent Enhancement:**
 ```bash
-uv run utils/try_enhancing_agents.py --model mistral --game A4        # Single model, single game
-uv run utils/try_enhancing_agents.py --model mistral minimax --game A1,A4  # Multiple
+uv run utils/try_enhancing_agents.py --model mistral --game A5        # Single model, single game
+uv run utils/try_enhancing_agents.py --model mistral minimax --game A1,A5  # Multiple
 uv run utils/try_enhancing_agents.py --model all --game all           # All 2-player combos
 ```
 
@@ -100,7 +97,6 @@ uv run utils/try_enhancing_agents.py --model all --game all           # All 2-pl
 | A1 | Battleship | 2 | Playable |
 | A2 | TicTacToe | 2 | Playable |
 | A3 | Wizard | 6 | Not ready |
-| A4 | WordFinder | 2 | Playable |
 | A5 | Connect4RandomStart | 2 | Playable |
 | A6 | WordMatrixGame | 2 | Playable |
 | A7 | TwoByEightChess | 2 | Playable |
@@ -391,27 +387,6 @@ Total Turns: <count>
 
 ---
 
-### A4: WordFinder
-
-**Type:** 2-player word chain game
-**Match File:** `game_scripts/A4-word_finder_match.py`
-**Game Prompt:** `games/A4-WordFinder.txt`
-**Scoreboard:** `scoreboard/A4-scoreboard.txt`
-
-**Overview:** Players alternate submitting words. Each word must share the first or last letter with the previous word. Valid words score points; invalid moves are penalised. Dictionary is a random 10k-word sample per match. Max 200 individual turns.
-
-**Agent Interface:** `class WordFinderAgent` with `make_move(state, feedback)` returning a word string.
-
-**Scoring:** Base points per word + bonuses. Forfeit score: 12.
-
-**Move timeout:** Follows global `MOVE_TIME_LIMIT` (default 1.0s).
-
-**Game count:** Loads `NUM_OF_GAMES_IN_A_MATCH` from the environment and divides by 10. Effective default: 10 games per match. The reduction accounts for high turn counts (up to 200) making each game slower than other titles.
-
-**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
-
----
-
 ### A5: Connect4 (Random Start)
 
 **Type:** 2-player connection game
@@ -512,7 +487,7 @@ This controls how many times every cross-model agent pair is guaranteed to encou
 
 **Execution:** Each match is a subprocess calling the game's match runner with `--update-scoreboard` appended automatically. The match runner handles game execution, result parsing, scoreboard updates, and log writing internally. The matchmaker only orchestrates scheduling and reports success/failure counts.
 
-**Game-count scaling:** A4, A5, A7, and A8 match runners divide `NUM_OF_GAMES_IN_A_MATCH` by 10 internally, yielding 10 games per match by default rather than 100. This compensates for slower per-game execution (high turn counts in A4; complex board evaluation in A7/A8).
+**Game-count scaling:** A5, A7, and A8 match runners divide `NUM_OF_GAMES_IN_A_MATCH` by 10 internally, yielding 10 games per match by default rather than 100. This compensates for slower per-game execution (complex board evaluation in A7/A8).
 
 **Timeout:** 900 seconds per match subprocess. Timed-out matches are killed and recorded as failures.
 
