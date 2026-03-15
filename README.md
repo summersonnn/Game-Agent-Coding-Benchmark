@@ -9,7 +9,7 @@ The live league standings can be accessed at [gameagentcodingleague.com](https:/
 ## Features
 
 - **7 Competitive Games**: Battleship, TicTacToe, Wizard, Connect4, WordMatrix, 2x8 Mini Chess, SurroundMorris.
-- **Model-Agnostic**: OpenRouter integration supports any available LLM.
+- **Model-Agnostic**: OpenRouter integration supports any available LLM, with optional direct provider routing (e.g., [MiniMax](https://www.minimaxi.com)) for lower latency.
 - **Persistent Agents**: Generated code stored per-model for reuse and analysis.
 - **Points-Based Scoring**: All matches, except for the A3 game, follow the standard scoring format: a win earns 3 points, a draw earns 1 point, and a loss earns 0 points, with goal difference used to break ties.
 The A3 game uses a different approach — there are no win, loss, or draw outcomes. Instead, the six agents are ranked from first to last: the top agent receives 5 points, the second earns 4 points, and the points continue decreasing by one down to 0 points for the last-place agent.
@@ -47,6 +47,30 @@ NUM_OF_GAMES_IN_A_MATCH=100
 ```
 
 Edit `config/models.txt` — one model ID per line.
+
+#### Direct Provider Support
+
+By default, all models are routed through OpenRouter. You can optionally configure
+direct API access for specific providers — this bypasses OpenRouter for lower latency
+and cost.
+
+**MiniMax** — set `MINIMAX_API_KEY` in your `.env` to route `minimax/*` models
+directly through MiniMax's OpenAI-compatible API (`api.minimax.io/v1`):
+
+```
+MINIMAX_API_KEY=your_minimax_api_key
+```
+
+When `MINIMAX_API_KEY` is set, models like `minimax/minimax-m2.5` are automatically
+sent to MiniMax's API instead of OpenRouter. Models from other providers continue to
+use OpenRouter as usual.
+
+Available MiniMax models (add to `config/models.txt`):
+
+| Model ID | Description |
+|----------|-------------|
+| `minimax/minimax-m2.5` | MiniMax M2.5 — 204K context, balanced speed and quality |
+| `minimax/minimax-m2.5-highspeed` | MiniMax M2.5 Highspeed — optimized for faster inference |
 
 ---
 
@@ -238,7 +262,7 @@ scoreboard/       # Per-game leaderboard files
 
 | File | Purpose |
 |------|---------|
-| `utils/model_api.py` | Async OpenRouter API client with per-game token multipliers |
+| `utils/model_api.py` | Async multi-provider API client with per-game token multipliers |
 | `utils/populate_agents.py` | LLM-based agent code generation |
 | `utils/scoreboard.py` | Atomic scoreboard read/write with file locking |
 | `utils/logging_config.py` | Centralized logging setup |

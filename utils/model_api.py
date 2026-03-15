@@ -1,5 +1,7 @@
 """
-Model-agnostic API caller for OpenRouter integration.
+Model-agnostic API caller with multi-provider support.
+Routes requests to provider-specific endpoints (MiniMax, OpenAI, etc.) when
+direct API keys are configured, falling back to OpenRouter for all other models.
 Supports model selection by name and detailed reasoning retrieval.
 Manages API configuration via environment variables and local files.
 """
@@ -14,28 +16,47 @@ from logging_config import setup_logging
 
 logger = setup_logging(__name__)
 
+# Direct provider configuration. When a provider-specific API key is set,
+# models from that provider are routed directly instead of through OpenRouter.
+DIRECT_PROVIDERS: dict[str, dict[str, Any]] = {
+    "minimax": {
+        "base_url_env": "MINIMAX_API_BASE_URL",
+        "base_url_default": "https://api.minimax.io/v1",
+        "api_key_env": "MINIMAX_API_KEY",
+        # Map OpenRouter model IDs to direct API model names
+        "model_map": {
+            "minimax/minimax-m2.5": "MiniMax-M2.5",
+            "minimax/minimax-m2.5-highspeed": "MiniMax-M2.5-highspeed",
+        },
+        "min_temperature": 0.01,  # MiniMax rejects temperature <= 0
+    },
+}
+
+
 class ModelAPI:
     """
-    A class to handle interactions with OpenRouter APIs using the OpenAI client.
-    Configuration is loaded from environment variables and a models.txt file.
+    A class to handle interactions with LLM APIs using the OpenAI client.
+    Supports direct provider routing (MiniMax, OpenAI, etc.) with automatic
+    fallback to OpenRouter. Configuration is loaded from environment variables
+    and a models.txt file.
     """
 
     def __init__(self, env_path: Optional[str] = None, models_path: str = "config/models.txt") -> None:
         """
         Initializes the ModelAPI with configuration from environment variables
         and a list of models from a file.
-        
+
         Args:
             env_path: Optional path to the .env file.
             models_path: Path to the models.txt file.
         """
         # Load environment variables from .env file
         load_dotenv(dotenv_path=env_path)
-        
-        # OpenRouter configuration
+
+        # Default (OpenRouter) configuration
         self.base_url = os.getenv("MODEL_API_BASE_URL", "https://openrouter.ai/api/v1")
         self.api_key = os.getenv("MODEL_API_KEY")
-        
+
         # Load models from file
         self.models: List[str] = []
         self.all_models: List[str] = []
@@ -46,13 +67,13 @@ class ModelAPI:
                     if stripped:
                         self.all_models.append(stripped)
                         self.models.append(stripped)
-        
+
         # Common parameters
         try:
             self.max_tokens = int(os.getenv("MODEL_MAX_TOKENS", "8192"))
         except (ValueError, TypeError):
             self.max_tokens = 8192
-            
+
         try:
             self.temperature = float(os.getenv("MODEL_TEMPERATURE", "0.7"))
         except (ValueError, TypeError):
@@ -61,7 +82,7 @@ class ModelAPI:
         # Validate required fields
         if not self.api_key:
             raise ValueError("Missing required environment variable: MODEL_API_KEY")
-        
+
         # Load token multipliers from file
         self.token_multipliers: dict[str, float] = {}
         max_tokens_path = "config/max_tokens.txt"
@@ -78,15 +99,27 @@ class ModelAPI:
                         except ValueError:
                             logger.warning("Invalid multiplier for %s: %s", key, val)
 
-        # Initialize AsyncOpenAI client
+        # Initialize default AsyncOpenAI client (OpenRouter)
         # Clean up base_url if it ends with /api/v (some users might forget the 1)
         if self.base_url.endswith("/api/v"):
             self.base_url += "1"
-            
+
         self.client = AsyncOpenAI(
             base_url=self.base_url,
             api_key=self.api_key
         )
+
+        # Initialize direct provider clients
+        self.provider_clients: dict[str, AsyncOpenAI] = {}
+        for provider, cfg in DIRECT_PROVIDERS.items():
+            api_key = os.getenv(cfg["api_key_env"])
+            if api_key:
+                base_url = os.getenv(cfg["base_url_env"], cfg["base_url_default"])
+                self.provider_clients[provider] = AsyncOpenAI(
+                    base_url=base_url,
+                    api_key=api_key,
+                )
+                logger.info("Direct provider configured: %s → %s", provider, base_url)
 
     def get_max_tokens(self, game_id: str) -> int:
         """
@@ -133,38 +166,56 @@ class ModelAPI:
         """
         if not self.models:
             raise ValueError("No models loaded from models.txt")
-        
+
         if model_name:
             selected_model = model_name
         else:
             selected_model = self.models[0]
-        
-        
+
+
         # Build messages
         messages: List[ChatCompletionMessageParam] = [
             {"role": "user", "content": prompt}
         ]
-        
+
         # Handle extra_body for reasoning
         extra_body = kwargs.pop("extra_body", {})
         if reasoning:
             if "reasoning" not in extra_body:
                 extra_body["reasoning"] = {"effort": "high"}
-        
+
         # Determine parameters to avoid duplicates in **kwargs
         max_tokens = kwargs.pop("max_tokens", self.max_tokens)
         temperature = kwargs.pop("temperature", self.temperature)
-        
+
         # We need to ensure stream=False is used
         kwargs["stream"] = False
-        
+
         try:
             self.timeout = float(os.getenv("MODEL_API_TIMEOUT", "600"))
         except (ValueError, TypeError):
             self.timeout = 600.0
 
-        response = await self.client.chat.completions.create(
-            model=selected_model,
+        # Route to direct provider client if available
+        client = self.client
+        actual_model = selected_model
+        provider_prefix = selected_model.split("/")[0]
+
+        if provider_prefix in self.provider_clients:
+            client = self.provider_clients[provider_prefix]
+            provider_cfg = DIRECT_PROVIDERS[provider_prefix]
+
+            # Map OpenRouter model ID to direct API model name
+            base_model = selected_model.split("@")[0]
+            actual_model = provider_cfg["model_map"].get(base_model, base_model)
+
+            # Apply provider-specific temperature constraints
+            min_temp = provider_cfg.get("min_temperature")
+            if min_temp and temperature < min_temp:
+                temperature = min_temp
+
+        response = await client.chat.completions.create(
+            model=actual_model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
