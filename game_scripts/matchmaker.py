@@ -670,6 +670,7 @@ async def run_a3_tournament(
     workers: int,
     dry_run: bool,
     health_check: bool = False,
+    auto_yes: bool = False,
 ) -> None:
     import os
     import math
@@ -838,13 +839,14 @@ async def run_a3_tournament(
     print(f"Selected Agents: {len(chosen_agents)}")
     print(f"Combinations: {num_p2} matches")
     
-    while True:
-        proceed = input("Start Phase 2? [y/N]: ").strip().lower()
-        if proceed in ("y", "yes"):
-            break
-        elif proceed in ("n", "no", ""):
-            print("Aborting.")
-            sys.exit(0)
+    if not auto_yes:
+        while True:
+            proceed = input("Start Phase 2? [y/N]: ").strip().lower()
+            if proceed in ("y", "yes"):
+                break
+            elif proceed in ("n", "no", ""):
+                print("Aborting.")
+                sys.exit(0)
 
     # Build P2 commands
     commands_p2: list[tuple[list[str], str]] = []
@@ -956,6 +958,11 @@ def main() -> None:
         help="Agents for mini league: MODEL:RUN pairs (e.g. modelA:1 modelB:2) "
         "or a single model name substring to grab all its agents (e.g. pro)",
     )
+    parser.add_argument(
+        "--auto-yes",
+        action="store_true",
+        help="Skip confirmation prompts (e.g. A3 Phase 2 start)",
+    )
     args = parser.parse_args()
 
     new_models = None
@@ -1015,6 +1022,7 @@ def main() -> None:
                 args.workers,
                 args.dry_run,
                 args.health,
+                args.auto_yes,
             )
         )
     else:
