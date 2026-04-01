@@ -1116,6 +1116,11 @@ async def main_async():
     overall_agent_scores = {f"Agent-{i}": 0.0 for i in range(1, NUM_PLAYERS+1)}
     
     agent_suffix = "_vs_".join(f"{f}:{r}" for f, r in agent_specs)
+    # Trim agent names if the filename would exceed filesystem limit (255 bytes)
+    max_filename = 255 - len(f"{ts}__match_00.txt")
+    if len(agent_suffix) > max_filename:
+        trim_to = (max_filename - 4 * (len(agent_specs) - 1)) // len(agent_specs) - 2
+        agent_suffix = "_vs_".join(f"{f[:trim_to]}:{r}" for f, r in agent_specs)
     
     for result in sorted(results, key=lambda x: x["match_id"]):
         match_id = result["match_id"]
