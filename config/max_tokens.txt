@@ -2,7 +2,7 @@
 # These values are multiplied by MODEL_MAX_TOKENS from the .env file.
 # Format: GameID: Multiplier
 
-A1-Battleship: 2
+A1-Battleship: 4
 A2-TicTacToe: 2
 A3-Wizard: 7
 A5-Connect4RandomStart: 2
