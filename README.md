@@ -8,7 +8,7 @@ The live league standings can be accessed at [gameagentcodingleague.com](https:/
 
 ## Features
 
-- **7 Competitive Games**: Battleship, TicTacToe, Wizard, Connect4, WordMatrix, 2x8 Mini Chess, SurroundMorris.
+- **7 Competitive Games**: Battleship, TicTacToe *(pending deprecation)*, Wizard, Connect4, WordMatrix, 2x8 Mini Chess, SurroundMorris.
 - **Model-Agnostic**: OpenRouter integration supports any available LLM.
 - **Persistent Agents**: Generated code stored per-model for reuse and analysis.
 - **Points-Based Scoring**: All matches, except for the A3 game, follow the standard scoring format: a win earns 3 points, a draw earns 1 point, and a loss earns 0 points, with goal difference used to break ties.
@@ -228,7 +228,6 @@ agents/           # Generated agent code (organized by model name)
 config/           # models.txt, max_tokens.txt
 games/            # Game prompts/rules for agent generation
 game_scripts/     # Match runners (*_match.py) and matchmaker.py
-tools/            # One-off diagnostic and analysis scripts (not part of the main pipeline)
 utils/            # Core logic: API client, agent generation, scoreboard, logging
 results/          # Match logs and outcomes per game
 scoreboard/       # Per-game leaderboard files
@@ -244,8 +243,6 @@ scoreboard/       # Per-game leaderboard files
 | `utils/logging_config.py` | Centralized logging setup |
 | `game_scripts/*_match.py` | Game-specific match orchestrators |
 | `game_scripts/matchmaker.py` | Round-robin tournament scheduler |
-| `tools/debug_syntax.py` | Validates agent code merging for syntax errors (mirrors match runner injection logic) |
-| `tools/spot_inconsistent_performances.py` | Reports same-model agents with divergent scoreboard rankings |
 
 ### `config/models.txt`
 

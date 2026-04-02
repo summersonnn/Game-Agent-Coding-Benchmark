@@ -9,22 +9,7 @@ agents/           # Generated agent code (organized by model name)
 config/           # Configuration: models.txt, max_tokens.txt
 games/            # Game prompts/rules (A1-Battleship, A2-TicTacToe, ...)
 results/          # Match logs and outcomes
-tools/            # One-off diagnostic and analysis scripts (not part of the main pipeline)
 utils/            # Core logic - API client, match runners, agent generation
-```
-
-## Tools
-
-Ad-hoc scripts for investigating data or debugging match infrastructure. These are not invoked by the main pipeline; run them manually as needed.
-
-| Script | Purpose |
-|--------|---------|
-| `debug_syntax.py` | Validates that two agent files can be merged into a single game script without syntax errors; mirrors the code-injection logic used by match runners |
-| `spot_inconsistent_performances.py` | Scans scoreboard files and reports same-model agents whose ranks diverge by more than 10 positions, flagging potentially inconsistent runs |
-
-```bash
-uv run tools/spot_inconsistent_performances.py          # all games
-uv run tools/spot_inconsistent_performances.py --game A5
 ```
 
 ## Entry Points
@@ -95,8 +80,8 @@ uv run utils/try_enhancing_agents.py --model all --game all           # All 2-pl
 | ID | Game | Players | Status |
 |----|------|---------|--------|
 | A1 | Battleship | 2 | Playable |
-| A2 | TicTacToe | 2 | Playable |
-| A3 | Wizard | 6 | Not ready |
+| A2 | TicTacToe | 2 | Playable (pending deprecation) |
+| A3 | Wizard | 6 | Playable |
 | A5 | Connect4RandomStart | 2 | Playable |
 | A6 | WordMatrixGame | 2 | Playable |
 | A7 | TwoByEightChess | 2 | Playable |
@@ -383,7 +368,7 @@ Total Turns: <count>
 
 ### A3: Wizard
 
-**Status: Not ready.** The 6-player infrastructure required by this game is not yet supported by the matchmaker.
+**Status: Playable.**
 
 ---
 
