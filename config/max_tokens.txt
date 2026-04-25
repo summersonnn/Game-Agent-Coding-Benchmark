@@ -5,6 +5,7 @@
 A1-Battleship: 4
 A2-TicTacToe: 2
 A3-Wizard: 7
+A4-Backgammon: 5
 A5-Connect4RandomStart: 2
 A6-WordMatrixGame: 5
 A7-TwoByEightChess: 4

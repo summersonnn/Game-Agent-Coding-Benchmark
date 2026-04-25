@@ -25,6 +25,7 @@ uv run utils/populate_agents.py --game A1,A2 --runs 3           # Specific games
 ```bash
 uv run game_scripts/A1-battleship_match.py --agent model1:1 model2:1
 uv run game_scripts/A2-tictactoe_match.py --agent model1:1 model2:1
+uv run game_scripts/A4-backgammon_match.py --agent model1:1 model2:1
 uv run game_scripts/A5-connect4_match.py --agent model1:1 model2:1
 uv run game_scripts/A6-word_matrix_match.py --agent model1:1 model2:1
 uv run game_scripts/A7-twobyeight_chess_match.py --agent model1:1 model2:1
@@ -82,6 +83,7 @@ uv run utils/try_enhancing_agents.py --model all --game all           # All 2-pl
 | A1 | Battleship | 2 | Playable |
 | A2 | TicTacToe | 2 | Playable (pending deprecation) |
 | A3 | Wizard | 6 | Playable |
+| A4 | Backgammon | 2 | Playable |
 | A5 | Connect4RandomStart | 2 | Playable |
 | A6 | WordMatrixGame | 2 | Playable |
 | A7 | TwoByEightChess | 2 | Playable |
@@ -369,6 +371,36 @@ Total Turns: <count>
 ### A3: Wizard
 
 **Status: Playable.**
+
+---
+
+### A4: Backgammon
+
+**Type:** 2-player race game
+**Match File:** `game_scripts/A4-backgammon_match.py`
+**Game Prompt:** `games/A4-Backgammon.txt`
+**Scoreboard:** `scoreboard/A4-scoreboard.txt`
+
+**Overview:** Standard backgammon on a 24-point board. 15 checkers per player, two six-sided dice. White moves toward index 0; Black moves toward index 23. Each subprocess invocation plays one **race-to-5 in-game points**: Single Win = 1 point, Gammon Win = 2 points, turn-limit Draw = 0.5 each. Match (race) caps at `MAX_GAMES_PER_MATCH = 30` for safety. No doubling cube. No Backgammon (3-point) tier.
+
+**Agent Interface:** `class BackgammonAgent` with `make_move(state, feedback)` returning a list of `(from, to)` sub-move tuples. State includes pre-computed `legal_sub_moves` (single-step) and `max_dice_usable` (target sequence length); the returned sequence length must equal `max_dice_usable` exactly.
+
+**Scoring:**
+- In-game (per game): Single = 1, Gammon = 2, Draw (turn limit) = 0.5/0.5.
+- League (per match): Match Win (first to 5) = 3 points, Match Draw = 1 each, Match Loss = 0.
+- Tie-break score = ±(in-game-points diff). E.g., 5–1 in-game → +4/-4.
+
+**Constants (hardcoded):** `MAX_TURNS_PER_GAME = 300`, `POINTS_TO_WIN_MATCH = 5`, `MAX_GAMES_PER_MATCH = 30`. The framework's `NUM_OF_GAMES_IN_A_MATCH` env var is ignored — game count is variable per race.
+
+**Error handling (project deviation):** Crashes, timeouts, AND invalid moves all forfeit the turn — no random fallback. The turn counter still increments. Stats track each failure mode separately (`make_move_crash`, `timeout`, `invalid`).
+
+**Forced-use rule:** Agents must use as many dice as legally possible. The "must play larger die" sub-rule is NOT enforced — if both dice are individually playable but not together, agent picks either.
+
+**Color/turn assignment:** Within each game, White is randomly determined; turn order alternates by color across games (Agent-1 is W in odd-numbered games, B in even).
+
+**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
+
+**Subprocess output extras:** `GAMES_PLAYED:<int>` line is parsed by the outer layer for scoreboard `games_played` (variable per match).
 
 ---
 
