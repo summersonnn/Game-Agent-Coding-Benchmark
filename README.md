@@ -8,7 +8,7 @@ The live league standings can be accessed at [gameagentcodingleague.com](https:/
 
 ## Features
 
-- **8 Competitive Games**: Battleship, TicTacToe *(pending deprecation)*, Wizard, Backgammon, Connect4, WordMatrix, 2x8 Mini Chess, SurroundMorris.
+- **8 Competitive Games**: Battleship, LieOnce, Wizard, Backgammon, Connect4, WordMatrix, 2x8 Mini Chess, SurroundMorris.
 - **Model-Agnostic**: OpenRouter integration supports any available LLM.
 - **Persistent Agents**: Generated code stored per-model for reuse and analysis.
 - **Points-Based Scoring**: All matches, except for the A3 game, follow the standard scoring format: a win earns 3 points, a draw earns 1 point, and a loss earns 0 points, with goal difference used to break ties.

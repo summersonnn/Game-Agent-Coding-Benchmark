@@ -547,7 +547,7 @@ async def main_async() -> None:
         "--game",
         type=str,
         required=True,
-        help="Comma-separated game prefixes (e.g., A1,A2) or 'all'",
+        help="Comma-separated game prefixes (e.g., A1,A5) or 'all'",
     )
 
     args = parser.parse_args()

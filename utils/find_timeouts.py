@@ -7,7 +7,7 @@ the sorted aggregated results, skipping any agents with zero occurrences.
 Usage examples:
     uv run utils/find_timeouts.py --game battleship
     uv run utils/find_timeouts.py --game connect4
-    uv run utils/find_timeouts.py --game tictactoe
+    uv run utils/find_timeouts.py --game surround_morris
 """
 
 import argparse

@@ -22,7 +22,7 @@ AGENTS_DIR = PROJECT_ROOT / "agents"
 
 GAME_REGISTRY: dict[str, dict] = {
     "A1": {"name": "A1-Battleship", "script": "A1-battleship_match.py", "players": 2},
-    "A2": {"name": "A2-TicTacToe", "script": "A2-tictactoe_match.py", "players": 2},
+    "A2": {"name": "A2-LieOnce", "script": "A2-lie_once_match.py", "players": 2},
     "A3": {"name": "A3-Wizard", "script": "A3-wizard_match.py", "players": 6},
     "A4": {"name": "A4-Backgammon", "script": "A4-backgammon_match.py", "players": 2},
     "A5": {

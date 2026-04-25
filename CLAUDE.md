@@ -7,7 +7,7 @@ Benchmarking framework for evaluating LLMs in competitive multi-agent game envir
 ```
 agents/           # Generated agent code (organized by model name)
 config/           # Configuration: models.txt, max_tokens.txt
-games/            # Game prompts/rules (A1-Battleship, A2-TicTacToe, ...)
+games/            # Game prompts/rules (A1-Battleship, A2-LieOnce, ...)
 results/          # Match logs and outcomes
 utils/            # Core logic - API client, match runners, agent generation
 ```
@@ -18,13 +18,13 @@ utils/            # Core logic - API client, match runners, agent generation
 ```bash
 uv run utils/populate_agents.py --all                           # All models, all games
 uv run utils/populate_agents.py --model mistral gpt             # Specific models
-uv run utils/populate_agents.py --game A1,A2 --runs 3           # Specific games
+uv run utils/populate_agents.py --game A1,A5 --runs 3           # Specific games
 ```
 
 **Running Individual Matches:**
 ```bash
 uv run game_scripts/A1-battleship_match.py --agent model1:1 model2:1
-uv run game_scripts/A2-tictactoe_match.py --agent model1:1 model2:1
+uv run game_scripts/A2-lie_once_match.py --agent model1:1 model2:1
 uv run game_scripts/A4-backgammon_match.py --agent model1:1 model2:1
 uv run game_scripts/A5-connect4_match.py --agent model1:1 model2:1
 uv run game_scripts/A6-word_matrix_match.py --agent model1:1 model2:1
@@ -81,7 +81,7 @@ uv run utils/try_enhancing_agents.py --model all --game all           # All 2-pl
 | ID | Game | Players | Status |
 |----|------|---------|--------|
 | A1 | Battleship | 2 | Playable |
-| A2 | TicTacToe | 2 | Playable (pending deprecation) |
+| A2 | LieOnce | 2 | Playable |
 | A3 | Wizard | 6 | Playable |
 | A4 | Backgammon | 2 | Playable |
 | A5 | Connect4RandomStart | 2 | Playable |
@@ -351,20 +351,52 @@ Total Turns: <count>
 
 ---
 
-### A2: TicTacToe
+### A2: LieOnce
 
-**Type:** 2-player abstract strategy
-**Match File:** `game_scripts/A2-tictactoe_match.py`
-**Game Prompt:** `games/A2-TicTacToe.txt`
+**Type:** 2-player number-guessing game with bluffing
+**Match File:** `game_scripts/A2-lie_once_match.py`
+**Game Prompt:** `games/A2-LieOnce.txt`
 **Scoreboard:** `scoreboard/A2-scoreboard.txt`
 
-**Overview:** Extended 5x5 TicTacToe. First-move assignment (X/O) alternates across games within a match. First move of each game is randomised.
+**Overview:** Each player picks a hidden integer in [1, 100]. Players alternate guessing the opponent's number; the responder must answer "Up", "Down", or "Correct". Each player may lie at most ONCE per game. A guess wins only when it is genuinely correct AND the responder confirms with "Correct"; if the responder lies and says "Up"/"Down", the lie is consumed and play continues.
 
-**Agent Interface:** `class TicTacToeAgent` with `make_move(state, feedback)` returning a board position (0–24).
+**Agent Interface:** `class LieOnceAgent` with three methods:
+- `pick_number() -> int` — called once at game start, must return integer in [1, 100].
+- `guess(state: dict) -> int` — return integer guess. Non-integer = lose turn; out-of-range integer is legal.
+- `respond(state: dict, opponent_guess: int) -> str` — return one of `"Up"`, `"Down"`, `"Correct"`. Anything else = forfeit; second lie = forfeit.
 
-**Scoring:** Score = empty cells remaining at win (min 3). Forfeit score: 20.
+**State dict** (passed to both `guess` and `respond`):
+```python
+{
+    "your_number": int,
+    "your_lie_used": bool,
+    "turn": int,             # 1-indexed combined turn number
+    "you_started": bool,
+    "is_tie_attempt": bool,
+}
+```
+Agents see ONLY their own state. The runner does not replay history — agents track their own.
 
-**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
+**Tie-Attempt:** If the starter wins on turn N (N < 100), the non-starter gets one final guess on turn N+1. Starter responds. If non-starter's guess is genuinely correct AND starter says "Correct" truthfully → DRAW. If starter lies (says "Up"/"Down" with lie still available), the lie is consumed and starter wins (the lie acts as a joker to deny the tie). Second-lie or invalid response in tie → starter forfeits, non-starter wins.
+
+**Starter alternation:** Agent-1 starts game 1, Agent-2 starts game 2, alternating thereafter. Over 100 games each agent starts equally often.
+
+**Scoring:**
+- Win = 3 points; tiebreaker score = `100 - winner_guess_count`.
+- Loss = 0 points; tiebreaker score = `-(100 - winner_guess_count)`.
+- Draw (turn cap or successful tie-attempt) = 1 point each, score 0.
+- Forfeit before any guess (e.g. invalid `pick_number`) gives the opponent the maximum score of 100.
+
+**Total turn cap:** 100 combined turns. A non-integer guess still consumes a turn (no feedback exchanged).
+
+**Error Handling:**
+- `pick_number` non-integer / out-of-range / crash / timeout → immediate forfeit, opponent score = 100.
+- `guess` non-integer / crash / timeout → lose turn (no feedback exchanged); play passes to opponent.
+- `respond` invalid string / crash / timeout / second lie → immediate forfeit, opponent treated as having guessed correctly on this turn.
+
+**Game count:** Loads `NUM_OF_GAMES_IN_A_MATCH` directly (no division). Default 100 games per match.
+
+**Human mode:** `--humanvsbot` plays interactively against a random bot.
 
 ---
 

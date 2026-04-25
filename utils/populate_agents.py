@@ -147,9 +147,9 @@ def extract_agent_code(response: str, game_name: str) -> tuple[str, str]:
     if "Battleship" in game_name:
         class_pattern = r"class\s+BattleshipAgent"
         class_search = "class BattleshipAgent"
-    elif "TicTacToe" in game_name:
-        class_pattern = r"class\s+TicTacToeAgent"
-        class_search = "class TicTacToeAgent"
+    elif "LieOnce" in game_name:
+        class_pattern = r"class\s+LieOnceAgent"
+        class_search = "class LieOnceAgent"
     elif "Wizard" in game_name:
         class_pattern = r"class\s+WizardAgent"
         class_search = "class WizardAgent"
