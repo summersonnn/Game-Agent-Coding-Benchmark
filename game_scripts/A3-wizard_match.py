@@ -726,16 +726,20 @@ def load_stored_agent(
     content = agent_file.read_text()
     lines = content.split("\n")
 
-    # Skip header docstring
+    # Skip header docstring (only if file starts with one)
     code_start = 0
-    in_docstring = False
-    for i, line in enumerate(lines):
-        if '"""' in line:
-            if in_docstring:
-                code_start = i + 1
-                break
-            else:
-                in_docstring = True
+    first_nonblank = next(
+        (i for i, ln in enumerate(lines) if ln.strip()), None
+    )
+    if first_nonblank is not None and lines[first_nonblank].lstrip().startswith('"""'):
+        first_line = lines[first_nonblank].strip()
+        if first_line.count('"""') >= 2 and len(first_line) >= 6:
+            code_start = first_nonblank + 1
+        else:
+            for j in range(first_nonblank + 1, len(lines)):
+                if '"""' in lines[j]:
+                    code_start = j + 1
+                    break
 
     code_lines = lines[code_start:]
 
