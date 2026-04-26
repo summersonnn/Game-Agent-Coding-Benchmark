@@ -225,7 +225,7 @@ Scoreboards are updated atomically via file-locking after each match. Match runn
 
 ```
 agents/           # Generated agent code (organized by model name)
-config/           # models.txt, max_tokens.txt
+config/           # models.txt
 games/            # Game prompts/rules for agent generation
 game_scripts/     # Match runners (*_match.py) and matchmaker.py
 utils/            # Core logic: API client, agent generation, scoreboard, logging
@@ -237,7 +237,7 @@ scoreboard/       # Per-game leaderboard files
 
 | File | Purpose |
 |------|---------|
-| `utils/model_api.py` | Async OpenRouter API client with per-game token multipliers |
+| `utils/model_api.py` | Async OpenRouter API client |
 | `utils/populate_agents.py` | LLM-based agent code generation |
 | `utils/scoreboard.py` | Atomic scoreboard read/write with file locking |
 | `utils/logging_config.py` | Centralized logging setup |
@@ -248,6 +248,3 @@ scoreboard/       # Per-game leaderboard files
 
 One model ID per line.
 
-### `config/max_tokens.txt`
-
-Per-game token multipliers applied to `MODEL_MAX_TOKENS`. Example: `A1-Battleship: 2` means Battleship generation uses `2 × MODEL_MAX_TOKENS` tokens.

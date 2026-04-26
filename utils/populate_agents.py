@@ -229,9 +229,8 @@ async def prompt_model(
     async with semaphore:
         try:
             logger.info("Prompting %s for %s (run %d)...", model_name, game_name, run_id)
-            max_tokens = api.get_max_tokens(game_name)
             response = await api.call(
-                prompt, model_name=model_name, reasoning=True, max_tokens=max_tokens
+                prompt, model_name=model_name, reasoning=True
             )
             content = response.choices[0].message.content or ""
             logger.info(

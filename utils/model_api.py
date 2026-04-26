@@ -62,22 +62,6 @@ class ModelAPI:
         if not self.api_key:
             raise ValueError("Missing required environment variable: MODEL_API_KEY")
         
-        # Load token multipliers from file
-        self.token_multipliers: dict[str, float] = {}
-        max_tokens_path = "config/max_tokens.txt"
-        if os.path.exists(max_tokens_path):
-            with open(max_tokens_path, "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    if ":" in line:
-                        key, val = line.split(":", 1)
-                        try:
-                            self.token_multipliers[key.strip()] = float(val.strip())
-                        except ValueError:
-                            logger.warning("Invalid multiplier for %s: %s", key, val)
-
         # Initialize AsyncOpenAI client
         # Clean up base_url if it ends with /api/v (some users might forget the 1)
         if self.base_url.endswith("/api/v"):
@@ -88,31 +72,7 @@ class ModelAPI:
             api_key=self.api_key
         )
 
-    def get_max_tokens(self, game_id: str) -> int:
-        """
-        Calculates max tokens for a game based on multipliers in config/max_tokens.txt.
-        
-        Args:
-            game_id: The game identifier (e.g., 'A1-Battleship' or 'A1').
-            
-        Returns:
-            The calculated max tokens.
-        """
-        # Try exact match
-        multiplier = self.token_multipliers.get(game_id)
-        
-        if multiplier is None:
-            # Try prefix match (e.g. "A1" from "A1-Battleship")
-            prefix = game_id.split("-")[0]
-            multiplier = self.token_multipliers.get(prefix)
-            
-        if multiplier is None:
-            # Fallback to DEFAULT
-            multiplier = self.token_multipliers.get("DEFAULT", 1.0)
-            
-        return int(self.max_tokens * multiplier)
-
-    async def call(
+async def call(
         self, 
         prompt: str, 
         model_name: Optional[str] = None,

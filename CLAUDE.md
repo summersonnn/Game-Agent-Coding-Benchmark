@@ -6,7 +6,7 @@ Benchmarking framework for evaluating LLMs in competitive multi-agent game envir
 
 ```
 agents/           # Generated agent code (organized by model name)
-config/           # Configuration: models.txt, max_tokens.txt
+config/           # Configuration: models.txt
 games/            # Game prompts/rules (A1-Battleship, A2-LieOnce, ...)
 results/          # Match logs and outcomes
 utils/            # Core logic - API client, match runners, agent generation
@@ -52,7 +52,7 @@ uv run utils/try_enhancing_agents.py --model all --game all           # All 2-pl
 
 | File | Purpose |
 |------|---------|
-| `utils/model_api.py` | Async OpenRouter API client with token multipliers |
+| `utils/model_api.py` | Async OpenRouter API client |
 | `utils/populate_agents.py` | LLM-based agent code generation |
 | `utils/try_enhancing_agents.py` | Agent quality improvement via same-model benchmarking |
 | `game_scripts/*_match.py` | Game-specific match orchestrators |
@@ -73,8 +73,6 @@ uv run utils/try_enhancing_agents.py --model all --game all           # All 2-pl
 - `NUM_OF_GAMES_IN_A_MATCH` - Games per match pairing
 
 **config/models.txt:** One model per line. All non-empty lines are treated as active models. (The `!` prefix to disable models was removed; see commit `27748a8`.)
-
-**config/max_tokens.txt:** Token multipliers per game (e.g., `A1: 4` = 4x base tokens). Lookup uses a 3-tier fallback: exact game name (e.g., `A1-Battleship`) → game ID prefix (e.g., `A1`) → `DEFAULT` key. Set `DEFAULT: 2` to apply a blanket multiplier to all games not explicitly listed.
 
 ## Games Overview
 
