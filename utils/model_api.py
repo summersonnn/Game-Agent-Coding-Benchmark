@@ -72,11 +72,11 @@ class ModelAPI:
             api_key=self.api_key
         )
 
-async def call(
-        self, 
-        prompt: str, 
+    async def call(
+        self,
+        prompt: str,
         model_name: Optional[str] = None,
-        reasoning: bool = True, 
+        reasoning: bool = True,
         **kwargs: Any
     ) -> Any:
         """
