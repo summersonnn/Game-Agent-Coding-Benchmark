@@ -6,7 +6,7 @@ Each player secretly picks an integer between 1 and 100 (inclusive). Picks are m
 
 The first player to make a guess that is BOTH genuinely correct AND confirmed as "Correct" by the opponent wins.
 
-The catch: each player has the right to lie exactly once during the entire game. The lie can be used on any single response (truth was "Up" but you say "Down", truth was "Correct" but you say "Up", truth was "Down" but you say "Correct", etc.). Using the lie is optional; not using it is also a valid strategy. Lying twice is forbidden and results in immediate forfeiture.
+The catch: each player has the right to lie exactly once during the entire game, but only within the first 10 responses they give. The lie can be used on any single response among your first 10 (truth was "Up" but you say "Down", truth was "Correct" but you say "Up", truth was "Down" but you say "Correct", etc.). Using the lie is optional; not using it is also a valid strategy. Lying twice, or lying on your 11th-or-later response, is forbidden and results in immediate forfeiture.
 
 ## Agent Interface
 
@@ -53,11 +53,18 @@ Both `guess()` and `respond()` receive a `state` dict with these keys:
 
 ```python
 {
-    "your_number": int,        # The number you picked at the start of the game.
-    "your_lie_used": bool,     # True if you have already used your lie this game.
-    "turn": int,               # Current turn number (1-indexed, combined across both players).
-    "you_started": bool,       # True if you guessed first this game.
-    "is_tie_attempt": bool,    # True only when this is the non-starter's tie-attempt turn.
+    "your_number": int,          # The number you picked at the start of the game.
+    "your_lie_used": bool,       # True if you have already used your lie this game.
+    "your_response_count": int,  # Number of responses YOU have already given so far this
+                                 # game (0 before your first respond call). The lie may
+                                 # only be used while this value is < 10. On respond calls
+                                 # where this value is >= 10, lying causes forfeit.
+    "turn": int,                 # Current turn number (1-indexed, combined across both players).
+    "you_started": bool,         # True if you guessed first this game.
+    "is_tie_attempt": bool,      # True only when this is the non-starter's tie-attempt turn.
+    "last_response": str|None,   # The opponent's response ("Up"/"Down"/"Correct") to YOUR
+                                 # most recent guess. None on your very first guess. The value
+                                 # may be a lie — you only know the opponent has lied at most once.
 }
 ```
 
@@ -77,6 +84,7 @@ You see ONLY your own state. You do NOT see the opponent's lie status, their gue
 
 - A "lie" is any `respond()` return that does not match the truth.
 - Each agent may lie AT MOST ONCE per game. Attempting a second lie causes immediate forfeit.
+- The lie window is restricted to your FIRST 10 responses. If you attempt a lie on your 11th-or-later response (i.e. when `your_response_count >= 10` at the time of the call), it is treated as an immediate forfeit, even if your lie is still unused. This rule applies equally during the tie-attempt: if the starter has already given 10 or more responses, their tie-attempt response cannot be a lie.
 - Possible lies include:
   - Saying "Up" or "Down" when the truth is "Correct" (i.e. the opponent guessed your number, but you do not confirm). This consumes your lie and the game continues — the opponent will not know they were correct.
   - Saying "Correct" when the truth is "Up" or "Down" (claiming the opponent guessed correctly when they didn't). This consumes your lie and the game continues — the runner will NOT end the game because your "Correct" was false.
@@ -130,6 +138,7 @@ A faster win produces a higher score. A loss by forfeit on the very first opport
 | `respond()` returns an invalid string           | That agent loses immediately. Opponent wins as if they had guessed correctly on this turn.    |
 | `respond()` crash / timeout                     | That agent loses immediately. Opponent wins as if they had guessed correctly on this turn.    |
 | `respond()` second lie                          | That agent loses immediately. Opponent wins as if they had guessed correctly on this turn.    |
+| `respond()` lie on response 11 or later         | That agent loses immediately. Opponent wins as if they had guessed correctly on this turn.    |
 
 The 1-second move time limit (`signal.alarm`) applies to `pick_number()`, `guess()`, and `respond()`.
 

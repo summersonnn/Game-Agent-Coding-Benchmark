@@ -62,6 +62,7 @@ def timeout_handler(signum, frame):
 VALID_RESPONSES = ("Up", "Down", "Correct")
 MAX_TURNS = 100
 MAX_PICK_SCORE = 100  # forfeit-before-any-guess gives opponent this score
+MAX_RESPONSES_FOR_LIE = 10  # lies are only legal on respond calls 1..10 (per agent)
 
 
 def compute_truth(secret, guess):
@@ -158,13 +159,15 @@ def record_draw(reason, match_stats):
     return "DRAW"
 
 
-def make_state(agent, secrets, lies_used, turn, starter, is_tie):
+def make_state(agent, secrets, lies_used, response_count, turn, starter, is_tie, last_response=None):
     return {
         "your_number": secrets[agent],
         "your_lie_used": lies_used[agent],
+        "your_response_count": response_count[agent],
         "turn": turn,
         "you_started": agent == starter,
         "is_tie_attempt": is_tie,
+        "last_response": last_response,
     }
 
 
@@ -215,6 +218,8 @@ def play_game(game_num, match_stats):
 
     lies_used = {"Agent-1": False, "Agent-2": False}
     guess_count = {"Agent-1": 0, "Agent-2": 0}
+    response_count = {"Agent-1": 0, "Agent-2": 0}
+    last_response = {"Agent-1": None, "Agent-2": None}
     turn = 0
     current = starter
 
@@ -222,7 +227,9 @@ def play_game(game_num, match_stats):
         turn += 1
         opp = opp_of(current)
 
-        state_g = make_state(current, secrets, lies_used, turn, starter, False)
+        state_g = make_state(
+            current, secrets, lies_used, response_count, turn, starter, False, last_response[current]
+        )
         g_val, g_err, g_exc = call_with_timeout(agents[current].guess, state_g)
         guess_count[current] += 1
 
@@ -243,8 +250,9 @@ def play_game(game_num, match_stats):
             continue
 
         guess_int = g_val
-        state_r = make_state(opp, secrets, lies_used, turn, starter, False)
+        state_r = make_state(opp, secrets, lies_used, response_count, turn, starter, False)
         r_val, r_err, r_exc = call_with_timeout(agents[opp].respond, state_r, guess_int)
+        response_count[opp] += 1
 
         if r_err == "timeout":
             match_stats[opp]["timeout"] += 1
@@ -272,13 +280,23 @@ def play_game(game_num, match_stats):
                 match_stats[opp]["second_lie"] += 1
                 print(f"  -> {opp} attempted SECOND LIE; forfeit")
                 return record_win(current, opp, "second_lie", guess_count[current], match_stats)
+            if response_count[opp] > MAX_RESPONSES_FOR_LIE:
+                match_stats[opp]["late_lie"] += 1
+                print(
+                    f"  -> {opp} attempted LIE on response {response_count[opp]} "
+                    f"(window closes after {MAX_RESPONSES_FOR_LIE}); forfeit"
+                )
+                return record_win(current, opp, "late_lie", guess_count[current], match_stats)
             lies_used[opp] = True
             match_stats[opp]["lies"] += 1
+
+        last_response[current] = r_val
 
         if r_val == "Correct" and truth == "Correct":
             if current == starter and turn < MAX_TURNS:
                 tie_outcome = run_tie_attempt(
-                    turn, secrets, agents, lies_used, guess_count, match_stats, starter, non_starter
+                    turn, secrets, agents, lies_used, response_count, guess_count, match_stats,
+                    starter, non_starter, last_response[non_starter],
                 )
                 return tie_outcome
             return record_win(current, opp, "correct_guess", guess_count[current], match_stats)
@@ -288,12 +306,12 @@ def play_game(game_num, match_stats):
     return record_draw("turn_cap_reached", match_stats)
 
 
-def run_tie_attempt(prev_turn, secrets, agents, lies_used, guess_count, match_stats, starter, non_starter):
+def run_tie_attempt(prev_turn, secrets, agents, lies_used, response_count, guess_count, match_stats, starter, non_starter, ns_last_response=None):
     """Non-starter gets one final guess; starter responds. Returns winner name or 'DRAW'."""
     turn = prev_turn + 1
     print(f"-- TIE-ATTEMPT (turn {turn}): {non_starter} gets one final guess --")
 
-    state_g = make_state(non_starter, secrets, lies_used, turn, starter, True)
+    state_g = make_state(non_starter, secrets, lies_used, response_count, turn, starter, True, ns_last_response)
     g_val, g_err, g_exc = call_with_timeout(agents[non_starter].guess, state_g)
     guess_count[non_starter] += 1
 
@@ -311,8 +329,9 @@ def run_tie_attempt(prev_turn, secrets, agents, lies_used, guess_count, match_st
         return record_win(starter, non_starter, "tie_attempt_failed", guess_count[starter], match_stats)
 
     guess_int = g_val
-    state_r = make_state(starter, secrets, lies_used, turn, starter, True)
+    state_r = make_state(starter, secrets, lies_used, response_count, turn, starter, True)
     r_val, r_err, r_exc = call_with_timeout(agents[starter].respond, state_r, guess_int)
+    response_count[starter] += 1
 
     if r_err == "timeout":
         match_stats[starter]["timeout"] += 1
@@ -339,6 +358,13 @@ def run_tie_attempt(prev_turn, secrets, agents, lies_used, guess_count, match_st
             match_stats[starter]["second_lie"] += 1
             print(f"  -> {starter} attempted SECOND LIE in tie-attempt; forfeit")
             return record_win(non_starter, starter, "tie_second_lie", guess_count[non_starter], match_stats)
+        if response_count[starter] > MAX_RESPONSES_FOR_LIE:
+            match_stats[starter]["late_lie"] += 1
+            print(
+                f"  -> {starter} attempted LIE on response {response_count[starter]} "
+                f"in tie-attempt (window closes after {MAX_RESPONSES_FOR_LIE}); forfeit"
+            )
+            return record_win(non_starter, starter, "tie_late_lie", guess_count[non_starter], match_stats)
         lies_used[starter] = True
         match_stats[starter]["lies"] += 1
 
@@ -351,7 +377,7 @@ def main():
     base_stats = {
         "wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0,
         "make_move_crash": 0, "other_crash": 0, "crash": 0,
-        "timeout": 0, "invalid": 0, "lies": 0, "second_lie": 0,
+        "timeout": 0, "invalid": 0, "lies": 0, "second_lie": 0, "late_lie": 0,
     }
     match_stats = {
         "Agent-1": dict(base_stats),
@@ -386,6 +412,7 @@ def main():
         print(f"{agent} Invalid: {s['invalid']}")
         print(f"{agent} Lies used: {s['lies']}")
         print(f"{agent} Second-lie forfeits: {s['second_lie']}")
+        print(f"{agent} Late-lie forfeits: {s['late_lie']}")
     print("------------------------------------------------------------")
 
 
@@ -401,6 +428,7 @@ import random
 
 VALID_RESPONSES = ("Up", "Down", "Correct")
 MAX_TURNS = 100
+MAX_RESPONSES_FOR_LIE = 10
 
 
 def compute_truth(secret, guess):
@@ -438,9 +466,11 @@ class HumanAgent:
     def respond(self, state, opponent_guess):
         while True:
             tag = " (TIE-ATTEMPT)" if state["is_tie_attempt"] else ""
+            window_open = state["your_response_count"] < MAX_RESPONSES_FOR_LIE
             v = input(
                 f"[{self.name}] Turn {state['turn']}{tag} - opponent guessed {opponent_guess}. "
-                f"Your secret is {state['your_number']}, lie_used={state['your_lie_used']}. "
+                f"Your secret is {state['your_number']}, lie_used={state['your_lie_used']}, "
+                f"responses_given={state['your_response_count']} (lie_window_open={window_open}). "
                 f"Respond Up/Down/Correct: "
             ).strip()
             if v in VALID_RESPONSES:
@@ -475,11 +505,13 @@ def play(starter, agent_a, agent_b):
 
     lies_used = {"Agent-1": False, "Agent-2": False}
     guess_count = {"Agent-1": 0, "Agent-2": 0}
+    response_count = {"Agent-1": 0, "Agent-2": 0}
 
     def step(curr, is_tie):
         opp = "Agent-2" if curr == "Agent-1" else "Agent-1"
         state_g = {
             "your_number": secrets[curr], "your_lie_used": lies_used[curr],
+            "your_response_count": response_count[curr],
             "turn": guess_count[curr] + guess_count[opp] + 1,
             "you_started": curr == starter, "is_tie_attempt": is_tie,
         }
@@ -490,10 +522,12 @@ def play(starter, agent_a, agent_b):
             return None, "lost_turn"
         state_r = {
             "your_number": secrets[opp], "your_lie_used": lies_used[opp],
+            "your_response_count": response_count[opp],
             "turn": guess_count[curr] + guess_count[opp],
             "you_started": opp == starter, "is_tie_attempt": is_tie,
         }
         r = agents[opp].respond(state_r, g)
+        response_count[opp] += 1
         if r not in VALID_RESPONSES:
             print(f"{opp} invalid response; forfeit.")
             return curr, "respond_invalid"
@@ -503,6 +537,9 @@ def play(starter, agent_a, agent_b):
             if lies_used[opp]:
                 print(f"{opp} second lie; forfeit.")
                 return curr, "second_lie"
+            if response_count[opp] > MAX_RESPONSES_FOR_LIE:
+                print(f"{opp} late lie on response {response_count[opp]}; forfeit.")
+                return curr, "late_lie"
             lies_used[opp] = True
             print(f"  ({opp} lied — lie now used)")
         print(f"  {curr} guesses {g} -> {opp} says '{r}' (truth={truth})")
@@ -516,7 +553,7 @@ def play(starter, agent_a, agent_b):
     while turn < MAX_TURNS:
         turn += 1
         winner, status = step(current, False)
-        if status in ("respond_invalid", "second_lie"):
+        if status in ("respond_invalid", "second_lie", "late_lie"):
             return winner
         if status == "win":
             if current == starter and turn < MAX_TURNS:
@@ -525,7 +562,7 @@ def play(starter, agent_a, agent_b):
                 if ts == "win":
                     print("DRAW (tie-attempt succeeded).")
                     return "DRAW"
-                if ts in ("respond_invalid", "second_lie"):
+                if ts in ("respond_invalid", "second_lie", "late_lie"):
                     return tw
                 return starter
             return current

@@ -358,19 +358,20 @@ Total Turns: <count>
 **Game Prompt:** `games/A2-LieOnce.txt`
 **Scoreboard:** `scoreboard/A2-scoreboard.txt`
 
-**Overview:** Each player picks a hidden integer in [1, 100]. Players alternate guessing the opponent's number; the responder must answer "Up", "Down", or "Correct". Each player may lie at most ONCE per game. A guess wins only when it is genuinely correct AND the responder confirms with "Correct"; if the responder lies and says "Up"/"Down", the lie is consumed and play continues.
+**Overview:** Each player picks a hidden integer in [1, 100]. Players alternate guessing the opponent's number; the responder must answer "Up", "Down", or "Correct". Each player may lie at most ONCE per game, AND only on their first 10 responses (response 11+ cannot be a lie). A guess wins only when it is genuinely correct AND the responder confirms with "Correct"; if the responder lies and says "Up"/"Down", the lie is consumed and play continues.
 
 **Agent Interface:** `class LieOnceAgent` with three methods:
 - `pick_number() -> int` — called once at game start, must return integer in [1, 100].
 - `guess(state: dict) -> int` — return integer guess. Non-integer = lose turn; out-of-range integer is legal.
-- `respond(state: dict, opponent_guess: int) -> str` — return one of `"Up"`, `"Down"`, `"Correct"`. Anything else = forfeit; second lie = forfeit.
+- `respond(state: dict, opponent_guess: int) -> str` — return one of `"Up"`, `"Down"`, `"Correct"`. Anything else = forfeit; second lie = forfeit; lie on response ≥ 11 = forfeit.
 
 **State dict** (passed to both `guess` and `respond`):
 ```python
 {
     "your_number": int,
     "your_lie_used": bool,
-    "turn": int,             # 1-indexed combined turn number
+    "your_response_count": int,  # responses given so far (lies only legal while < 10)
+    "turn": int,                 # 1-indexed combined turn number
     "you_started": bool,
     "is_tie_attempt": bool,
 }
