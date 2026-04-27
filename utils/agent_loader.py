@@ -21,9 +21,9 @@ def load_stored_agent(
 ) -> tuple[str, str]:
     """Load agent code from a stored file and extract ONLY the agent class.
 
-    Reads the agent source, skips the leading docstring, collects all import
-    lines that appear before the class definition, then extracts the class
-    body and renames it with an ``_{agent_idx}`` suffix.
+    Reads the agent source, collects all import lines that appear before the
+    class definition, then extracts the class body and renames it with an
+    ``_{agent_idx}`` suffix.
 
     Args:
         model_folder: Directory name under agents/ (sanitized model name).
@@ -44,20 +44,7 @@ def load_stored_agent(
         return "", ""
 
     content = agent_file.read_text()
-    lines = content.split("\n")
-
-    # Skip the header docstring
-    code_start = 0
-    in_docstring = False
-    for i, line in enumerate(lines):
-        if '"""' in line:
-            if in_docstring:
-                code_start = i + 1
-                break
-            else:
-                in_docstring = True
-
-    code_lines = lines[code_start:]
+    code_lines = content.split("\n")
 
     # Collect imports before the class definition
     imports: list[str] = []

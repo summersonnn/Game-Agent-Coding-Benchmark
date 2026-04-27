@@ -15,7 +15,6 @@ import asyncio
 import os
 import re
 import sys
-from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -262,7 +261,6 @@ async def populate_agents(
         num_runs: Number of times to prompt each model per game
     """
     AGENTS_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     semaphore = asyncio.Semaphore(MAX_WORKERS)
     
     # Create model directories upfront
@@ -312,18 +310,7 @@ async def populate_agents(
             results[model_short][game_name].append((run_id, "FAILED (no agent code found)"))
             continue
         
-        # Build file content with metadata header
-        file_content = f'''"""
-Agent Code: {game_name}
-Model: {model_name}
-Run: {run_id}
-Generated: {timestamp}
-"""
-
-{imports}
-
-{code}
-'''
+        file_content = f"{imports}\n\n{code}\n"
         
         # Save to file
         output_file = model_dir / f"{game_name}_{run_id}.py"
