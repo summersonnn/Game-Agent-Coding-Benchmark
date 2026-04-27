@@ -11,10 +11,14 @@ anthropic/claude-sonnet-4.6
 x-ai/grok-4.20
 openai/gpt-oss-120b@preset/fp8
 minimax/minimax-m2.7@preset/fp8
+qwen/qwen3.6-max-preview
 qwen/qwen3.6-plus
+qwen/qwen3.6-27b
+qwen/qwen3.6-35b-a3b@preset/fp8
+qwen/qwen3.6-flash
 moonshotai/kimi-k2.6:nitro
 xiaomi/mimo-v2.5-pro
-deepseek/deepseek-v4-pro@preset/fp8
+deepseek/deepseek-v4-pro
 deepseek/deepseek-v4-flash:nitro
 z-ai/glm-5.1@preset/fp8
 
