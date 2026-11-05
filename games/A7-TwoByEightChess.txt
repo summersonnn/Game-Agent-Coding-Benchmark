@@ -78,6 +78,9 @@ A draw occurs if the same board position is repeated 3 times during the game.
 ### Insufficient Material (Draw)
 A draw occurs if only Kings remain on the board (no checkmate is possible).
 
+### Move Limit (Draw)
+If 200 half-moves (plies) have been played and the game is still ongoing, the game is a draw. Each player's move counts as one half-move, so the limit is 100 moves for each side. A checkmate on the 200th half-move still wins the game. Random moves played on an agent's behalf (see Illegal Move below) count toward the limit.
+
 ### Illegal Move
 If a player makes an illegal move (invalid notation, moving into check, impossible move), a random valid move is played on their behalf and the game continues.
 
@@ -556,3 +559,6 @@ If an agent crashes, times out, or returns an invalid move during `make_move`, a
 
 
 **IMPORTANT**: Output ONLY the `TwoByEightChessAgent` class definition and any necessary imports. Do NOT output the game engine code.
+
+## Strict No-File/External-Lookup Rule
+For this task and every follow-up question, use only the information included in this prompt and the conversation. Do not browse the web, invoke tools, or inspect, search, open, read, or access any files, folders, repositories, or other external resources. If something needed is not provided, say that it is unavailable; do not try to retrieve it.

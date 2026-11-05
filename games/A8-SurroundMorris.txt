@@ -262,3 +262,6 @@ class SurroundMorrisAgent:
     - Win by Elimination: Score = Winner's remaining pieces (e.g., 5 pieces vs 0 -> Winner +5, Loser -5).
     - Win by Mate: Score = **+7 for Winner, -7 for Loser** (Fixed).
     - Draw (Turn Limit or Repetition): Each player receives 0 score.
+
+## Strict No-File/External-Lookup Rule
+For this task and every follow-up question, use only the information included in this prompt and the conversation. Do not browse the web, invoke tools, or inspect, search, open, read, or access any files, folders, repositories, or other external resources. If something needed is not provided, say that it is unavailable; do not try to retrieve it.

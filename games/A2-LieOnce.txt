@@ -166,3 +166,6 @@ The 1-second move time limit (`signal.alarm`) applies to `pick_number()`, `guess
 - **Win:** `100 - winner_guess_count` (faster win → higher score; max 99 for a 1-guess win, max 100 for a forfeit-before-any-guess).
 - **Loss:** the negative of the winner's score.
 - **Draw:** 0 for both players.
+
+## Strict No-File/External-Lookup Rule
+For this task and every follow-up question, use only the information included in this prompt and the conversation. Do not browse the web, invoke tools, or inspect, search, open, read, or access any files, folders, repositories, or other external resources. If something needed is not provided, say that it is unavailable; do not try to retrieve it.

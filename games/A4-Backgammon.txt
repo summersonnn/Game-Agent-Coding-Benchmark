@@ -266,3 +266,6 @@ class BackgammonAgent:
 5. **Hit and cover.** A hit forces a re-entry tempo loss — but exposing your hitter to a counter-hit can swing momentum.
 6. **Bar priority bites.** If you cannot enter, you waste the entire turn. Don't leave easy primes facing your bar.
 7. **Bear off efficiently.** When bearing off, avoid leaving blots inside your home if the opponent still has anchors there.
+
+## Strict No-File/External-Lookup Rule
+For this task and every follow-up question, use only the information included in this prompt and the conversation. Do not browse the web, invoke tools, or inspect, search, open, read, or access any files, folders, repositories, or other external resources. If something needed is not provided, say that it is unavailable; do not try to retrieve it.
