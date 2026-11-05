@@ -51,9 +51,15 @@ except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
 try:
-    MATCH_TIME_LIMIT = int(os.getenv("MATCH_TIME_LIMIT", "900"))
+    MATCH_TIME_LIMIT = int(os.getenv("MATCH_TIME_LIMIT", "1200"))
 except (ValueError, TypeError):
-    MATCH_TIME_LIMIT = 900
+    MATCH_TIME_LIMIT = 1200
+
+# The match subprocess budgets MATCH_TIME_LIMIT across its games and ends any
+# game that overruns its share as a draw, so it finishes on its own. The hard
+# kill waits this many extra seconds and only fires if an agent hangs inside a
+# single move (e.g. by swallowing the per-move timeout).
+MATCH_KILL_GRACE = 60
 
 BASE_DIR = Path(__file__).parent.parent
 RESULTS_DIR = BASE_DIR / "results" / "surround_morris"
@@ -319,6 +325,10 @@ class SurroundMorrisGame:
 # Match runner code (play_game + main for agent-vs-agent)
 # ============================================================
 MATCH_RUNNER_CODE = r'''
+# Private alias: agent code above may rebind the name `time`.
+from time import monotonic as _runner_monotonic
+
+
 class MoveTimeoutException(Exception):
     pass
 
@@ -326,11 +336,21 @@ def timeout_handler(signum, frame):
     raise MoveTimeoutException("Move timeout")
 
 total_turns = 0
+time_limit_draws = 0
 
 
-def play_game(game_num, match_stats):
-    global total_turns
+def play_game(game_num, match_stats, game_deadline=None):
+    """Play one game. If the clock passes game_deadline before a move, the
+    game ends as a draw (its share of MATCH_TIME_LIMIT is used up)."""
+    global total_turns, time_limit_draws
     game = SurroundMorrisGame()
+    game_start = _runner_monotonic()
+
+    def time_is_up():
+        return game_deadline is not None and _runner_monotonic() >= game_deadline
+
+    def time_limit_desc():
+        return f"Draw (time limit reached after {_runner_monotonic() - game_start:.0f}s)"
 
     # Alternate who goes first each game (Black moves first)
     if game_num % 2 == 1:
@@ -428,6 +448,12 @@ def play_game(game_num, match_stats):
     # --- Placement Phase ---
     placement_turn = 0
     while game.phase == 'placement' and not game_over:
+        if time_is_up():
+            result_desc = time_limit_desc()
+            time_limit_draws += 1
+            game_over = True
+            break
+
         color = game.current_player
         agent = agents[color]
         agent_name = names[color]
@@ -496,6 +522,12 @@ def play_game(game_num, match_stats):
 
 
     while game.phase == 'movement' and not game_over:
+        if time_is_up():
+            result_desc = time_limit_desc()
+            time_limit_draws += 1
+            game_over = True
+            break
+
         # Record history and check repetition BEFORE move
         game.record_history()
         game_over, result_desc = game.check_repetition()
@@ -683,8 +715,14 @@ def main():
                      "timeout": 0, "invalid": 0, "captures": 0, "stalemate": 0},
     }
 
+    # Each game gets an equal share of the time still left, so a short game
+    # passes its unused time on to later ones and every game gets at least
+    # MATCH_TIME_LIMIT / NUM_GAMES. A game that overruns its share is a draw.
+    match_start = _runner_monotonic()
     for i in range(NUM_GAMES):
-        play_game(i + 1, match_stats)
+        now = _runner_monotonic()
+        remaining = max(0.0, MATCH_TIME_LIMIT - (now - match_start))
+        play_game(i + 1, match_stats, now + remaining / (NUM_GAMES - i))
         sys.stdout.flush()
 
     print("=" * 60)
@@ -714,6 +752,7 @@ def main():
     print(f"Agent-1 Stalemates: {match_stats['Agent-1']['stalemate']}")
     print(f"Agent-2 Stalemates: {match_stats['Agent-2']['stalemate']}")
     print(f"Total Turns: {total_turns}")
+    print(f"Time-limit Draws: {time_limit_draws}")
     print(f"STATS:Agent-1={match_stats['Agent-1']}")
     print(f"STATS:Agent-2={match_stats['Agent-2']}")
 
@@ -1066,6 +1105,7 @@ def build_game_code(
     max_turns: int,
     agent1_info: str,
     agent2_info: str,
+    match_time_limit: float = MATCH_TIME_LIMIT,
 ) -> str:
     header = (
         "import sys\n"
@@ -1081,6 +1121,7 @@ def build_game_code(
         f"MOVE_TIMEOUT = {move_timeout}\n"
         f"MAX_TURNS = {max_turns}\n"
         f"NUM_GAMES = {num_games}\n"
+        f"MATCH_TIME_LIMIT = {match_time_limit}\n"
         f'AGENT1_INFO = "{agent1_info}"\n'
         f'AGENT2_INFO = "{agent2_info}"\n'
     )
@@ -1110,7 +1151,8 @@ def build_human_game_code(
 
 
 def run_match(
-    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = MATCH_TIME_LIMIT
+    game_code: str, match_id: int, run_ids: tuple[int, int],
+    timeout: int = MATCH_TIME_LIMIT + MATCH_KILL_GRACE,
 ) -> dict:
     temp_id = uuid.uuid4().hex[:8]
     temp_file = os.path.join(
@@ -1443,6 +1485,17 @@ async def main_async():
     print(f"  {folder1}:{runs1_str}: Pts {total_pts1}, Score {total1:.1f}")
     print(f"  {folder2}:{runs2_str}: Pts {total_pts2}, Score {total2:.1f}")
     print(f"\nLogs saved to: {RESULTS_DIR}")
+
+    # Exit non-zero so the matchmaker reports failed matches instead of
+    # counting them as succeeded.
+    failed = [r for r in results if not r["success"]]
+    if failed:
+        for r in failed:
+            print(
+                f"Match {r['match_id']} FAILED: {str(r.get('error', 'Unknown'))[:200]}",
+                file=sys.stderr,
+            )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

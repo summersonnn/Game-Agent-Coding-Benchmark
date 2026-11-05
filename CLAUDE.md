@@ -173,6 +173,12 @@ A piece is captured when it satisfies BOTH conditions:
 - 200 movement turns reached (configurable: `MAX_TURNS_PER_GAME`)
 - Checked after move execution
 
+**Draw by Time Limit:**
+- The game has used up its share of `MATCH_TIME_LIMIT` (default 1200s for 10 games)
+- Each game's share is the time left in the match divided by the games left, so every game gets at least `MATCH_TIME_LIMIT / NUM_GAMES` (120s) and a short game passes its unused time to later ones
+- Checked before every move (placement and movement); scored like any other draw
+- Exists so every match finishes with a result and every agent plays the same number of matches. Agents are not told about it in the prompt
+
 #### Scoring System (Football League Style)
 
 **Points (Primary Ranking Metric):**
@@ -183,7 +189,7 @@ A piece is captured when it satisfies BOTH conditions:
 **Score (Tiebreaker, Goal Difference):**
 - **Normal Win:** Winner gets +pieces_on_board, loser gets -pieces_on_board
 - **Mate Win:** Winner gets +7, loser gets -7
-- **Draw:** Each player gets +(total_pieces_on_board / 2.0)
+- **Draw:** Each player gets 0
 
 **Example:** Agent wins 5-2 elimination → +3 points, +5 score. Loser → 0 points, -5 score.
 
@@ -215,7 +221,7 @@ The match runner uses a multi-layer architecture:
 
 2. **Middle Layer (`run_match`):**
    - Generates temporary Python file with embedded code
-   - Spawns subprocess with a `MATCH_TIME_LIMIT` timeout (default 900s)
+   - Spawns the subprocess with a hard kill at `MATCH_TIME_LIMIT` + 60s (`MATCH_KILL_GRACE`); normally the subprocess finishes by itself within `MATCH_TIME_LIMIT` thanks to time-limit draws
    - Parses stdout for structured results (`RESULT:`, `POINTS:`, `WINS:`, `DRAWS:`)
    - Returns result dict
 
@@ -279,7 +285,7 @@ class SurroundMorrisAgent:
 - `NUM_OF_GAMES_IN_A_MATCH` (default: 100) — Base games per match pairing; A8 divides this by 10 (effective default: 10 games per match) to keep match durations reasonable given board evaluation overhead
 - `MAX_TURNS_PER_GAME` (default: 200) — Movement phase turn limit
 - `MOVE_TIME_LIMIT` (default: 1.0s) — Per-move timeout
-- `MATCH_TIME_LIMIT` (default: 900s) — Timeout for one whole match subprocess; on expiry the match is recorded as an error result
+- `MATCH_TIME_LIMIT` (default: 1200s) — Time budget for one whole match, shared across its games (see Draw by Time Limit). A match only fails if an agent hangs inside a single move and the hard kill at `MATCH_TIME_LIMIT` + 60s fires; the runner then exits non-zero so the matchmaker counts it as failed
 
 **Hardcoded:**
 - Pieces per player: 7
@@ -336,6 +342,7 @@ Agent-2 Captures: <count>
 Agent-1 Stalemates: <count>
 Agent-2 Stalemates: <count>
 Total Turns: <count>
+Time-limit Draws: <count>
 ```
 
 **Outer layer parses these lines** via regex to populate result dict and update scoreboard.
@@ -565,7 +572,7 @@ uv run game_scripts/matchmaker.py --game A8 --mini \
 
 **Game-count scaling:** A5, A6, A7, and A8 match runners divide `NUM_OF_GAMES_IN_A_MATCH` by 10 internally, yielding 10 games per match by default rather than 100. This keeps match durations reasonable. A1, A2, and A3 use `NUM_OF_GAMES_IN_A_MATCH` directly (100 by default). A4 plays races to a fixed points target and ignores it.
 
-**Timeout:** The matchmaker sets no timeout of its own; it waits for each match subprocess to finish. The time limit is set by each match runner. In A8 it is `MATCH_TIME_LIMIT` (default 900s), and a timed-out match is returned as an error result.
+**Timeout:** The matchmaker sets no timeout of its own; it waits for each match subprocess to finish. The time limit is set by each match runner. In A8 it is `MATCH_TIME_LIMIT` (default 1200s): a game that runs past its share of that budget ends as a draw, so the match still produces a result. Only a match killed for hanging fails; the runner then exits non-zero and the matchmaker lists it under Failed. Other runners still default to 900s and drop a timed-out match.
 
 ## Agent Enhancement
 

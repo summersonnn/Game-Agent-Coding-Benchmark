@@ -50,7 +50,9 @@ except (ValueError, TypeError):
     BASE_NUM_GAMES = 100
 
 ENHANCEMENT_MULTIPLIER = 10
-MATCH_TIMEOUT = 900
+# Must exceed every runner's own MATCH_TIME_LIMIT + kill grace (A8: 1200 + 60)
+# so the runner, not this script, decides when a match has run too long.
+MATCH_TIMEOUT = 1320
 MAX_MATCH_WORKERS = 24
 
 AGENTS_DIR = PROJECT_ROOT / "agents"

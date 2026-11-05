@@ -62,7 +62,7 @@ All scripts must respect the following configuration parameters, which should be
 | :--- | :--- | :--- |
 | `NUM_OF_GAMES_IN_A_MATCH` | `100` | Number of games to play in a single match execution. |
 | `MOVE_TIME_LIMIT` | `1.0` | Maximum time (seconds) allowed for an agent to return a move. |
-| `MATCH_TIME_LIMIT` | `900` | Maximum time (seconds) allowed for a single match execution. If specific game runner does not finish within this time, it must timeout itself and report error. **Note**: Matchmaker does not enforce this timeout, game runner must do it. |
+| `MATCH_TIME_LIMIT` | `900` | Maximum time (seconds) allowed for a single match execution. If specific game runner does not finish within this time, it must timeout itself and report error. **Note**: Matchmaker does not enforce this timeout, game runner must do it. **A8 exception:** default `1200`; the budget is shared across the match's games and a game that overruns its share ends as a draw (see CLAUDE.md, A8 Draw by Time Limit). |
 
 Note that "match" means two agents playing against eachother such as mistral:1 vs opus:1
 A "game" is a single unit of game between them. A match usually has many games in it.
