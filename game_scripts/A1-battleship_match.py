@@ -44,10 +44,16 @@ try:
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
-try:
-    MATCH_TIME_LIMIT = int(os.getenv("MATCH_TIME_LIMIT", "900"))
-except (ValueError, TypeError):
-    MATCH_TIME_LIMIT = 900
+# Time limit for one game, agent setup included. Set so ~95% of games finish
+# at the pace real agents play (see CLAUDE.md, Game Time Limits); it scales
+# with MOVE_TIME_LIMIT. A game still running when it is used up ends as a draw.
+GAME_TIME_LIMIT = 55 * MOVE_TIME_LIMIT
+
+# So a match takes at most GAME_TIME_LIMIT per game. The hard kill waits
+# MATCH_KILL_GRACE more seconds and only fires if an agent hangs inside a
+# single move (e.g. by swallowing the per-move timeout).
+MATCH_TIME_LIMIT = GAME_TIME_LIMIT * NUM_GAMES_PER_MATCH
+MATCH_KILL_GRACE = 60
 
 BOARD_SIZE = 8
 SHIPS = [5, 4, 3]
@@ -89,10 +95,14 @@ class MoveTimeoutException(Exception):
 def timeout_handler(signum, frame):
     raise MoveTimeoutException("Move timeout")
 
+# Private alias: agent code may rebind the name `time`.
+from time import monotonic as _runner_monotonic
+
 # --- Game Configuration ---
 BOARD_SIZE = {board_size}
 SHIPS = {ships}
 NUM_GAMES = {num_games}
+GAME_TIME_LIMIT = {game_time_limit}
 # --- Board Representations ---
 EMPTY = 'O'
 SHIP = 'S'
@@ -305,6 +315,8 @@ class BattleshipGame:
 def play_game(game_num, match_stats):
     """Plays a single game of Battleship and returns the winner's name or crash info, and the winning score."""
     game = BattleshipGame(BOARD_SIZE, SHIPS)
+    # The game clock includes agent setup. No limit in human modes.
+    game_deadline = None if GAME_TIME_LIMIT is None else _runner_monotonic() + GAME_TIME_LIMIT
 
     # Try to initialize agents
     if GAME_MODE == "humanvsbot":
@@ -532,6 +544,9 @@ def play_game(game_num, match_stats):
         if move_count > max_moves:
             # Game exceeded max moves - return draw
             return "DRAW", 0
+
+        if game_deadline is not None and _runner_monotonic() >= game_deadline:
+            return "TIME_DRAW", 0
         
         # Create state for bombing phase
         p_data = players[current_agent]
@@ -673,6 +688,7 @@ def main():
         AGENT2_NAME: {{"wins": 0, "losses": 0, "draws": 0, "points": 0, "score": 0.0, "make_move_crash": 0, "other_crash": 0, "crash": 0, "timeout": 0, "invalid": 0}},
     }}
     
+    time_limit_draws = 0
     for i in range(NUM_GAMES):
         print("=" * 60)
         print(f"Game {{i+1}}")
@@ -722,14 +738,19 @@ def main():
                 print(f"Agent-1: -{{max_score}}")
                 print(f"Agent-2: {{max_score}}")
 
-        elif result == "DRAW":
+        elif result in ("DRAW", "TIME_DRAW"):
+            if result == "TIME_DRAW":
+                time_limit_draws += 1
             match_stats[AGENT1_NAME]["draws"] += 1
             match_stats[AGENT1_NAME]["points"] += 1
             match_stats[AGENT2_NAME]["draws"] += 1
             match_stats[AGENT2_NAME]["points"] += 1
             
             print("-" * 40)
-            print("Final Result: Draw by Turn Limit.")
+            if result == "TIME_DRAW":
+                print("Final Result: Draw by Time Limit.")
+            else:
+                print("Final Result: Draw by Turn Limit.")
             print("-" * 40)
             print("Points:")
             print("Agent-1: 1")
@@ -796,6 +817,7 @@ def main():
     print(f"Agent-2 Timeouts: {{match_stats[AGENT2_NAME]['timeout']}}")
     print(f"Agent-1 Invalid: {{match_stats[AGENT1_NAME]['invalid']}}")
     print(f"Agent-2 Invalid: {{match_stats[AGENT2_NAME]['invalid']}}")
+    print(f"Time-limit Draws: {{time_limit_draws}}")
 
 
 if __name__ == "__main__":
@@ -878,10 +900,11 @@ def build_game_code(
         game_mode=game_mode,
         agent1_name=agent1_name,
         agent2_name=agent2_name,
+        game_time_limit=None if (human_mode or game_mode) else GAME_TIME_LIMIT,
     )
 
 
-def run_match(game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = MATCH_TIME_LIMIT) -> dict:
+def run_match(game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = MATCH_TIME_LIMIT + MATCH_KILL_GRACE) -> dict:
     """
     Execute the match and parse results.
 

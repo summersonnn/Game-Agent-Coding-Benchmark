@@ -62,7 +62,8 @@ All scripts must respect the following configuration parameters, which should be
 | :--- | :--- | :--- |
 | `NUM_OF_GAMES_IN_A_MATCH` | `100` | Number of games to play in a single match execution. |
 | `MOVE_TIME_LIMIT` | `1.0` | Maximum time (seconds) allowed for an agent to return a move. |
-| `MATCH_TIME_LIMIT` | `900` | Maximum time (seconds) allowed for a single match execution. If specific game runner does not finish within this time, it must timeout itself and report error. **Note**: Matchmaker does not enforce this timeout, game runner must do it. **A8 exception:** default `1200`; the budget is shared across the match's games and a game that overruns its share ends as a draw (see CLAUDE.md, A8 Draw by Time Limit). |
+
+**Time limits (not environment variables):** every runner hardcodes `GAME_TIME_LIMIT`, the maximum time for one game, as a multiple of `MOVE_TIME_LIMIT`. It is checked before every move, includes agent setup, and a game that reaches it ends as a draw. The match limit is derived as `MATCH_TIME_LIMIT = GAME_TIME_LIMIT × games in the match`; the runner hard-kills the match subprocess at `MATCH_TIME_LIMIT` + 60s (only an agent hung inside a move can cause that). The matchmaker does not enforce any timeout. Per-game values and how they were calibrated: CLAUDE.md, "Game Time Limits".
 
 Note that "match" means two agents playing against eachother such as mistral:1 vs opus:1
 A "game" is a single unit of game between them. A match usually has many games in it.
@@ -81,7 +82,10 @@ load_dotenv()
 # These are the true values that are being used in the match runner.
 NUM_GAMES = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", 100))
 MOVE_TIMEOUT = float(os.getenv("MOVE_TIME_LIMIT", 1.0))
-MATCH_TIMEOUT = int(os.getenv("MATCH_TIME_LIMIT", 900))
+
+# Hardcoded per game (seconds per game at the default 1s move limit):
+GAME_TIME_LIMIT = 30 * MOVE_TIMEOUT
+MATCH_TIME_LIMIT = GAME_TIME_LIMIT * NUM_GAMES
 ```
 
 ---
@@ -231,7 +235,7 @@ Scripts must support interactive modes for testing.
 *   `--humanvshuman`: Hotseat multiplayer.
 *   `--humanvsagent`: Human vs Stored Agent (requires 1 agent arg).
 
-Standardized Board Visualization for Humans: To maintain a consistent experience across different games (Battleship, Chess, Morris), runners should implement a print_state() method for human modes that uses a standard coordinate system (e.g., $(0,0)$ at the top-left).
+Standardized Board Visualization for Humans: To maintain a consistent experience across different games (Battleship, Mancala, Morris), runners should implement a print_state() method for human modes that uses a standard coordinate system (e.g., $(0,0)$ at the top-left).
 
 ## 9. Logging & File Naming Conventions
 To ensure analysis tools can find results across different games (A1, A2, etc.):

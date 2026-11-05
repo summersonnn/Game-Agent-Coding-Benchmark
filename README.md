@@ -8,7 +8,7 @@ The live league standings can be accessed at [gameagentcodingleague.com](https:/
 
 ## Features
 
-- **8 Competitive Games**: Battleship, LieOnce, Wizard, Backgammon, Connect4, WordMatrix, 2x8 Mini Chess, SurroundMorris.
+- **8 Competitive Games**: Battleship, LieOnce, Wizard, Backgammon, Connect4, WordMatrix, Mancala, SurroundMorris.
 - **Model-Agnostic**: OpenRouter integration supports any available LLM.
 - **Persistent Agents**: Generated code stored per-model for reuse and analysis.
 - **Points-Based Scoring**: All matches, except for the A3 game, follow the standard scoring format: a win earns 3 points, a draw earns 1 point, and a loss earns 0 points, with goal difference used to break ties.
@@ -169,7 +169,7 @@ Execution aborts if any agent fails.
 
 The matchmaker is a scheduler only. Each subprocess call to a match runner handles: game execution, result parsing, scoreboard updates, and log writing. The matchmaker only tracks success/failure counts and prints a summary.
 
-**Timeout:** 900 seconds per match subprocess. Timed-out matches are killed and recorded as failures.
+**Timeout:** The matchmaker sets none. Each match runner gives every game a fixed time limit (for example 30s for Connect4, 150s for SurroundMorris) and ends a game that runs past it as a draw, so matches always finish with a result. A match's limit is the game limit times its number of games. See "Game Time Limits" in CLAUDE.md for the values and how they were chosen.
 
 ---
 

@@ -43,10 +43,16 @@ try:
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
-try:
-    MATCH_TIME_LIMIT = int(os.getenv("MATCH_TIME_LIMIT", "900"))
-except (ValueError, TypeError):
-    MATCH_TIME_LIMIT = 900
+# Time limit for one game, agent setup included. Set so ~95% of games finish
+# at the pace real agents play (see CLAUDE.md, Game Time Limits); it scales
+# with MOVE_TIME_LIMIT. A game still running when it is used up ends as a draw.
+GAME_TIME_LIMIT = 30 * MOVE_TIME_LIMIT
+
+# So a match takes at most GAME_TIME_LIMIT per game. The hard kill waits
+# MATCH_KILL_GRACE more seconds and only fires if an agent hangs inside a
+# single move (e.g. by swallowing the per-move timeout).
+MATCH_TIME_LIMIT = GAME_TIME_LIMIT * NUM_GAMES_PER_MATCH
+MATCH_KILL_GRACE = 60
 
 
 
@@ -123,6 +129,12 @@ class Connect4Game:
         return all(self.board[0][c] != self.EMPTY for c in range(self.COLS))
 '''
 MATCH_RUNNER_CODE = '''
+# Private alias: agent code may rebind the name `time`.
+from time import monotonic as _runner_monotonic
+
+time_limit_draws = 0
+
+
 def print_board(board):
     print("  0 1 2 3 4 5 6")
     for r in range(6):
@@ -134,7 +146,11 @@ def print_board(board):
 
 def play_game(game_num, match_stats):
     """Plays a single game and returns the winner\'s name or \'DRAW\'."""
+    global time_limit_draws
     game = Connect4Game()
+    # The game clock includes agent setup.
+    game_start = _runner_monotonic()
+    game_deadline = game_start + GAME_TIME_LIMIT
 
     if game_num % 2 != 0:
         red_agent_class = Connect4Agent_1
@@ -211,6 +227,26 @@ def play_game(game_num, match_stats):
     names = {game.RED: red_name, game.YELLOW: yellow_name}
 
     while True:
+        if _runner_monotonic() >= game_deadline:
+            time_limit_draws += 1
+            print("Final Position:")
+            print_board_log(game.board)
+            print("----------------------------------------")
+            print(f"Final Result: Draw (time limit reached after {_runner_monotonic() - game_start:.0f}s)")
+            print("----------------------------------------")
+            print("Points:")
+            print("Agent-1: 1")
+            print("Agent-2: 1")
+            print("----------------------------------------")
+            print("Scores:")
+            print("Agent-1: 0")
+            print("Agent-2: 0")
+            print("============================================================")
+            match_stats["Agent-1"]["draws"] += 1
+            match_stats["Agent-1"]["points"] += 1
+            match_stats["Agent-2"]["draws"] += 1
+            match_stats["Agent-2"]["points"] += 1
+            return "DRAW"
         current_symbol = game.current_turn
         current_agent = agents[current_symbol]
         current_name = names[current_symbol]
@@ -354,6 +390,7 @@ def main():
     print(f"Agent-2 Timeouts: {match_stats[\'Agent-2\'][\'timeout\']}")
     print(f"Agent-1 Invalid: {match_stats[\'Agent-1\'][\'invalid\']}")
     print(f"Agent-2 Invalid: {match_stats[\'Agent-2\'][\'invalid\']}")
+    print(f"Time-limit Draws: {time_limit_draws}")
     print("------------------------------------------------------------")
 
 if __name__ == "__main__":
@@ -383,6 +420,7 @@ def build_game_code(
         "\n"
         f"MOVE_TIMEOUT = {move_timeout}\n"
         f"NUM_GAMES = {num_games}\n"
+        f"GAME_TIME_LIMIT = {GAME_TIME_LIMIT}\n"
         f'AGENT1_NAME = "{agent1_name}"\n'
         f'AGENT2_NAME = "{agent2_name}"\n'
     )
@@ -632,7 +670,7 @@ def parse_agent_spec(spec: str) -> tuple[str, list[int]]:
     return model_pattern, runs
 
 def run_match(
-    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = MATCH_TIME_LIMIT
+    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = MATCH_TIME_LIMIT + MATCH_KILL_GRACE
 ) -> dict:
     """Execute a match subprocess, parse results, and return structured dict."""
     temp_id = uuid.uuid4().hex[:8]

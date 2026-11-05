@@ -30,7 +30,7 @@ uv run game_scripts/A2-lie_once_match.py --agent model1:1 model2:1
 uv run game_scripts/A4-backgammon_match.py --agent model1:1 model2:1
 uv run game_scripts/A5-connect4_match.py --agent model1:1 model2:1
 uv run game_scripts/A6-word_matrix_match.py --agent model1:1 model2:1
-uv run game_scripts/A7-twobyeight_chess_match.py --agent model1:1 model2:1
+uv run game_scripts/A7-mancala_match.py --agent model1:1 model2:1
 uv run game_scripts/A8-surround_morris_match.py --agent model1:1 model2:1
 ```
 
@@ -91,7 +91,7 @@ uv run utils/try_enhancing_agents.py --model all --game all           # All 2-pl
 | A4 | Backgammon | 2 | Playable |
 | A5 | Connect4RandomStart | 2 | Playable |
 | A6 | WordMatrixGame | 2 | Playable |
-| A7 | TwoByEightChess | 2 | Playable |
+| A7 | Mancala | 2 | Playable |
 | A8 | SurroundMorris | 2 | Playable |
 
 ---
@@ -174,8 +174,7 @@ A piece is captured when it satisfies BOTH conditions:
 - Checked after move execution
 
 **Draw by Time Limit:**
-- The game has used up its share of `MATCH_TIME_LIMIT` (default 1200s for 10 games)
-- Each game's share is the time left in the match divided by the games left, so every game gets at least `MATCH_TIME_LIMIT / NUM_GAMES` (120s) and a short game passes its unused time to later ones
+- The game has run for `GAME_TIME_LIMIT` (150s, agent setup included); see [Game Time Limits](#game-time-limits)
 - Checked before every move (placement and movement); scored like any other draw
 - Exists so every match finishes with a result and every agent plays the same number of matches. Agents are not told about it in the prompt
 
@@ -221,7 +220,7 @@ The match runner uses a multi-layer architecture:
 
 2. **Middle Layer (`run_match`):**
    - Generates temporary Python file with embedded code
-   - Spawns the subprocess with a hard kill at `MATCH_TIME_LIMIT` + 60s (`MATCH_KILL_GRACE`); normally the subprocess finishes by itself within `MATCH_TIME_LIMIT` thanks to time-limit draws
+   - Spawns the subprocess with a hard kill at `MATCH_TIME_LIMIT` + 60s (`MATCH_KILL_GRACE`), where `MATCH_TIME_LIMIT` = `GAME_TIME_LIMIT` × games; normally the subprocess finishes by itself thanks to time-limit draws
    - Parses stdout for structured results (`RESULT:`, `POINTS:`, `WINS:`, `DRAWS:`)
    - Returns result dict
 
@@ -285,9 +284,9 @@ class SurroundMorrisAgent:
 - `NUM_OF_GAMES_IN_A_MATCH` (default: 100) — Base games per match pairing; A8 divides this by 10 (effective default: 10 games per match) to keep match durations reasonable given board evaluation overhead
 - `MAX_TURNS_PER_GAME` (default: 200) — Movement phase turn limit
 - `MOVE_TIME_LIMIT` (default: 1.0s) — Per-move timeout
-- `MATCH_TIME_LIMIT` (default: 1200s) — Time budget for one whole match, shared across its games (see Draw by Time Limit). A match only fails if an agent hangs inside a single move and the hard kill at `MATCH_TIME_LIMIT` + 60s fires; the runner then exits non-zero so the matchmaker counts it as failed
 
 **Hardcoded:**
+- `GAME_TIME_LIMIT`: 150 × `MOVE_TIME_LIMIT` (see Draw by Time Limit). A match only fails if an agent hangs inside a single move and the hard kill at `GAME_TIME_LIMIT` × games + 60s fires; the runner then exits non-zero so the matchmaker counts it as failed
 - Pieces per player: 7
 - Max placement/movement attempts: 3 (fallback to random)
 - Board size: 24 spots
@@ -488,20 +487,45 @@ Agents see ONLY their own state. The runner does not replay history — agents t
 
 ---
 
-### A7: 2x8 Mini Chess
+### A7: Mancala
 
-**Type:** 2-player abstract chess variant
-**Match File:** `game_scripts/A7-twobyeight_chess_match.py`
-**Game Prompt:** `games/A7-TwoByEightChess.txt`
+**Type:** 2-player stone-sowing game
+**Match File:** `game_scripts/A7-mancala_match.py`
+**Game Prompt:** `games/A7-Mancala.txt`
 **Scoreboard:** `scoreboard/A7-scoreboard.txt`
 
-**Overview:** Chess played on a 2x8 board. Each side starts with King, Knight, Rook, and Pawn. Pawns promote to Rook upon reaching the far edge. Knight movement is modified (L-shape + 2-step linear). Full chess rules: check, checkmate, stalemate, repetition draw, insufficient material draw. Move limit: 200.
+**Overview:** Classic two-rank Mancala. Each player has 6 pockets (4 stones each, 48 total) and a Mancala on their right. A move picks up every stone in one of your pockets and sows them counter-clockwise, one per pocket, dropping into your own Mancala and skipping the opponent's. Long moves (13+ stones) wrap around and drop into the starting pocket too.
 
-**Agent Interface:** `class TwoByEightChessAgent` with `make_move(state, feedback)` returning a move in UCI notation (e.g. `"a1b1"`).
+- **Free turn:** last stone in your own Mancala → you move again (no limit on chaining).
+- **Capture:** last stone in an empty pocket on your own side → that stone and the opposite pocket go to your Mancala. This happens even when the opposite pocket is empty (only your last stone moves). Sowing exactly 13 lands back in the emptied starting pocket and captures.
+- **End:** checked after every move. When either row is empty the game ends at once (a pending free turn is cancelled), each player sweeps their own remaining stones into their Mancala, and the bigger Mancala wins. 24-24 is a draw.
+- No move limit: every game provably ends. In simulation (random, greedy and alpha-beta agents, random openings) games averaged 28-40 sowings (13-68 range), and one agent never made more than 35 decisions in a game. A typical game fits well inside its 90s time share even at a full 1s per move.
 
-**Scoring:** Win in ≤5 full moves = +10, ≤10 = +5, >10 = +3. Draw = 0 for both. 10 games per match by default (`NUM_OF_GAMES_IN_A_MATCH / 10`).
+**Random opening and seats:** Before any agent moves, the engine sows a random P1 pocket (logged as `Random opening: P1 pocket N`). It counts as P1's move, so pocket 2 gives P1 a free turn and P1's agent moves next; otherwise P2 does. Agent-1 is P1 in odd games, Agent-2 in even games, and each pair of games (1-2, 3-4, ...) shares one opening, so both agents play both sides of it. With 6 possible openings, a deterministic pair of agents can produce at most 12 distinct games.
 
-**Human mode:** `--human` plays interactively against a random bot.
+**Agent Interface:** `class MancalaAgent` with `__init__(name, player)` (`player` is `'P1'` or `'P2'`) and `make_move(state)` returning a pocket index 0-5. The state is always from the agent's own seat:
+```python
+{
+    "board": list[int],        # 14 ints: 0-5 own pockets, 6 own Mancala,
+                               # 7-12 opponent pockets, 13 opponent Mancala
+    "legal_moves": list[int],  # own non-empty pockets (never empty)
+    "player": str,             # 'P1' or 'P2'
+    "move_number": int,        # sowings so far in this game, free turns included
+}
+```
+The engine stores an absolute board (0-5 P1, 6 P1 Mancala, 7-12 P2, 13 P2 Mancala); P2's view is that board rotated by 7. The pocket across from index `i` is `12 - i` in both views. The prompt includes a reference `apply_move(board, pocket)` in the agent's view; `tests/test_mancala.py` checks it against the engine.
+
+**Scoring:** Winner's tie-breaker = own Mancala − opponent's Mancala after the sweep (e.g. 30-18 → +12/-12). Draw = 0. Init-crash forfeit = +48/-48 (the largest possible margin).
+
+**Error handling:** Crash, timeout (1s per `make_move` call, free turns included) or invalid move (not an `int`, outside 0-5, or an empty pocket) → a random legal pocket is played as the agent's move, so it can still earn a free turn or capture. No retries.
+
+**Time limit:** `GAME_TIME_LIMIT` is 25s per game; a game that runs past it ends as a draw. See [Game Time Limits](#game-time-limits).
+
+**Match statistics extras:** `Captures`, `Extra Turns` per agent, `Total Moves`, `Time-limit Draws`.
+
+**Results:** `results/mancala/`. Game count: `NUM_OF_GAMES_IN_A_MATCH / 10` (10 by default).
+
+**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
 
 ---
 
@@ -572,7 +596,32 @@ uv run game_scripts/matchmaker.py --game A8 --mini \
 
 **Game-count scaling:** A5, A6, A7, and A8 match runners divide `NUM_OF_GAMES_IN_A_MATCH` by 10 internally, yielding 10 games per match by default rather than 100. This keeps match durations reasonable. A1, A2, and A3 use `NUM_OF_GAMES_IN_A_MATCH` directly (100 by default). A4 plays races to a fixed points target and ignores it.
 
-**Timeout:** The matchmaker sets no timeout of its own; it waits for each match subprocess to finish. The time limit is set by each match runner. In A8 it is `MATCH_TIME_LIMIT` (default 1200s): a game that runs past its share of that budget ends as a draw, so the match still produces a result. Only a match killed for hanging fails; the runner then exits non-zero and the matchmaker lists it under Failed. Other runners still default to 900s and drop a timed-out match.
+**Timeout:** The matchmaker sets no timeout of its own; it waits for each match subprocess to finish. Each match runner limits every game to its `GAME_TIME_LIMIT` and ends an overrunning game as a draw, so the match still produces a result (see [Game Time Limits](#game-time-limits)). Only a match killed for hanging fails. A7 and A8 then exit non-zero so the matchmaker lists it under Failed; A1-A6 still exit 0.
+
+## Game Time Limits
+
+Every runner gives each game the same fixed time limit, `GAME_TIME_LIMIT`. It is hardcoded per runner as a multiple of `MOVE_TIME_LIMIT`, so it scales if the move limit changes. The clock starts with the game (agent setup included) and is checked before every move. A game still running at its limit ends as a **time-limit draw**: 1 point each and 0 score. In A3 all six players tie (2.5 points each, 0 score); in A4 it counts like a turn-limit draw (0.5 in-game points each). Agents are not told about it. Each match log reports `Time-limit Draws: <count>`.
+
+The match limit is derived, not configured: `MATCH_TIME_LIMIT = GAME_TIME_LIMIT × games in the match` (A4: × `MAX_GAMES_PER_MATCH` = 30). Each runner hard-kills the match subprocess at `MATCH_TIME_LIMIT` + 60s (`MATCH_KILL_GRACE`), which only happens if an agent hangs inside a single move. Because the match limit grows with the game count, enhancement runs (10× games) automatically get 10× the time. The `MATCH_TIME_LIMIT` environment variable is no longer read.
+
+**Calibration rule:** about 95% of games should finish without reaching the limit, at the pace real agents play.
+
+| Game | Agent calls per game (median / 95th pct) | Est. game time (95th pct) | `GAME_TIME_LIMIT` | Finish rate at real pace | Finish rate if every move took 1s | Games per match | Match limit |
+|---|---|---|---|---|---|---|---|
+| A1 | 64 / 82 | 53s | 55s | 96% | 27% | 100 | 5,500s |
+| A2 | 42 / 50 | 34s | 35s | 95% | 32% | 100 | 3,500s |
+| A3 | 390 / 390 | 307s | 310s | 97% | 0% | 100 | 31,000s |
+| A4 | 59 / 95 | 54s | 55s | 96% | 38% | up to 30 | 1,650s |
+| A5 | 38 / 41 | 29s | 30s | 97% | 36% | 10 | 300s |
+| A6 | 9 / 10 | 7s + setup | 15s | ~100% | 100% | 10 | 150s |
+| A7 | 29 / 40 | 25s | 25s | 96% | 31% | 10 | 250s |
+| A8 | 107 / 214 | 151s (measured) | 150s | 95% (measured) | 64% | 10 | 1,500s |
+
+How the numbers were found (2026-11-05):
+- **Pace:** 60 A8 games between the six real agents (GPT-6.1-Sol-Ultra, Gemini-4-Argon-High, Opus-5.5-Max; two runs each), timed with the time limit off. They averaged 0.19-0.81s per agent call (median 0.46s); real agents budget well under the 1s move limit.
+- **Calls per game:** A8 from 1,180 logged games between those agents. A3 is fixed: 10 rounds × 6 players gives 60 bids + 330 card plays. The rest were simulated through each runner's own match code with reasonable synthetic agents: A1 hunt/target, A2 lie-aware candidate search, A4 sampling heuristic, A5 win/block, A6 longest exact word, A7 alpha-beta and greedy.
+- **Limit:** game time = calls × pace, with each simulated game paired with the pace of a randomly drawn real A8 game; the limit is the 95th percentile rounded up to 5s. A6 gets extra room because its agents preprocess the dictionary in `__init__` every game (about 1-2s for both).
+- **Caveats:** the pace comes from three models on a search game, so lighter games (A1, A2, A6) will usually finish much faster than this. A limit binds a game, not an agent: a pair of agents that use nearly the full second on every move hits it far more often (the 1s column). Re-check these values against `Time-limit Draws` in real logs once each game has agents.
 
 ## Agent Enhancement
 
@@ -594,6 +643,7 @@ uv run game_scripts/matchmaker.py --game A8 --mini \
 - Only 2-player games (A3/6-player is excluded automatically)
 - Requires ≥ 2 existing agents per model/game combo
 - Enhancement matches do not update scoreboards (`--update-scoreboard` is not passed)
+- No match timeout of its own: runner limits are per game, so they scale with the 10× game count
 
 **Biweekly cycle:** Every two weeks, all models across all games go through enhancement. This accounts for upstream API model changes (weight updates, quantization tweaks) and eliminates luck from one-shot code generation.
 

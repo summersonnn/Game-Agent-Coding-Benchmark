@@ -44,10 +44,16 @@ try:
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
-try:
-    MATCH_TIME_LIMIT = int(os.getenv("MATCH_TIME_LIMIT", "900"))
-except (ValueError, TypeError):
-    MATCH_TIME_LIMIT = 900
+# Time limit for one game, agent setup included. Set so ~95% of games finish
+# at the pace real agents play (see CLAUDE.md, Game Time Limits); it scales
+# with MOVE_TIME_LIMIT. A game still running when it is used up ends with all six players tied.
+GAME_TIME_LIMIT = 310 * MOVE_TIME_LIMIT
+
+# So a match takes at most GAME_TIME_LIMIT per game. The hard kill waits
+# MATCH_KILL_GRACE more seconds and only fires if an agent hangs inside a
+# single move (e.g. by swallowing the per-move timeout).
+MATCH_TIME_LIMIT = GAME_TIME_LIMIT * NUM_GAMES_PER_MATCH
+MATCH_KILL_GRACE = 60
 
 BASE_DIR = Path(__file__).parent.parent
 RESULTS_DIR = BASE_DIR / "results" / "wizard"
@@ -288,6 +294,11 @@ class MoveTimeoutException(Exception):
 def timeout_handler(signum, frame):
     raise MoveTimeoutException("Move timeout")
 
+# Private alias: agent code may rebind the name `time`.
+from time import monotonic as _runner_monotonic
+
+time_limit_draws = 0
+
 
 class RandomFallbackAgent:
     """Replaces agents that crash during initialization."""
@@ -320,7 +331,13 @@ def call_agent_with_timeout(agent, phase, game_state, agent_label, match_stats):
 
 def play_game(game_num, match_stats):
     """Play one complete 6-player Wizard game and update match_stats."""
+    global time_limit_draws
     game = WizardGame(NUM_PLAYERS)
+    # The game clock includes agent setup. A game that runs past
+    # GAME_TIME_LIMIT is abandoned and all six players tie.
+    game_start = _runner_monotonic()
+    game_deadline = game_start + GAME_TIME_LIMIT
+    timed_out = False
 
     # Rotate seating for fairness: offset by (game_num - 1) % 6
     offset = (game_num - 1) % NUM_PLAYERS
@@ -356,6 +373,9 @@ def play_game(game_num, match_stats):
 
     # Play all 10 rounds
     for round_num in range(1, NUM_ROUNDS + 1):
+        if _runner_monotonic() >= game_deadline:
+            timed_out = True
+            break
         game.start_round(round_num)
         print(f"Round {round_num} ({round_num} cards) - Trump: {game.trump_suit if game.trump_suit else 'None'}")
 
@@ -388,6 +408,9 @@ def play_game(game_num, match_stats):
 
         # Playing phase
         for trick_num in range(game.cards_this_round):
+            if _runner_monotonic() >= game_deadline:
+                timed_out = True
+                break
             game.start_trick()
             for _ in range(NUM_PLAYERS):
                 current_player = game.current_player
@@ -403,14 +426,21 @@ def play_game(game_num, match_stats):
 
             winner = game.finish_trick()
 
+        if timed_out:
+            break
         game.score_round()
         print(f"Tricks won: {game.tricks_won}")
         round_scores = [game.total_scores[i] for i in range(NUM_PLAYERS)]
         print(f"Running scores: {round_scores}")
 
     # Game complete - rank by game score
-    game_scores = list(game.total_scores)
-    print(f"Game {game_num} final scores: {game_scores}")
+    if timed_out:
+        time_limit_draws += 1
+        game_scores = [0] * NUM_PLAYERS
+        print(f"Game {game_num} ended: time limit reached after {_runner_monotonic() - game_start:.0f}s; all players tie")
+    else:
+        game_scores = list(game.total_scores)
+        print(f"Game {game_num} final scores: {game_scores}")
 
     # Build (seat_idx, score) pairs and sort descending
     indexed = [(seat_idx, game_scores[seat_idx]) for seat_idx in range(NUM_PLAYERS)]
@@ -507,6 +537,7 @@ def main():
         print(f"{agent_id} Points: {s['points']:.1f}")
         print(f"{agent_id} Score: {s['score']:.1f}")
         print(f"{agent_id} Placements: 1st={s['1st']:.1f} 2nd={s['2nd']:.1f} 3rd={s['3rd']:.1f} 4th={s['4th']:.1f} 5th={s['5th']:.1f} 6th={s['6th']:.1f}")
+    print(f"Time-limit Draws: {time_limit_draws}")
 
 
 if __name__ == "__main__":
@@ -809,6 +840,7 @@ def build_game_code(
         f"NUM_GAMES = {num_games}\n"
         f"NUM_PLAYERS = {NUM_PLAYERS}\n"
         f"NUM_ROUNDS = {NUM_ROUNDS}\n"
+        f"GAME_TIME_LIMIT = {GAME_TIME_LIMIT}\n"
     )
 
     for i, info in enumerate(agent_infos, 1):
@@ -841,7 +873,7 @@ def build_human_game_code(
 
 
 def run_match(
-    game_code: str, match_id: int, run_ids: list[int], timeout: int = MATCH_TIME_LIMIT
+    game_code: str, match_id: int, run_ids: list[int], timeout: int = MATCH_TIME_LIMIT + MATCH_KILL_GRACE
 ) -> dict:
     """Write temp file, execute subprocess, parse structured output."""
     temp_id = uuid.uuid4().hex[:8]

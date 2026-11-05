@@ -42,10 +42,16 @@ try:
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
-try:
-    MATCH_TIME_LIMIT = int(os.getenv("MATCH_TIME_LIMIT", "900"))
-except (ValueError, TypeError):
-    MATCH_TIME_LIMIT = 900
+# Time limit for one game, agent setup included. Set so ~95% of games finish
+# at the pace real agents play (see CLAUDE.md, Game Time Limits); it scales
+# with MOVE_TIME_LIMIT. A game still running when it is used up ends as a draw.
+GAME_TIME_LIMIT = 35 * MOVE_TIME_LIMIT
+
+# So a match takes at most GAME_TIME_LIMIT per game. The hard kill waits
+# MATCH_KILL_GRACE more seconds and only fires if an agent hangs inside a
+# single move (e.g. by swallowing the per-move timeout).
+MATCH_TIME_LIMIT = GAME_TIME_LIMIT * NUM_GAMES_PER_MATCH
+MATCH_KILL_GRACE = 60
 
 RESULTS_DIR = Path(__file__).parent.parent / "results" / "lie_once"
 SCOREBOARD_PATH = Path(__file__).parent.parent / "scoreboard" / "A2-scoreboard.txt"
@@ -74,6 +80,12 @@ def compute_truth(secret, guess):
 '''
 
 MATCH_RUNNER_CODE = '''
+# Private alias: agent code may rebind the name `time`.
+from time import monotonic as _runner_monotonic
+
+time_limit_draws = 0
+
+
 def opp_of(name):
     return "Agent-2" if name == "Agent-1" else "Agent-1"
 
@@ -173,6 +185,10 @@ def make_state(agent, secrets, lies_used, response_count, turn, starter, is_tie,
 
 def play_game(game_num, match_stats):
     """Plays one LieOnce game and returns winner name or 'DRAW'."""
+    global time_limit_draws
+    # The game clock includes agent setup.
+    game_start = _runner_monotonic()
+    game_deadline = game_start + GAME_TIME_LIMIT
     if game_num % 2 == 1:
         starter = "Agent-1"
     else:
@@ -224,6 +240,9 @@ def play_game(game_num, match_stats):
     current = starter
 
     while turn < MAX_TURNS:
+        if _runner_monotonic() >= game_deadline:
+            time_limit_draws += 1
+            return record_draw(f"time limit reached after {_runner_monotonic() - game_start:.0f}s", match_stats)
         turn += 1
         opp = opp_of(current)
 
@@ -413,6 +432,7 @@ def main():
         print(f"{agent} Lies used: {s['lies']}")
         print(f"{agent} Second-lie forfeits: {s['second_lie']}")
         print(f"{agent} Late-lie forfeits: {s['late_lie']}")
+    print(f"Time-limit Draws: {time_limit_draws}")
     print("------------------------------------------------------------")
 
 
@@ -602,6 +622,7 @@ def build_game_code(
         "\n"
         f"MOVE_TIMEOUT = {move_timeout}\n"
         f"NUM_GAMES = {num_games}\n"
+        f"GAME_TIME_LIMIT = {GAME_TIME_LIMIT}\n"
         f'AGENT1_NAME = "{agent1_name}"\n'
         f'AGENT2_NAME = "{agent2_name}"\n'
     )
@@ -660,7 +681,7 @@ def parse_agent_spec(spec: str) -> tuple[str, list[int]]:
 
 
 def run_match(
-    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = MATCH_TIME_LIMIT
+    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = MATCH_TIME_LIMIT + MATCH_KILL_GRACE
 ) -> dict:
     temp_id = uuid.uuid4().hex[:8]
     temp_file = os.path.join(

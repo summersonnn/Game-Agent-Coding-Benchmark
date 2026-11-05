@@ -43,10 +43,16 @@ try:
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
-try:
-    MATCH_TIME_LIMIT = int(os.getenv("MATCH_TIME_LIMIT", "900"))
-except (ValueError, TypeError):
-    MATCH_TIME_LIMIT = 900
+# Time limit for one game, agent setup included. Set so ~95% of games finish
+# at the pace real agents play (see CLAUDE.md, Game Time Limits); it scales
+# with MOVE_TIME_LIMIT. A game still running when it is used up ends as a draw.
+GAME_TIME_LIMIT = 15 * MOVE_TIME_LIMIT
+
+# So a match takes at most GAME_TIME_LIMIT per game. The hard kill waits
+# MATCH_KILL_GRACE more seconds and only fires if an agent hangs inside a
+# single move (e.g. by swallowing the per-move timeout).
+MATCH_TIME_LIMIT = GAME_TIME_LIMIT * NUM_GAMES_PER_MATCH
+MATCH_KILL_GRACE = 60
 
 try:
     MAX_TURNS_PER_GAME = int(os.getenv("MAX_TURNS_PER_GAME", "100"))
@@ -326,9 +332,19 @@ def timeout_handler(signum, frame):
 INVALID_PENALTY = 10
 FORFEIT_SCORE = {forfeit_score}
 
+# Private alias: agent code may rebind the name `time`.
+from time import monotonic as _runner_monotonic
+
+time_limit_draws = 0
+
 
 def play_game(game_num, match_stats):
     """Play a single game and update match_stats. Returns winner name or 'DRAW'."""
+    global time_limit_draws
+    # The game clock includes agent setup. No limit in human modes.
+    game_start = _runner_monotonic()
+    game_deadline = None if GAME_TIME_LIMIT is None else game_start + GAME_TIME_LIMIT
+    time_limit_hit = False
     words_set = load_words()
     game = WordMatrixGame(words_set)
 
@@ -420,6 +436,9 @@ def play_game(game_num, match_stats):
     turn_count = 0
 
     while not game.is_game_over() and turn_count < MAX_TURNS_PER_GAME:
+        if game_deadline is not None and _runner_monotonic() >= game_deadline:
+            time_limit_hit = True
+            break
         turn_count += 1
         agent_name = turn_order[current_idx]
         current_agent = agents[agent_name]
@@ -497,7 +516,10 @@ def play_game(game_num, match_stats):
         current_idx = 1 - current_idx
 
     # --- Game over ---
-    if game.total_passes >= 6:
+    if time_limit_hit:
+        time_limit_draws += 1
+        end_reason = f"Time limit reached after {_runner_monotonic() - game_start:.0f}s"
+    elif game.total_passes >= 6:
         end_reason = "6 consecutive passes reached"
     elif turn_count >= MAX_TURNS_PER_GAME:
         end_reason = f"Max turn limit reached ({MAX_TURNS_PER_GAME})"
@@ -512,7 +534,8 @@ def play_game(game_num, match_stats):
     print(f"Scores: Agent-1={s1} Agent-2={s2}")
     print("-" * 40)
 
-    if s1 > s2:
+    # A game cut off by the time limit is a draw whatever the scores.
+    if not time_limit_hit and s1 > s2:
         winner = "Agent-1"
         loser = "Agent-2"
         game_score = abs(s1 - s2)
@@ -532,7 +555,7 @@ def play_game(game_num, match_stats):
         match_stats["Agent-2"]["losses"] += 1
         match_stats["Agent-2"]["score"] -= game_score
 
-    elif s2 > s1:
+    elif not time_limit_hit and s2 > s1:
         winner = "Agent-2"
         loser = "Agent-1"
         game_score = abs(s2 - s1)
@@ -620,6 +643,7 @@ def main():
     print(f"Agent-2 Timeouts: {match_stats['Agent-2']['timeout']}")
     print(f"Agent-1 Invalid: {match_stats['Agent-1']['invalid']}")
     print(f"Agent-2 Invalid: {match_stats['Agent-2']['invalid']}")
+    print(f"Time-limit Draws: {time_limit_draws}")
     print("-" * 60)
 
 
@@ -715,6 +739,7 @@ def build_game_code(
         f"NUM_GAMES = {num_games}\n"
         f"MAX_TURNS_PER_GAME = {max_turns_per_game}\n"
         f'GAME_MODE = "{game_mode}"\n'
+        f"GAME_TIME_LIMIT = {None if game_mode else GAME_TIME_LIMIT}\n"
         f'AGENT1_NAME = "{agent1_name}"\n'
         f'AGENT2_NAME = "{agent2_name}"\n'
     )
@@ -733,7 +758,7 @@ def build_game_code(
 
 
 def run_match(
-    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = MATCH_TIME_LIMIT
+    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = MATCH_TIME_LIMIT + MATCH_KILL_GRACE
 ) -> dict:
     """Execute a match subprocess, parse results, and return structured dict."""
     temp_id = uuid.uuid4().hex[:8]

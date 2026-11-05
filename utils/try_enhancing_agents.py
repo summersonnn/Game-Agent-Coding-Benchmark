@@ -50,9 +50,9 @@ except (ValueError, TypeError):
     BASE_NUM_GAMES = 100
 
 ENHANCEMENT_MULTIPLIER = 10
-# Must exceed every runner's own MATCH_TIME_LIMIT + kill grace (A8: 1200 + 60)
-# so the runner, not this script, decides when a match has run too long.
-MATCH_TIMEOUT = 1320
+# No match timeout of our own: each runner's limit is its per-game limit times
+# the number of games, so it already scales with the 10x game count and the
+# runner, not this script, decides when a match has run too long.
 MAX_MATCH_WORKERS = 24
 
 AGENTS_DIR = PROJECT_ROOT / "agents"
@@ -216,18 +216,7 @@ async def run_enhancement_match(
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
             )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(), timeout=MATCH_TIMEOUT
-            )
-        except asyncio.TimeoutError:
-            print(f"  {tag} Match TIMED OUT: {label}")
-            return {
-                "run_a": run_a,
-                "run_b": run_b,
-                "success": False,
-                "error": "Match timed out",
-                "label": label,
-            }
+            stdout_bytes, stderr_bytes = await proc.communicate()
         except Exception as e:
             print(f"  {tag} Match ERROR: {label} — {e}")
             return {

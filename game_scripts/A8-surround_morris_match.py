@@ -50,15 +50,15 @@ try:
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
-try:
-    MATCH_TIME_LIMIT = int(os.getenv("MATCH_TIME_LIMIT", "1200"))
-except (ValueError, TypeError):
-    MATCH_TIME_LIMIT = 1200
+# Time limit for one game, agent setup included. Set so ~95% of games finish
+# at the pace real agents play (see CLAUDE.md, Game Time Limits); it scales
+# with MOVE_TIME_LIMIT. A game still running when it is used up ends as a draw.
+GAME_TIME_LIMIT = 150 * MOVE_TIME_LIMIT
 
-# The match subprocess budgets MATCH_TIME_LIMIT across its games and ends any
-# game that overruns its share as a draw, so it finishes on its own. The hard
-# kill waits this many extra seconds and only fires if an agent hangs inside a
+# So a match takes at most GAME_TIME_LIMIT per game. The hard kill waits
+# MATCH_KILL_GRACE more seconds and only fires if an agent hangs inside a
 # single move (e.g. by swallowing the per-move timeout).
+MATCH_TIME_LIMIT = GAME_TIME_LIMIT * NUM_GAMES_PER_MATCH
 MATCH_KILL_GRACE = 60
 
 BASE_DIR = Path(__file__).parent.parent
@@ -339,15 +339,16 @@ total_turns = 0
 time_limit_draws = 0
 
 
-def play_game(game_num, match_stats, game_deadline=None):
-    """Play one game. If the clock passes game_deadline before a move, the
-    game ends as a draw (its share of MATCH_TIME_LIMIT is used up)."""
+def play_game(game_num, match_stats):
+    """Play one game. The game clock includes agent setup; if it passes
+    GAME_TIME_LIMIT before a move, the game ends as a draw."""
     global total_turns, time_limit_draws
     game = SurroundMorrisGame()
     game_start = _runner_monotonic()
+    game_deadline = game_start + GAME_TIME_LIMIT
 
     def time_is_up():
-        return game_deadline is not None and _runner_monotonic() >= game_deadline
+        return _runner_monotonic() >= game_deadline
 
     def time_limit_desc():
         return f"Draw (time limit reached after {_runner_monotonic() - game_start:.0f}s)"
@@ -715,14 +716,9 @@ def main():
                      "timeout": 0, "invalid": 0, "captures": 0, "stalemate": 0},
     }
 
-    # Each game gets an equal share of the time still left, so a short game
-    # passes its unused time on to later ones and every game gets at least
-    # MATCH_TIME_LIMIT / NUM_GAMES. A game that overruns its share is a draw.
-    match_start = _runner_monotonic()
+    # Every game gets the same GAME_TIME_LIMIT; a game that overruns it is a draw.
     for i in range(NUM_GAMES):
-        now = _runner_monotonic()
-        remaining = max(0.0, MATCH_TIME_LIMIT - (now - match_start))
-        play_game(i + 1, match_stats, now + remaining / (NUM_GAMES - i))
+        play_game(i + 1, match_stats)
         sys.stdout.flush()
 
     print("=" * 60)
@@ -1105,7 +1101,7 @@ def build_game_code(
     max_turns: int,
     agent1_info: str,
     agent2_info: str,
-    match_time_limit: float = MATCH_TIME_LIMIT,
+    game_time_limit: float = GAME_TIME_LIMIT,
 ) -> str:
     header = (
         "import sys\n"
@@ -1121,7 +1117,7 @@ def build_game_code(
         f"MOVE_TIMEOUT = {move_timeout}\n"
         f"MAX_TURNS = {max_turns}\n"
         f"NUM_GAMES = {num_games}\n"
-        f"MATCH_TIME_LIMIT = {match_time_limit}\n"
+        f"GAME_TIME_LIMIT = {game_time_limit}\n"
         f'AGENT1_INFO = "{agent1_info}"\n'
         f'AGENT2_INFO = "{agent2_info}"\n'
     )

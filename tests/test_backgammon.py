@@ -21,7 +21,7 @@ def load_script_definitions():
     # Exercise the actual embedded scripts and builders without importing the
     # outer CLI's API client or requiring its third-party dependencies.
     tree = ast.parse(RUNNER_PATH.read_text())
-    names = {"GAME_ENGINE_CODE", "MATCH_RUNNER_CODE", "HUMAN_PLAY_CODE"}
+    names = {"GAME_ENGINE_CODE", "MATCH_RUNNER_CODE", "HUMAN_PLAY_CODE", "GAME_TIME_LIMIT"}
     builders = {"build_game_code", "build_human_game_code"}
     nodes = [
         node for node in tree.body
@@ -129,6 +129,7 @@ class RunnerFallbackTests(unittest.TestCase):
     def run_one_turn(self, behavior, blocked=False, winning=False):
         namespace = {"__name__": "backgammon_test", "random": random, "signal": signal, "sys": sys,
                      "MAX_TURNS_PER_GAME": 1, "MOVE_TIMEOUT": 1,
+                     "GAME_TIME_LIMIT": SCRIPTS.GAME_TIME_LIMIT,
                      "AGENT1_INFO": "test-1", "AGENT2_INFO": "test-2"}
         exec(SCRIPTS.GAME_ENGINE_CODE + SCRIPTS.MATCH_RUNNER_CODE, namespace)
         base = namespace["BackgammonGame"]

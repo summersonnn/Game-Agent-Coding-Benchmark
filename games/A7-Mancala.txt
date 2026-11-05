@@ -1,0 +1,228 @@
+Mancala is a 2-player stone-sowing strategy game. This is the classic two-rank version: 6 pockets per player and 4 stones per pocket. On each turn a player picks up every stone in one of their pockets and drops them one at a time into the following pockets. The goal is to end the game with more stones in your Mancala (your scoring store) than your opponent has in theirs.
+
+## Game Overview
+
+The board has 12 small pockets in two rows of six, plus one large scoring pocket at each end called a **Mancala**. Each player controls the row of six pockets in front of them and owns the Mancala on their **right**. At the start, every small pocket holds 4 stones (48 stones in total) and both Mancalas are empty.
+
+Stones always travel **counter-clockwise**: to the right along your own row, into your Mancala, then to the left along your opponent's row.
+
+## Board Layout
+
+Player P1 sits at the bottom and player P2 sits at the top. Each player numbers their own pockets 0-5 from left to right, as seen from their own seat. Starting position:
+
+```
+        5   4   3   2   1   0      <- P2's pockets
+      [ 4][ 4][ 4][ 4][ 4][ 4]
+  [ 0]                        [ 0]
+      [ 4][ 4][ 4][ 4][ 4][ 4]
+        0   1   2   3   4   5      <- P1's pockets
+
+  The left Mancala belongs to P2. The right Mancala belongs to P1.
+```
+
+## Board Representation (Your Perspective)
+
+Your agent always sees the board **from its own seat**, whether it is P1 or P2. The board is a list of 14 integers (stone counts) in sowing order:
+
+| Index | Meaning |
+| :--- | :--- |
+| 0-5 | Your pockets, from your leftmost (0) to the one next to your Mancala (5) |
+| 6 | Your Mancala |
+| 7-12 | Opponent's pockets, from their leftmost (7) to the one next to their Mancala (12) |
+| 13 | Opponent's Mancala |
+
+```
+          12  11  10   9   8   7       <- opponent's pockets
+     13                            6
+           0   1   2   3   4   5       <- your pockets
+
+     13 = opponent's Mancala            6 = your Mancala
+```
+
+- Sowing visits indices in increasing order, wraps from 12 back to 0, and skips 13. From your pocket `p`, stones go to `p+1, p+2, ..., 5, 6 (your Mancala), 7, ..., 12, 0, 1, ...`.
+- The pocket directly across from your pocket `i` is index `12 - i` (pocket 0 faces 12, pocket 5 faces 7).
+- To see the board from your opponent's seat, rotate it: `board[7:] + board[:7]`.
+
+## Rules
+
+1. **Choosing a move:** On your turn, choose one of your six pockets that contains at least one stone, and pick up all of its stones.
+2. **Sowing:** Moving counter-clockwise, drop one stone into each following pocket until your hand is empty.
+3. **Your Mancala:** When you pass your own Mancala, drop a stone into it like any other pocket.
+4. **Opponent's Mancala:** When you reach your opponent's Mancala, skip it. Never drop a stone into it. Keep sowing into the following pockets.
+5. **Long moves:** With 13 or more stones you go all the way around the board. The pocket you started from is not skipped: when you pass it, you drop a stone back into it.
+
+### Free Turn
+If the **last** stone lands in **your own Mancala**, you take another full turn right away. There is no limit on how many free turns you can chain. Your `make_move` is called again with the updated board.
+
+### Capture
+If the **last** stone lands in an **empty pocket on your own side** (a pocket that held 0 stones before that last stone landed), you capture. That last stone and all the stones in the opponent's pocket directly across from it go into your Mancala, and both pockets become empty. Your turn then ends.
+
+- The capture happens even if the opposite pocket is empty. In that case only your last stone moves to your Mancala.
+- The pocket you emptied at the start of the move counts as empty. If you sow exactly 13 stones, the last stone lands back in that pocket and captures.
+- If the last stone lands in an empty pocket on your **opponent's** side, nothing is captured.
+
+### End of the Game
+After every move (including a capture or a free-turn move), the engine checks both rows. If all six pockets on **either** side are empty, the game ends immediately. It ends even if the player who just moved earned a free turn with that move.
+
+- **Final sweep:** Each player moves every stone still in their own six pockets into their own Mancala.
+- **Winner:** The player with more stones in their Mancala wins. If both have 24, the game is a draw.
+- Because the game ends as soon as a row is empty, you always have at least one legal move when `make_move` is called.
+
+### Random Opening and Turn Order
+P1 moves first, but no agent chooses that first move. Before any agent moves, the engine sows one of P1's six pockets, chosen at random. This counts as P1's move:
+
+- If the random pocket is 2, its last stone lands in P1's Mancala. P1 gets a free turn, and P1's agent makes the next move.
+- For any other pocket, P2 makes the next move.
+
+After the opening, play continues normally.
+
+In a match, the two agents swap seats every game: Agent-1 is P1 in odd-numbered games and Agent-2 is P1 in even-numbered games. Games come in pairs (1-2, 3-4, ...) that use the same random opening, so each agent plays both sides of every opening.
+
+## Game Interface
+
+Your agent must implement the following class:
+
+```python
+import random
+
+class MancalaAgent:
+    def __init__(self, name: str, player: str):
+        """
+        Initialize the agent. A new instance is created for every game.
+
+        Args:
+            name: str - Your agent name (e.g. "Agent-1").
+            player: str - 'P1' if you move first in this game, 'P2' if you move second.
+        """
+        self.name = name
+        self.player = player
+
+    def make_move(self, state: dict) -> int:
+        """
+        Called every time it is your turn, including every free turn.
+
+        Args:
+            state: dict
+                {
+                    "board": list[int],
+                        # 14 stone counts from YOUR perspective
+                        # (see "Board Representation"):
+                        # 0-5 your pockets, 6 your Mancala,
+                        # 7-12 opponent's pockets, 13 opponent's Mancala.
+                    "legal_moves": list[int],
+                        # Your pockets (0-5) that contain at least one stone.
+                        # Never empty.
+                    "player": str,
+                        # 'P1' or 'P2' (same value as in __init__).
+                    "move_number": int,
+                        # Moves already played in this game by both players.
+                        # Every sowing counts, including free turns.
+                        # The random opening counts as move 1, so this is
+                        # always at least 1.
+                }
+
+        Returns:
+            int: The pocket index (0-5) to sow from. It must be one of
+                 state["legal_moves"].
+        """
+        # TODO: Implement your strategy here
+        return random.choice(state["legal_moves"])
+```
+
+## Rules Reference Implementation
+
+The function below applies one move exactly as the game engine does, on a board in the perspective format above. It is reference code only and is **not available at runtime**. If your agent needs to simulate moves, implement that logic inside your class.
+
+```python
+def apply_move(board, pocket):
+    """
+    Apply one move for the player whose perspective `board` is in.
+
+    board:  list of 14 ints (0-5 mover's pockets, 6 mover's Mancala,
+            7-12 opponent's pockets, 13 opponent's Mancala).
+    pocket: int 0-5, a pocket of the mover that holds at least one stone.
+
+    Returns (new_board, extra_turn, game_over):
+        new_board:  the board after sowing, any capture and, if the game
+                    ended, the final sweep. Still in the mover's perspective.
+        extra_turn: True if the mover moves again (last stone in own Mancala
+                    and the game is not over).
+        game_over:  True if either row of pockets is empty after the move.
+    """
+    b = board[:]
+    stones = b[pocket]
+    b[pocket] = 0
+    idx = pocket
+    while stones > 0:
+        idx = (idx + 1) % 14
+        if idx == 13:              # opponent's Mancala: skip it
+            continue
+        b[idx] += 1
+        stones -= 1
+
+    extra_turn = idx == 6          # last stone in your own Mancala
+
+    if idx <= 5 and b[idx] == 1:   # last stone in an empty pocket on your side
+        b[6] += b[idx] + b[12 - idx]
+        b[idx] = 0
+        b[12 - idx] = 0
+
+    game_over = sum(b[0:6]) == 0 or sum(b[7:13]) == 0
+    if game_over:                  # final sweep
+        b[6] += sum(b[0:6])
+        b[13] += sum(b[7:13])
+        for i in range(6):
+            b[i] = 0
+            b[7 + i] = 0
+        extra_turn = False
+
+    return b, extra_turn, game_over
+```
+
+When `extra_turn` is False and the game is not over, it is your opponent's turn. Rotate the board with `new_board[7:] + new_board[:7]` to see it from their seat.
+
+## Competition Format
+
+- **1 vs 1 Match**: Two agents play multiple games against each other.
+- **Alternating Seats**: The agents swap seats (P1/P2) every game, so each agent is P1 in half of the games.
+- **Random Openings**: Each pair of games starts with the same random opening move, played once from each seat.
+
+## Scoring
+
+### Match Points (Primary Metric)
+- **Win:** 3 points
+- **Draw:** 1 point each
+- **Loss:** 0 points
+
+### Tie-Breaker Score (Secondary Metric)
+- **Win:** Your Mancala minus your opponent's Mancala after the final sweep. A 30-18 win scores +12.
+- **Loss:** The negative of the winner's score. A 18-30 loss scores -12.
+- **Draw:** 0 for both players.
+- **Forfeit:** +48 for the winner, -48 for the agent that forfeited.
+
+## Error Handling
+
+| Failure Type         | Consequence                                           |
+| -------------------- | ----------------------------------------------------- |
+| make_move() Crash    | Random legal pocket played; game continues.           |
+| Initialization Crash | Immediate game forfeit. Opponent wins with max score. |
+| Move Timeout (1s)    | Random legal pocket played; game continues.           |
+| Invalid Move         | Random legal pocket played; game continues.           |
+
+- A move is **invalid** if it is not an `int`, is outside 0-5, or names an empty pocket.
+- There is no retry mechanism. Each call to `make_move`, including each free-turn call, has its own 1-second limit.
+- The random pocket is played as your move. It earns you a free turn or a capture exactly as if you had chosen it.
+- If your agent crashes in `__init__`, you forfeit the game: your opponent gets 3 points and +48, and you get 0 points and -48.
+
+### Agent Coding Requirements
+- **No Internal Imports**: Do not import any game engine files, match runners, or project-specific modules. Use only standard library imports.
+- **Isolation**: Your agent must be completely self-contained. Do not assume any specific file structure or directory hierarchy.
+- **Single Class Implementation**: Do not implement any class other than the one provided in the starter code.
+- **Class-Only Output**: Output ONLY the agent class and necessary standard imports. Do not include testing code, game logic outside the class, or example usage.
+- **No Broad Exception Handlers**: Do not wrap the body of `make_move()` in a broad exception handler such as `except Exception:`, `except BaseException:`, or a bare `except:`. The engine uses `signal.alarm` to enforce move time limits; broad catches will swallow the timeout exception and cause the match to hang.
+
+
+**IMPORTANT**: Output ONLY the `MancalaAgent` class definition and any necessary imports. Do NOT output the reference implementation or any game engine code.
+
+## Strict No-File/External-Lookup Rule
+For this task and every follow-up question, use only the information included in this prompt and the conversation. Do not browse the web, invoke tools, or inspect, search, open, read, or access any files, folders, repositories, or other external resources. If something needed is not provided, say that it is unavailable; do not try to retrieve it.

@@ -36,14 +36,21 @@ try:
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
-try:
-    MATCH_TIME_LIMIT = int(os.getenv("MATCH_TIME_LIMIT", "900"))
-except (ValueError, TypeError):
-    MATCH_TIME_LIMIT = 900
-
 MAX_TURNS_PER_GAME = 300
 POINTS_TO_WIN_MATCH = 5
 MAX_GAMES_PER_MATCH = 30
+
+# Time limit for one game, agent setup included. Set so ~95% of games finish
+# at the pace real agents play (see CLAUDE.md, Game Time Limits); it scales
+# with MOVE_TIME_LIMIT. A game still running when it is used up ends as a draw.
+GAME_TIME_LIMIT = 55 * MOVE_TIME_LIMIT
+
+# So a match takes at most GAME_TIME_LIMIT per game, for up to
+# MAX_GAMES_PER_MATCH games. The hard kill waits
+# MATCH_KILL_GRACE more seconds and only fires if an agent hangs inside a
+# single move (e.g. by swallowing the per-move timeout).
+MATCH_TIME_LIMIT = GAME_TIME_LIMIT * MAX_GAMES_PER_MATCH
+MATCH_KILL_GRACE = 60
 
 BASE_DIR = Path(__file__).parent.parent
 RESULTS_DIR = BASE_DIR / "results" / "backgammon"
@@ -445,8 +452,18 @@ class BackgammonGame:
 # Match runner code (subprocess: race-to-POINTS_TO_WIN_MATCH)
 # ============================================================
 MATCH_RUNNER_CODE = r'''
+# Private alias: agent code may rebind the name `time`.
+from time import monotonic as _runner_monotonic
+
+time_limit_draws = 0
+
+
 def play_game(game_num, in_game_points, match_stats, names_for_color, agent_classes):
     """Play one game; mutate in_game_points and match_stats. Return (winner_label, pts_awarded)."""
+    global time_limit_draws
+    # The game clock includes agent setup.
+    game_start = _runner_monotonic()
+    game_deadline = game_start + GAME_TIME_LIMIT
     game = BackgammonGame()
     game.current_player = random.choice(['W', 'B'])
 
@@ -492,6 +509,10 @@ def play_game(game_num, in_game_points, match_stats, names_for_color, agent_clas
     game_over = False
 
     while not game_over:
+        if _runner_monotonic() >= game_deadline:
+            result_kind = 'draw_time_limit'
+            game_over = True
+            break
         if game.turn_count >= MAX_TURNS_PER_GAME:
             result_kind = 'draw_turn_limit'
             game_over = True
@@ -580,14 +601,18 @@ def play_game(game_num, in_game_points, match_stats, names_for_color, agent_clas
     print('-' * 40)
 
     awarded_pts = 0
-    if result_kind == 'draw_turn_limit':
+    if result_kind in ('draw_turn_limit', 'draw_time_limit'):
         winner_label = 'DRAW'
         in_game_points['Agent-1'] += 0.5
         in_game_points['Agent-2'] += 0.5
         match_stats['Agent-1']['draws'] += 1
         match_stats['Agent-2']['draws'] += 1
         awarded_pts = 0.5
-        result_desc = f'Draw by turn limit ({MAX_TURNS_PER_GAME} turns)'
+        if result_kind == 'draw_time_limit':
+            time_limit_draws += 1
+            result_desc = f'Draw (time limit reached after {_runner_monotonic() - game_start:.0f}s)'
+        else:
+            result_desc = f'Draw by turn limit ({MAX_TURNS_PER_GAME} turns)'
     elif result_kind in ('single', 'gammon'):
         winner_label = names_for_color[result_winner]
         loser_label = 'Agent-2' if winner_label == 'Agent-1' else 'Agent-1'
@@ -733,6 +758,7 @@ def main():
     print(f"Agent-1 In-Game Points: {a1_pts}")
     print(f"Agent-2 In-Game Points: {a2_pts}")
     print(f"Games Played: {games_played}")
+    print(f"Time-limit Draws: {time_limit_draws}")
     print(f"STATS:Agent-1={match_stats['Agent-1']}")
     print(f"STATS:Agent-2={match_stats['Agent-2']}")
     print(f"GAMES_PLAYED:{games_played}")
@@ -1041,6 +1067,7 @@ def build_game_code(
         f"MAX_TURNS_PER_GAME = {max_turns}\n"
         f"POINTS_TO_WIN_MATCH = {points_to_win}\n"
         f"MAX_GAMES_PER_MATCH = {max_games}\n"
+        f"GAME_TIME_LIMIT = {GAME_TIME_LIMIT}\n"
         f'AGENT1_INFO = "{agent1_info}"\n'
         f'AGENT2_INFO = "{agent2_info}"\n'
     )
@@ -1070,7 +1097,7 @@ def build_human_game_code(
 
 
 def run_match(
-    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = MATCH_TIME_LIMIT
+    game_code: str, match_id: int, run_ids: tuple[int, int], timeout: int = MATCH_TIME_LIMIT + MATCH_KILL_GRACE
 ) -> dict:
     temp_id = uuid.uuid4().hex[:8]
     temp_file = os.path.join(
