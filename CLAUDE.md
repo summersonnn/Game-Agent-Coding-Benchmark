@@ -7,9 +7,11 @@ Benchmarking framework for evaluating LLMs in competitive multi-agent game envir
 ```
 agents/           # Generated agent code (organized by model name)
 config/           # Configuration: models.txt
+game_scripts/     # Match runners (*_match.py) and the matchmaker
 games/            # Game prompts/rules (A1-Battleship, A2-LieOnce, ...)
 results/          # Match logs and outcomes
-utils/            # Core logic - API client, match runners, agent generation
+scoreboard/       # Per-game leaderboards (A1-scoreboard.txt, ...)
+utils/            # Core logic - API client, agent generation, scoreboard
 ```
 
 ## Entry Points
@@ -39,7 +41,11 @@ uv run game_scripts/A8-surround_morris_match.py --agent model1:1 model2:1
 uv run game_scripts/matchmaker.py --game A8 --same_opponent_match 4
 uv run game_scripts/matchmaker.py --game A8 --dry-run
 uv run game_scripts/matchmaker.py --game A8 --new-model new-model-folder --health
+uv run game_scripts/matchmaker.py --game A8 --mini --agent GPT-6.1-Sol-Ultra:1 GPT-6.1-Sol-Ultra:2 Gemini-4-Argon-High:1 Gemini-4-Argon-High:2 Opus-5.5-Max:1 Opus-5.5-Max:2 --same_opponent_match 4
+uv run game_scripts/matchmaker.py --game A8 --mini --agent Opus-5.5-Max   # all runs of one model
 ```
+
+> Mini leagues (`--mini`) do not pass `--update-scoreboard`, so they leave `scoreboard/` unchanged; they print a standings table at the end instead. See [Matchmaker](#matchmaker-tournament-scheduler).
 
 **Agent Enhancement:**
 ```bash
@@ -56,8 +62,9 @@ uv run utils/try_enhancing_agents.py --model all --game all           # All 2-pl
 | `utils/populate_agents.py` | LLM-based agent code generation |
 | `utils/try_enhancing_agents.py` | Agent quality improvement via same-model benchmarking |
 | `game_scripts/*_match.py` | Game-specific match orchestrators |
-| `game_scripts/matchmaker.py` | Round-robin tournament scheduler |
+| `game_scripts/matchmaker.py` | Round-robin tournament scheduler and mini league runner |
 | `utils/logging_config.py` | Centralized logging setup |
+| `utils/scoreboard.py` | Atomic, file-locked scoreboard updates |
 | `global_game_rules.md` | Canonical specification for all match runners: scoring system, output format, error taxonomy, log format, agent coding standards |
 
 ## Configuration
@@ -68,9 +75,9 @@ uv run utils/try_enhancing_agents.py --model all --game all           # All 2-pl
 - `MODEL_MAX_TOKENS` - Base token limit (8192)
 - `MODEL_TEMPERATURE` - Sampling temperature (0.7)
 - `MODEL_API_TIMEOUT` - Per-request timeout for OpenRouter API calls in seconds (600)
-- `MAX_WORKERS` - Concurrency limit for agent generation
-- `NUM_RUNS` - Default agent runs per model/game
-- `NUM_OF_GAMES_IN_A_MATCH` - Games per match pairing
+- `MAX_WORKERS` - Concurrency limit for agent generation (default 16)
+- `NUM_RUNS` - Default agent runs per model/game (default 4)
+- `NUM_OF_GAMES_IN_A_MATCH` - Games per match pairing (default 100; A5–A8 divide it by 10, see [Matchmaker](#matchmaker-tournament-scheduler))
 
 **config/models.txt:** One model per line. All non-empty lines are treated as active models. (The `!` prefix to disable models was removed; see commit `27748a8`.)
 
@@ -208,23 +215,25 @@ The match runner uses a multi-layer architecture:
 
 2. **Middle Layer (`run_match`):**
    - Generates temporary Python file with embedded code
-   - Spawns subprocess with 600s timeout
+   - Spawns subprocess with a `MATCH_TIME_LIMIT` timeout (default 900s)
    - Parses stdout for structured results (`RESULT:`, `POINTS:`, `WINS:`, `DRAWS:`)
    - Returns result dict
 
 3. **Inner Layer (Embedded `MATCH_RUNNER_CODE`):**
    - Executed inside subprocess
-   - Runs `NUM_GAMES_PER_MATCH` games (default 100)
+   - Runs `NUM_GAMES_PER_MATCH` games (default 10: `NUM_OF_GAMES_IN_A_MATCH / 10`)
    - Tracks match statistics (wins, points, scores, errors)
    - Emits structured output lines for outer parsing
 
 **Code Modules:**
 
-| Module | Location | Purpose |
-|--------|----------|---------|
-| `GAME_ENGINE_CODE` | Lines 62-309 | `SurroundMorrisGame` class, adjacency map, board logic |
-| `MATCH_RUNNER_CODE` | Lines 315-722 | `play_game()`, `main()`, timeout handling, stats tracking |
-| `HUMAN_PLAY_CODE` | Lines 728-1003 | Human vs Bot/Human/Agent interactive mode |
+| Module | Purpose |
+|--------|---------|
+| `GAME_ENGINE_CODE` | `SurroundMorrisGame` class, adjacency map, board logic |
+| `MATCH_RUNNER_CODE` | `play_game()`, `main()`, timeout handling, stats tracking |
+| `HUMAN_PLAY_CODE` | Human vs Bot/Human/Agent interactive mode |
+
+These are embedded raw-string blocks in `game_scripts/A8-surround_morris_match.py`; search for the names rather than relying on line numbers.
 
 **Agent Interface:**
 
@@ -270,6 +279,7 @@ class SurroundMorrisAgent:
 - `NUM_OF_GAMES_IN_A_MATCH` (default: 100) — Base games per match pairing; A8 divides this by 10 (effective default: 10 games per match) to keep match durations reasonable given board evaluation overhead
 - `MAX_TURNS_PER_GAME` (default: 200) — Movement phase turn limit
 - `MOVE_TIME_LIMIT` (default: 1.0s) — Per-move timeout
+- `MATCH_TIME_LIMIT` (default: 900s) — Timeout for one whole match subprocess; on expiry the match is recorded as an error result
 
 **Hardcoded:**
 - Pieces per player: 7
@@ -482,7 +492,7 @@ Agents see ONLY their own state. The runner does not replay history — agents t
 
 **Agent Interface:** `class TwoByEightChessAgent` with `make_move(state, feedback)` returning a move in UCI notation (e.g. `"a1b1"`).
 
-**Scoring:** Win in ≤5 full moves = +10, ≤10 = +5, >10 = +3. Draw = 0 for both. 100 games per match.
+**Scoring:** Win in ≤5 full moves = +10, ≤10 = +5, >10 = +3. Draw = 0 for both. 10 games per match by default (`NUM_OF_GAMES_IN_A_MATCH / 10`).
 
 **Human mode:** `--human` plays interactively against a random bot.
 
@@ -508,22 +518,40 @@ Example: `deepseek/deepseek-v3@preset/fp8` → `deepseek-deepseek-v3-fp8`
 
 ## Matchmaker (Tournament Scheduler)
 
-`game_scripts/matchmaker.py` automates full round-robin tournament execution across all agents for a given game. It discovers agents, generates cross-model fixtures, and runs them concurrently as subprocesses — each delegated to the appropriate game match runner.
+`game_scripts/matchmaker.py` automates full round-robin tournament execution across all agents for a given game. It discovers agents, generates cross-model fixtures, and runs them concurrently as subprocesses — each delegated to the appropriate game match runner. It can also run a mini league among chosen agents (`--mini`, described below).
 
 **Arguments:**
 
 | Argument | Type | Default | Description |
 |---|---|---|---|
 | `--game` | str | required | Game ID: A1 through A8 |
-| `--same_opponent_match` | int | 2 | Minimum encounters per cross-model agent pair (see below) |
-| `--workers` | int | 16 | Max concurrent match subprocesses |
+| `--same_opponent_match` | int | 8 | Exact number of times each pairing plays (see below) |
+| `--workers` | int | 24 | Max concurrent match subprocesses |
 | `--dry-run` | flag | false | Print fixture list without executing |
-| `--new-model` | str | — | Comma-separated model folder names; restrict fixtures to those involving these models |
+| `--new-model` | str | — | Comma-separated model folder names; restrict fixtures to those involving these models. Not allowed with `--mini` |
 | `--health` | flag | false | Run syntax + broad-except checks on all agents before execution |
+| `--random16` | flag | false | Run a random sample of up to 16 matches (2-player games) |
+| `--mini` | flag | false | Run a mini league among the agents named in `--agent`, including same-model pairs. Not supported for A3 |
+| `--agent` | list | — | Required with `--mini`. `MODEL:RUN` specs (e.g. `GPT-6.1-Sol-Ultra:1`), or a single model substring to take all of that model's runs |
+| `--auto-yes` | flag | false | Skip confirmation prompts (e.g. A3 Phase 2 start) |
 
 **How `--same_opponent_match` works:**
 
-This controls how many times every cross-model agent pair is guaranteed to encounter each other. Each cross-model pair plays a head-to-head match `same_opponent_match` times. With 20 models x 2 runs = 40 agents, there are 760 cross-model pairs, so `--same_opponent_match 4` produces 3040 matches.
+Each cross-model pair plays exactly `same_opponent_match` matches against each other (the pairing list is repeated N times; it is not a minimum). With 20 models x 2 runs = 40 agents, there are 760 cross-model pairs, so `--same_opponent_match 4` produces 3040 matches. Mini leagues apply the same count to every pair, including same-model pairs.
+
+**Mini league (`--mini --agent`):**
+
+Runs a league among only the agents you name, instead of every agent in `agents/`. Unlike the tournament, it includes same-model pairs, and each pair plays `--same_opponent_match` times (e.g. 6 agents → 15 pairs × 4 = 60 matches). Mini leagues:
+- do **not** pass `--update-scoreboard`, so `scoreboard/` is never changed;
+- print a standings table at the end.
+
+```bash
+uv run game_scripts/matchmaker.py --game A8 --mini \
+  --agent GPT-6.1-Sol-Ultra:1 GPT-6.1-Sol-Ultra:2 \
+          Gemini-4-Argon-High:1 Gemini-4-Argon-High:2 \
+          Opus-5.5-Max:1 Opus-5.5-Max:2 \
+  --same_opponent_match 4
+```
 
 **Incremental tournaments (`--new-model`):** When new models are added, pass their folder names (comma-separated) to generate only the fixtures where at least one side is a new model. Avoids replaying all existing cross-model pairs.
 
@@ -531,13 +559,13 @@ This controls how many times every cross-model agent pair is guaranteed to encou
 1. Syntax validity (`ast.parse`).
 2. Broad exception handlers in `make_move` (`except Exception`, `except BaseException`, bare `except:`) — these swallow `MoveTimeoutException` and disable per-move time limits.
 
-**Agent discovery:** Scans `agents/*/` for files matching `{game_name}_{run}.py`. Only cross-model pairings are generated — agents from the same model folder never face each other.
+**Agent discovery:** Scans `agents/*/` for files matching `{game_name}_{run}.py`. In tournament mode only cross-model pairings are generated — agents from the same model folder never face each other (mini leagues include them).
 
-**Execution:** Each match is a subprocess calling the game's match runner with `--update-scoreboard` appended automatically. The match runner handles game execution, result parsing, scoreboard updates, and log writing internally. The matchmaker only orchestrates scheduling and reports success/failure counts.
+**Execution:** Each match is a subprocess calling the game's match runner with `--update-scoreboard` appended automatically in tournament mode (mini leagues omit it). The match runner handles game execution, result parsing, scoreboard updates, and log writing internally. The matchmaker only orchestrates scheduling and reports success/failure counts.
 
-**Game-count scaling:** A5, A7, and A8 match runners divide `NUM_OF_GAMES_IN_A_MATCH` by 10 internally, yielding 10 games per match by default rather than 100. This compensates for slower per-game execution (complex board evaluation in A7/A8).
+**Game-count scaling:** A5, A6, A7, and A8 match runners divide `NUM_OF_GAMES_IN_A_MATCH` by 10 internally, yielding 10 games per match by default rather than 100. This keeps match durations reasonable. A1, A2, and A3 use `NUM_OF_GAMES_IN_A_MATCH` directly (100 by default). A4 plays races to a fixed points target and ignores it.
 
-**Timeout:** 900 seconds per match subprocess. Timed-out matches are killed and recorded as failures.
+**Timeout:** The matchmaker sets no timeout of its own; it waits for each match subprocess to finish. The time limit is set by each match runner. In A8 it is `MATCH_TIME_LIMIT` (default 900s), and a timed-out match is returned as an error result.
 
 ## Agent Enhancement
 
