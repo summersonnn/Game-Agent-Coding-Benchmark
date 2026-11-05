@@ -56,6 +56,17 @@ GAME_NAME = "A4-Backgammon"
 # Shared game engine code (used by match runner and human modes)
 # ============================================================
 GAME_ENGINE_CODE = r'''
+import random
+
+
+class MoveTimeoutException(Exception):
+    pass
+
+
+def timeout_handler(signum, frame):
+    raise MoveTimeoutException("Move timeout")
+
+
 class BackgammonGame:
     """Standard backgammon engine. Absolute point indices 0-23.
 
@@ -273,6 +284,45 @@ class BackgammonGame:
             return d
         return None
 
+    def get_random_legal_turn(self, color, dice, max_usable=None):
+        """Plan a random maximum-length legal turn without changing this game.
+
+        Search shuffled sub-moves on a copy, backtracking when a choice
+        prevents the required number of dice from being used. Resolve dice
+        exactly as validate_and_apply_turn does, including bear-off ties.
+        """
+        game = BackgammonGame()
+        game.board = list(self.board)
+        game.bar = dict(self.bar)
+        game.borne_off = dict(self.borne_off)
+        if max_usable is None:
+            max_usable = game.max_dice_usable(color, dice)
+
+        def search(remaining, target):
+            if target == 0:
+                return []
+            if len(remaining) < target:
+                return None
+            legal = game.get_legal_sub_moves(color, remaining)
+            random.shuffle(legal)
+            for sub in legal:
+                die = game._find_die_for_sub(color, sub, remaining)
+                next_dice = list(remaining)
+                next_dice.remove(die)
+                undo = game._apply_sub_move(color, sub)
+                try:
+                    rest = search(next_dice, target - 1)
+                finally:
+                    game._undo_sub_move(color, undo)
+                if rest is not None:
+                    return [sub] + rest
+            return None
+
+        sequence = search(list(dice), max_usable)
+        if sequence is None:
+            raise RuntimeError("Could not generate a maximum-length legal turn")
+        return sequence
+
     def validate_and_apply_turn(self, color, dice, sequence, max_usable=None):
         """Validate the agent's sub-move sequence; if valid, apply it.
         Returns (success: bool, error_msg: str, hits: int).
@@ -303,9 +353,14 @@ class BackgammonGame:
                     from_p = int(from_p)
                 if to_p != 'off':
                     to_p = int(to_p)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
                 self._rollback(color, applied)
                 return False, f"Sub-move {i} has invalid types: {sub}", 0
+            if ((from_p != 'bar' and not 0 <= from_p < 24)
+                    or (to_p != 'off' and not 0 <= to_p < 24)
+                    or (from_p == 'bar' and to_p == 'off')):
+                self._rollback(color, applied)
+                return False, f"Sub-move {i} has invalid endpoints: {sub}", 0
             sub_norm = (from_p, to_p)
 
             die = self._find_die_for_sub(color, sub_norm, remaining)
@@ -390,14 +445,6 @@ class BackgammonGame:
 # Match runner code (subprocess: race-to-POINTS_TO_WIN_MATCH)
 # ============================================================
 MATCH_RUNNER_CODE = r'''
-class MoveTimeoutException(Exception):
-    pass
-
-
-def timeout_handler(signum, frame):
-    raise MoveTimeoutException("Move timeout")
-
-
 def play_game(game_num, in_game_points, match_stats, names_for_color, agent_classes):
     """Play one game; mutate in_game_points and match_stats. Return (winner_label, pts_awarded)."""
     game = BackgammonGame()
@@ -479,7 +526,7 @@ def play_game(game_num, in_game_points, match_stats, names_for_color, agent_clas
             game_num, max_usable, legal_subs,
         )
         sequence = None
-        forfeited = False
+        needs_fallback = False
 
         try:
             signal.signal(signal.SIGALRM, timeout_handler)
@@ -489,26 +536,33 @@ def play_game(game_num, in_game_points, match_stats, names_for_color, agent_clas
             finally:
                 signal.alarm(0)
         except MoveTimeoutException:
-            print(f'Turn {game.turn_count}: {agent_name} ({color}) rolled {dice} -> TIMEOUT, forfeit')
+            print(f'Turn {game.turn_count}: {agent_name} ({color}) rolled {dice} -> TIMEOUT, random legal fallback')
             match_stats[agent_name]['timeout'] += 1
-            forfeited = True
+            needs_fallback = True
         except Exception as e:
-            print(f'Turn {game.turn_count}: {agent_name} ({color}) rolled {dice} -> CRASH ({str(e)[:80]}), forfeit')
+            print(f'Turn {game.turn_count}: {agent_name} ({color}) rolled {dice} -> CRASH ({str(e)[:80]}), random legal fallback')
             match_stats[agent_name]['make_move_crash'] += 1
-            forfeited = True
+            needs_fallback = True
 
-        if not forfeited:
+        if not needs_fallback:
             ok, msg, hits = game.validate_and_apply_turn(color, dice, sequence, max_usable=max_usable)
             if not ok:
                 short_seq = repr(sequence)[:120]
-                print(f'Turn {game.turn_count}: {agent_name} ({color}) rolled {dice} -> INVALID ({msg}), forfeit. Submitted: {short_seq}')
+                print(f'Turn {game.turn_count}: {agent_name} ({color}) rolled {dice} -> INVALID ({msg}), random legal fallback. Submitted: {short_seq}')
                 match_stats[agent_name]['invalid'] += 1
-                forfeited = True
-            else:
-                hit_str = f' [hit x{hits}]' if hits else ''
-                print(f'Turn {game.turn_count}: {agent_name} ({color}) rolled {dice} -> {sequence}{hit_str}')
-                match_stats[agent_name]['hits'] += hits
-                match_stats[agent_name]['dice_used'] += len(sequence)
+                needs_fallback = True
+
+        if needs_fallback:
+            sequence = game.get_random_legal_turn(color, dice, max_usable=max_usable)
+            ok, msg, hits = game.validate_and_apply_turn(color, dice, sequence, max_usable=max_usable)
+            if not ok:
+                raise RuntimeError(f'Random fallback turn was invalid: {msg}')
+
+        hit_str = f' [hit x{hits}]' if hits else ''
+        move_source = 'fallback ' if needs_fallback else ''
+        print(f'Turn {game.turn_count}: {agent_name} ({color}) rolled {dice} -> {move_source}{sequence}{hit_str}')
+        match_stats[agent_name]['hits'] += hits
+        match_stats[agent_name]['dice_used'] += len(sequence)
 
         done, w, k = game.is_game_over()
         if done:
@@ -695,6 +749,7 @@ if __name__ == "__main__":
 HUMAN_PLAY_CODE = r'''
 import datetime
 import os
+import signal
 
 
 class HumanAgent:
@@ -747,29 +802,15 @@ class RandomAgent:
         self.color = color
 
     def make_move(self, state, feedback=None):
-        # Reconstruct a temporary engine from state to enumerate sequences.
+        # Use the same maximum-length planner as the failure fallback.
         g = BackgammonGame()
         g.board = list(state['board'])
         g.bar = dict(state['bar'])
         g.borne_off = dict(state['borne_off'])
 
-        dice = list(state['dice'])
-        color = state['your_color']
-        seq = []
-        while True:
-            legal = g.get_legal_sub_moves(color, dice)
-            if not legal:
-                break
-            sub = random.choice(legal)
-            die = g._find_die_for_sub(color, sub, dice)
-            if die is None:
-                break
-            g._apply_sub_move(color, sub)
-            seq.append(sub)
-            dice.remove(die)
-            if not dice:
-                break
-        return seq
+        return g.get_random_legal_turn(
+            state['your_color'], state['dice'], state['max_dice_usable'],
+        )
 
 
 MAX_TURNS_PER_GAME = 300
@@ -844,14 +885,37 @@ def play_human_match():
                 state = game.get_state_for_agent(
                     color, dice, in_game, game_num, max_usable, legal_subs,
                 )
-                seq = agents[color].make_move(state, None)
-                ok, msg, hits = game.validate_and_apply_turn(color, dice, seq, max_usable=max_usable)
-                if not ok:
-                    print(f'{color}: invalid ({msg}). Forfeit turn.')
-                else:
-                    print(f'{color} played: {seq}')
-                    if hits:
-                        print(f'{color} hit {hits} blot(s).')
+                agent = agents[color]
+                needs_fallback = False
+                try:
+                    if isinstance(agent, HumanAgent):
+                        seq = agent.make_move(state, None)
+                    else:
+                        signal.signal(signal.SIGALRM, timeout_handler)
+                        signal.alarm(max(1, int(MOVE_TIMEOUT)))
+                        try:
+                            seq = agent.make_move(state, None)
+                        finally:
+                            signal.alarm(0)
+                except MoveTimeoutException:
+                    print(f'{color}: timeout. Playing a random legal turn.')
+                    needs_fallback = True
+                except Exception as e:
+                    print(f'{color}: crash ({str(e)[:80]}). Playing a random legal turn.')
+                    needs_fallback = True
+                if not needs_fallback:
+                    ok, msg, hits = game.validate_and_apply_turn(color, dice, seq, max_usable=max_usable)
+                    if not ok:
+                        print(f'{color}: invalid ({msg}). Playing a random legal turn.')
+                        needs_fallback = True
+                if needs_fallback:
+                    seq = game.get_random_legal_turn(color, dice, max_usable=max_usable)
+                    ok, msg, hits = game.validate_and_apply_turn(color, dice, seq, max_usable=max_usable)
+                    if not ok:
+                        raise RuntimeError(f'Random fallback turn was invalid: {msg}')
+                print(f'{color} played: {seq}')
+                if hits:
+                    print(f'{color} hit {hits} blot(s).')
 
             game.display_board(prefix='')
 
@@ -994,7 +1058,7 @@ def build_game_code(
 def build_human_game_code(
     mode: str, agent_code: str = "", agent_imports: str = ""
 ) -> str:
-    mode_header = f'GAME_MODE = "{mode}"\n'
+    mode_header = f'GAME_MODE = "{mode}"\nMOVE_TIMEOUT = {MOVE_TIME_LIMIT}\n'
     parts = [mode_header]
     if mode == "humanvsagent" and agent_imports:
         parts.append(agent_imports)

@@ -423,7 +423,7 @@ Agents see ONLY their own state. The runner does not replay history — agents t
 
 **Constants (hardcoded):** `MAX_TURNS_PER_GAME = 300`, `POINTS_TO_WIN_MATCH = 5`, `MAX_GAMES_PER_MATCH = 30`. The framework's `NUM_OF_GAMES_IN_A_MATCH` env var is ignored — game count is variable per race.
 
-**Error handling (project deviation):** Crashes, timeouts, AND invalid moves all forfeit the turn — no random fallback. The turn counter still increments. Stats track each failure mode separately (`make_move_crash`, `timeout`, `invalid`).
+**Error handling:** Move crashes, timeouts, and invalid moves are replaced by a random legal turn of exactly `max_dice_usable` sub-moves, using a shared engine planner that backtracks past choices that would leave dice unused. Invalid sequences are rolled back in full before the fallback. The turn counter increments once as usual. Stats track each failure mode separately (`make_move_crash`, `timeout`, `invalid`); hits and dice used include fallback moves. Human modes and the built-in random bot use the same planner. Initialization crashes still forfeit the game (Gammon-equivalent +2 to the opponent).
 
 **Forced-use rule:** Agents must use as many dice as legally possible. The "must play larger die" sub-rule is NOT enforced — if both dice are individually playable but not together, agent picks either.
 

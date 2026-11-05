@@ -121,6 +121,8 @@ The match_stats dictionary for each agent must track the following five keys to 
 
 There is no retry mechanism in anywhere of the game!
 
+For Backgammon (A4), a random valid move is a complete legal turn containing exactly `max_dice_usable` sub-moves. Reject an invalid submitted sequence in full before applying the fallback; never keep a valid prefix or substitute a shorter sequence. Each failure increments only its original error counter, while hits and dice used include the fallback. A turn with no legal moves is a legal pass and does not count as an error.
+
 ### 3.2 Prohibited: Broad Exception Handlers in `make_move()`
 Agent code **must not** wrap the body of `make_move()` in a broad exception handler such as `except Exception`, `except BaseException`, or a bare `except:`. The game engine enforces move time limits via `signal.alarm`, which raises an internal timeout exception. A broad outer catch silently swallows this exception and prevents the engine from enforcing time limits, causing matches to hang. Agents that violate this rule will be flagged by the matchmaker's `--health` check and must be corrected before they can compete. Inform the agents about this rule!
 

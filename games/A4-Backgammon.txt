@@ -89,7 +89,7 @@ If you have any checkers on the bar, you MUST re-enter them before making any ot
 - White entering with die `d`: enters at point `24 - d`.
 - Black entering with die `d`: enters at point `d - 1`.
 
-If neither die's entry point is landable (both blocked), you forfeit the turn.
+If neither die's entry point is landable (both blocked), no move is possible and the turn is skipped. This is a legal pass, not an agent error.
 
 ### Bear-Off Rules
 
@@ -112,7 +112,7 @@ You MUST use as many dice as legally possible.
 - If only some dice can be played, you must play as many as possible.
 - You may NOT skip a playable die.
 
-The engine pre-computes the required sequence length and provides it as `state["max_dice_usable"]`. Your returned sequence MUST have exactly this length. Returning fewer or more sub-moves forfeits the turn.
+The engine pre-computes the required sequence length and provides it as `state["max_dice_usable"]`. Your returned sequence MUST have exactly this length. Returning fewer or more sub-moves is invalid and triggers a random legal fallback turn.
 
 If both dice are individually playable but cannot be played together (only one at a time), `max_dice_usable` will be 1, and you may choose whichever single die you prefer. The standard "must play larger" rule is NOT enforced here.
 
@@ -153,9 +153,9 @@ A match is a "race to 5 in-game points":
 There is NO retry. If your `make_move()`:
 - Crashes with an exception
 - Times out (exceeds the per-move time limit)
-- Returns an invalid sequence (wrong format, illegal sub-move, fewer dice than legally usable)
+- Returns an invalid sequence (wrong format, illegal sub-move, or a length different from `max_dice_usable`)
 
-then your turn is FORFEITED — no moves are applied, but the turn counter still increments. Your only chance to act is the move you return; make it count.
+then the runner records the failure and plays a random legal sequence of exactly `max_dice_usable` sub-moves on your behalf. An invalid sequence is rejected in full, including any initially legal sub-moves; the fallback starts from the position before your turn. The turn counter increments once as usual, and the game continues. Crashes, timeouts, and invalid moves are counted separately in the match statistics. There is no opportunity to revise your move, and the fallback does not follow your strategy.
 
 ## Game Engine Reference
 
@@ -221,7 +221,7 @@ class BackgammonAgent:
                                                        # if you have bar checkers).
               "max_dice_usable": int,                # number of dice you MUST play this turn.
                                                        # Your returned sequence length must equal
-                                                       # this exactly, or your turn is forfeited.
+                                                       # this exactly, or a random legal turn replaces it.
           }
         feedback: always None.
 
@@ -240,7 +240,8 @@ class BackgammonAgent:
         # WARNING: legal_sub_moves only reflects the CURRENT position.
         # After applying one sub-move, the legal moves change. A real
         # agent must simulate state changes to plan a full sequence.
-        # This stub will often forfeit when target > 1.
+        # This stub will often be invalid and trigger a random legal
+        # fallback when target > 1.
         legal = state["legal_sub_moves"]
         if not legal:
             return []
