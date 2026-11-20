@@ -264,4 +264,7 @@ class SurroundMorrisAgent:
     - Draw (Turn Limit or Repetition): Each player receives 0 score.
 
 ## Strict No-File/External-Lookup Rule
-For this task and every follow-up question, use only the information included in this prompt and the conversation. Do not browse the web, invoke tools, or inspect, search, open, read, or access any files, folders, repositories, or other external resources. If something needed is not provided, say that it is unavailable; do not try to retrieve it.
+For this task, you MUST NOT read any of the files in the repo. Take the initial prompt as the only source. Do not even read files like CLAUDE.md or AGENTS.md. Do not read other agent implementations. Nothing!
+
+## Single-Output Rule
+Do not run mock games, and do not judge or revise your agent based on their results. Running tests is prohibited, and doing so will get you eliminated. Instead, reason carefully about the game logic and output your agent code once and for all.
