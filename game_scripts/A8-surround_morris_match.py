@@ -1079,6 +1079,18 @@ def parse_agent_spec(spec: str) -> tuple[str, list[int]]:
     return model_pattern, runs
 
 
+def _assemble_game_code(header: str, agent_imports: str, *body: str) -> str:
+    future_imports = []
+    regular_imports = []
+    for line in agent_imports.splitlines():
+        if line.startswith("from __future__ import "):
+            future_imports.append(line)
+        else:
+            regular_imports.append(line)
+    sections = ["\n".join(future_imports), header, "\n".join(regular_imports), *body]
+    return "\n\n".join(section for section in sections if section)
+
+
 def build_game_code(
     agent1_code: str,
     agent2_code: str,
@@ -1109,28 +1121,25 @@ def build_game_code(
         f'AGENT2_INFO = "{agent2_info}"\n'
     )
 
-    return "\n\n".join([
+    return _assemble_game_code(
         header,
         extra_imports,
         agent1_code,
         agent2_code,
         GAME_ENGINE_CODE,
         MATCH_RUNNER_CODE,
-    ])
+    )
 
 
 def build_human_game_code(
     mode: str, agent_code: str = "", agent_imports: str = ""
 ) -> str:
     mode_header = f'GAME_MODE = "{mode}"\n'
-    parts = [mode_header]
-    if mode == "humanvsagent" and agent_imports:
-        parts.append(agent_imports)
-    if mode == "humanvsagent" and agent_code:
-        parts.append(agent_code)
-    parts.append(GAME_ENGINE_CODE)
-    parts.append(HUMAN_PLAY_CODE)
-    return "\n\n".join(parts)
+    if mode != "humanvsagent":
+        agent_code = agent_imports = ""
+    return _assemble_game_code(
+        mode_header, agent_imports, agent_code, GAME_ENGINE_CODE, HUMAN_PLAY_CODE,
+    )
 
 
 def run_match(

@@ -8,7 +8,9 @@ import io
 import os
 from pathlib import Path
 import random
+import re
 import signal
+import tempfile
 import time
 import unittest
 from unittest.mock import Mock, patch
@@ -25,12 +27,14 @@ def definitions(game_id):
     """Load actual script builders without importing the CLI/API dependencies."""
     path = runner_path(game_id)
     names = {"GAME_CODE_TEMPLATE", "GAME_ENGINE_CODE", "MATCH_RUNNER_CODE",
-             "HUMAN_GAME_CODE", "GAME_TIME_LIMIT", "FORFEIT_SCORE",
+             "HUMAN_GAME_CODE", "HUMAN_PLAY_CODE", "GAME_TIME_LIMIT", "FORFEIT_SCORE",
              "NUM_PLAYERS", "NUM_ROUNDS"}
+    functions = {"_assemble_game_code", "build_game_code", "build_human_game_code",
+                 "load_stored_agent"}
     nodes = [node for node in ast.parse(path.read_text()).body
              if (isinstance(node, ast.Assign)
                  and any(isinstance(t, ast.Name) and t.id in names for t in node.targets))
-             or (isinstance(node, ast.FunctionDef) and node.name == "build_game_code")]
+             or (isinstance(node, ast.FunctionDef) and node.name in functions)]
     ns = {"MOVE_TIME_LIMIT": 1, "NUM_GAMES_PER_MATCH": 1,
           "MAX_TURNS_PER_GAME": 100, "BOARD_SIZE": 8, "SHIPS": [5, 4, 3]}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), "exec"), ns)
@@ -179,6 +183,52 @@ class LieOnceStateTests(unittest.TestCase):
 
 
 class WizardStateTests(unittest.TestCase):
+    def test_named_random_import_survives_agent_loading(self):
+        definitions_ns = definitions("A3")
+        with tempfile.TemporaryDirectory() as directory:
+            agents = Path(directory)
+            model = agents / "test-model"
+            model.mkdir()
+            (model / "A3-Wizard_1.py").write_text(
+                "import random\n"
+                "from random import Random\n\n"
+                "class WizardAgent:\n"
+                "    def __init__(self, name):\n"
+                "        self.rng = Random(42)\n"
+            )
+            definitions_ns.update(AGENTS_DIR=agents, re=re)
+            code, imports = definitions_ns["load_stored_agent"]("test-model", "A3-Wizard", 1, 1)
+
+        source = definitions_ns["build_game_code"]([code], imports, 1, 1, ["test"] * 6)
+        ns = {"__name__": "prompt_alignment_test"}
+        exec(source, ns)
+        self.assertIsInstance(ns["WizardAgent_1"]("Agent-1").rng, random.Random)
+
+    def test_wizard_lead_frees_suit_but_jester_lead_does_not(self):
+        ns = runtime("A3")
+        card = ns["Card"]
+        heart = card("standard", "Hearts", 4)
+        spade = card("standard", "Spades", 10)
+        for lead_type, expected in (("wizard", spade), ("jester", heart)):
+            with self.subTest(lead=lead_type):
+                game = ns["WizardGame"](6)
+                game.current_trick = [(0, card(lead_type)), (1, card("standard", "Hearts", 7))]
+                game.hands[2] = [heart, spade]
+                self.assertEqual(game.validate_and_play(2, spade), expected)
+
+    def test_wizard_flip_uses_the_dealers_hand_and_bidding_starts_after_dealer(self):
+        ns = runtime("A3")
+        game = ns["WizardGame"](6)
+        card = ns["Card"]
+        game.deck[2:4] = [card("standard", "Clubs", 4), card("standard", "Hearts", 14)]
+        game.deck[4:6] = [card("standard", "Spades", 13), card("standard", "Spades", 14)]
+        game.deck[12] = card("wizard")
+        with patch("random.shuffle"):
+            game.start_round(2)
+        self.assertEqual(game.trump_suit, "Hearts")
+        self.assertEqual(game.get_game_state(2, "bid")["turn_order"], [2, 3, 4, 5, 0, 1])
+        self.assertEqual(game.current_player, 2)
+
     def test_boolean_bids_use_fallback_but_integer_bids_remain_legal(self):
         for bid in (False, True, 0, 1):
             with self.subTest(bid=bid):
@@ -213,15 +263,15 @@ class WizardStateTests(unittest.TestCase):
         game.current_trick = [(i, ns["Card"]("jester")) for i in range(6)]
         game.finish_trick()
         game.start_round(2)
-        bidding = game.get_game_state(1, "bid")
+        bidding = game.get_game_state(2, "bid")
         self.assertEqual(bidding["current_trick"], [])
         self.assertIsNone(bidding["trick_leader"])
         self.assertEqual(bidding["played_tricks"], [])
         game.start_trick()
-        game.validate_and_play(1, game.hands[1][0])
-        playing = game.get_game_state(2, "play")
-        self.assertEqual(playing["trick_leader"], 1)
-        self.assertEqual(playing["current_trick"][0][0], 1)
+        game.validate_and_play(2, game.hands[2][0])
+        playing = game.get_game_state(3, "play")
+        self.assertEqual(playing["trick_leader"], 2)
+        self.assertEqual(playing["current_trick"][0][0], 2)
 
 
 class BackgammonValidationTests(unittest.TestCase):
@@ -379,6 +429,19 @@ class WordMatrixTests(unittest.TestCase):
 
 
 class MorrisTests(unittest.TestCase):
+    def test_agent_future_import_is_valid_in_match_and_human_scripts(self):
+        ns = definitions("A8")
+        imports = "import random\nfrom __future__ import annotations"
+        agent = "class SurroundMorrisAgent_1:\n    def move(self) -> Move:\n        pass\n"
+        sources = (
+            ns["build_game_code"](agent, "", imports, 1, 1, 200, "test-1", "test-2"),
+            ns["build_human_game_code"]("humanvsagent", agent, imports),
+        )
+        for source in sources:
+            script_ns = {"__name__": "prompt_alignment_test"}
+            exec(source, script_ns)
+            self.assertEqual(script_ns["SurroundMorrisAgent_1"].move.__annotations__["return"], "Move")
+
     def test_turn_cap_is_independent_of_word_matrix_configuration(self):
         path = runner_path("A8")
         nodes = [node for node in ast.parse(path.read_text()).body

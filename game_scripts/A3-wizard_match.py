@@ -144,6 +144,8 @@ class WizardGame:
         self.tricks_won = [0] * self.num_players
         self.played_tricks = []
 
+        dealer = (round_num - 1) % self.num_players
+        self.round_start_player = (dealer + 1) % self.num_players
         random.shuffle(self.deck)
         self.hands = [[] for _ in range(self.num_players)]
 
@@ -157,7 +159,7 @@ class WizardGame:
         if total_dealt < len(self.deck):
             trump_card = self.deck[total_dealt]
             if trump_card.card_type == "wizard":
-                self.trump_suit = random.choice(self.SUITS)
+                self.trump_suit = self._choose_trump_for_dealer(dealer)
             elif trump_card.card_type == "jester":
                 self.trump_suit = None
             else:
@@ -165,10 +167,20 @@ class WizardGame:
         else:
             self.trump_suit = None
 
-        self.round_start_player = (round_num - 1) % self.num_players
         self.current_player = self.round_start_player
         self.current_trick = []
         self.trick_leader = self.round_start_player
+
+    def _choose_trump_for_dealer(self, dealer):
+        # The saved agents' interface only defines "bid" and "play".
+        # Choose on the dealer's behalf by suit length, then total rank.
+        ranks_by_suit = {suit: [] for suit in self.SUITS}
+        for card in self.hands[dealer]:
+            if card.card_type == "standard":
+                ranks_by_suit[card.suit].append(card.rank)
+        strengths = {suit: (len(ranks), sum(ranks)) for suit, ranks in ranks_by_suit.items()}
+        best = max(strengths.values())
+        return random.choice([suit for suit, strength in strengths.items() if strength == best])
 
     def record_bid(self, player_idx, bid):
         self.bids[player_idx] = bid
@@ -195,6 +207,8 @@ class WizardGame:
         }
 
     def _get_led_suit(self):
+        if self.current_trick and self.current_trick[0][1].card_type == "wizard":
+            return None
         for _, card in self.current_trick:
             if card.card_type == "standard":
                 return card.suit
@@ -765,9 +779,8 @@ def load_stored_agent(
         if stripped.startswith("class WizardAgent"):
             class_start_idx = i
             break
-        if stripped.startswith("import ") or stripped.startswith("from "):
-            if "random" not in stripped:
-                imports.append(stripped)
+        if stripped.startswith(("import ", "from ")) and stripped != "import random":
+            imports.append(stripped)
 
     if class_start_idx is None:
         logger.error("No WizardAgent class found in %s", agent_file)
