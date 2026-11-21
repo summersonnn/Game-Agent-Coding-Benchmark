@@ -33,7 +33,7 @@ Once both players have set their ships, the bombing phase begins.
 
 # BOMBING PHASE
 
-The maximum number of moves in a match is equal to the area of the game board multiplied by 2 (e.g., for an 8x8 board, the limit is 128 moves). If the match does not end within this limit, it results in a draw.
+The maximum number of bombing moves in a game is equal to the area of the game board multiplied by 2 (e.g., for an 8x8 board, the limit is 128 moves). If the game does not end within this limit, it results in a draw.
 
 **Move Performance:**
 Efficient decision-making is critical. If an agent takes too long to respond during any phase (placement or bombing), a random fallback action will be executed as a penalty to ensure the match continues.
@@ -113,7 +113,6 @@ from collections import deque
 # --- Game Configuration ---
 BOARD_SIZE = 8
 SHIPS = [5, 4, 3]
-NUM_GAMES = 5
 # --- Board Representations ---
 EMPTY = 'O'
 SHIP = 'S'

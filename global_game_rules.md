@@ -1,7 +1,7 @@
 # Competitive LLM Agents: Global Game Script Standards
 
 **Version:** 1.0  
-**Last Updated:** 2026-02-10
+**Last Updated:** 2026-11-21
 
 This document defines the **mandatory** standards for all game match runner scripts (e.g., `A1-battleship_match.py`, `A8-surround_morris_match.py`). Adhering to these rules ensures compatibility with the central matchmaker, scoreboard system, and analysis tools.
 
@@ -9,12 +9,18 @@ This document defines the **mandatory** standards for all game match runner scri
 
 ## 1. Scoring & Game Outcome
 
-All games must use a standardized 3-point system for match results and a separate "score" for tie-breaking.
+Two-player games use a standardized 3-point system and a separate score for
+tie-breaking. Wizard uses six-player placement points instead. Backgammon
+awards league points for the complete race to five in-game points.
 
 ### 1.1 Match Points (Primary Metric)
 *   **Win:** 3 points
 *   **Draw:** 1 point
 *   **Loss:** 0 points
+
+**Wizard exception:** Each full ten-round game awards 5/4/3/2/1/0 placement
+points. Ties share the points for the tied positions. Qualifiers select one
+agent per model; only main-event matches update the Wizard scoreboard.
 
 ### 1.2 Tie-Breaker Score (Secondary Metric)
 *   A granular score reflecting performance (e.g., remaining ships, pieces on board).
@@ -25,7 +31,10 @@ All games must use a standardized 3-point system for match results and a separat
 *   If an agent crashes (not in make_move) and thus forfeits the game, the winner will get max possible score (e.g., +12). And the loser (crashing agent) will get min possible score (e.g., -12). If there are no such max and min scores for the game in the game logic (meaning that the score is not bounded by any number), they will get fixed scores of +12 and -12 respectively.
 
 ### 1.3 Standard Output Format
-The match runner **must** print the following lines to `stdout` at the end of execution. The matchmaker parses these exact keys.
+The embedded two-player match runner prints the following lines to `stdout`
+at the end of execution. Its outer runner parses them for statistics and
+scoreboard updates. Wizard emits six-agent result and score lines plus
+placement statistics, without the two-player `WINS` and `DRAWS` lines.
 
 ```text
 RESULT:Agent-1=<match_points_float>,Agent-2=<match_points_float>
@@ -46,11 +55,14 @@ DRAWS:0
 ```
 
 ### 1.4 Standardized Forfeit Handling
-If a game is terminated due to an other_crash (initialization failure):
+For two-player games terminated by an initialization failure:
 *   Set the crashing agent's Match Points for that game to 0. (same as doing nothing)
 *   Set the opponent's Match Points to 3.
 *   Assign the Tie-Breaker Score: -12 for the crasher, +12 for the winner (or max/min game-specific bounds).
 *   Increment other_crash for the crashing agent.
+
+Wizard records an initialization failure in `other_crash`, substitutes a
+random fallback agent, and continues the game.
 
 ---
 
@@ -60,21 +72,40 @@ All scripts must respect the following configuration parameters, which should be
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `NUM_OF_GAMES_IN_A_MATCH` | `100` | Number of games to play in a single match execution. |
+| `A1_GAMES_PER_MATCH` | `20` | Battleship games per match. |
+| `A2_GAMES_PER_MATCH` | `50` | LieOnce games per match. |
+| `A3_GAMES_PER_MATCH` | `24` | Wizard games per directly invoked match. |
+| `A3_QUALIFIER_GAMES_PER_MATCH` | `402` | Wizard qualifier games per six-player table. |
+| `A3_MAIN_EVENT_GAMES_PER_MATCH` | `6` | Wizard main-event games per six-player table. |
+| `A4_MAX_GAMES_PER_MATCH` | `30` | Backgammon game cap for a race to five points. |
+| `A5_GAMES_PER_MATCH` | `10` | Connect4 games per match. |
+| `A6_GAMES_PER_MATCH` | `10` | Word Matrix games per match. |
+| `A7_GAMES_PER_MATCH` | `12` | Mancala games per match. |
+| `A8_GAMES_PER_MATCH` | `20` | Surround Morris games per match. |
 | `MOVE_TIME_LIMIT` | `1.0` | Maximum time (seconds) allowed for an agent to return a move. |
 | `MAX_TURNS_PER_GAME` | `100` | Word Matrix turn cap. |
 | `A8_MAX_TURNS_PER_GAME` | `200` | Surround Morris movement turn cap; independent of Word Matrix. |
 
 **Time limits (not environment variables):** every runner hardcodes `GAME_TIME_LIMIT`, the maximum time for one game, as a multiple of `MOVE_TIME_LIMIT`. It is checked before every move, includes agent setup, and a game that reaches it ends as a draw. The match limit is derived as `MATCH_TIME_LIMIT = GAME_TIME_LIMIT × games in the match`; the runner hard-kills the match subprocess at `MATCH_TIME_LIMIT` + 60s (only an agent hung inside a move can cause that). The matchmaker does not enforce any timeout. Per-game values and how they were calibrated: CLAUDE.md, "Game Time Limits".
 
-Note that "match" means two agents playing against eachother such as mistral:1 vs opus:1
-A "game" is a single unit of game between them. A match usually has many games in it.
+A match is one runner invocation with fixed participants: two agents in a
+two-player game, or six in Wizard. A game is one complete play-through; a
+Wizard game includes all ten card rounds. A match can contain many games.
+
+Fixed-count two-player defaults are even for seat balance; Wizard defaults
+are multiples of six for its seat rotation. They account for draw potential, randomness, and
+opening coverage rather than game simplicity alone; see README.md for the
+sampling rationale. Mancala samples openings with replacement in shared,
+seat-swapped pairs. Repeating fixed deterministic games does not add new
+evidence. The two-player matchmaker repeats each pairing eight times by
+default; Backgammon repeats races rather than using its cap as a fixed count.
 
 **Implementation Standard:**
-The script must prioritize values found in the environment. If the variables are missing or invalid, it must gracefully fall back to the default values. You may use any internal variable name that is clear and maintainable.
+The script must prioritize values found in the environment. Missing, invalid, or non-positive game counts must fall back to that game's default. Match counts are independent: do not derive one game's count by dividing a shared base count. You may use any internal variable name that is clear and maintainable.
 
 ```python
 from dotenv import load_dotenv
+from game_config import games_per_match
 import os
 
 # Load variables from .env file if it exists
@@ -82,7 +113,7 @@ load_dotenv()
 
 # Robustly loading the configuration.
 # These are the true values that are being used in the match runner.
-NUM_GAMES = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", 100))
+NUM_GAMES = games_per_match("A5")  # A5_GAMES_PER_MATCH, default 10
 MOVE_TIMEOUT = float(os.getenv("MOVE_TIME_LIMIT", 1.0))
 
 # Hardcoded per game (seconds per game at the default 1s move limit):
@@ -116,7 +147,8 @@ The match_stats dictionary for each agent must track the following five keys to 
 *   `make_move_crash`: Any exception raised inside the agent's make_move() function.
 *   `other_crash`: Any exception raised during initialization (__init__) or other non-move methods.
 *   `timeout`: Moves exceeding `MOVE_TIME_LIMIT`.
-*   `invalid`: Formatting errors, illegal moves, or failing to provide a valid move after max retries.
+*   `invalid`: Formatting errors or illegal moves.
+*   `crash`: Sum of `make_move_crash` and `other_crash`.
 
 | Failure Type         | Consequence                                           | Stat to Increment |
 | -------------------- | ----------------------------------------------------- | ----------------- |
@@ -125,7 +157,14 @@ The match_stats dictionary for each agent must track the following five keys to 
 | Move Timeout         | Generate a random valid move; game continues.         | timeout           |
 | Invalid Move         | Generate a random valid move; game continues.         | invalid           |
 
-There is no retry mechanism in anywhere of the game!
+Agents get one attempt per move. The table above describes the usual fallback;
+game-specific exceptions are:
+
+- LieOnce: failed guesses lose a turn; failed number selection or responses
+  forfeit the game, as specified in its prompt.
+- WordMatrix: move failures apply a -10 penalty, leave the board unchanged,
+  and count as a pass.
+- Wizard: an initialization failure substitutes a random fallback agent.
 
 For Backgammon (A4), a random valid move is a complete legal turn containing exactly `max_dice_usable` sub-moves. Reject an invalid submitted sequence in full before applying the fallback; never keep a valid prefix or substitute a shorter sequence. Each failure increments only its original error counter, while hits and dice used include the fallback. A turn with no legal moves is a legal pass and does not count as an error.
 
@@ -189,7 +228,7 @@ finally:
 
 Update the global scoreboard **once per match** (after all games in the match are done), not after every single game.
 
-*   **Library:** Use `utils.scoreboard.update_scoreboard`.
+*   **Library:** Use `utils.scoreboard.update_scoreboard` for two-player games and `update_scoreboard_6p` for Wizard.
 *   **Agent Key:** Use the format `{model_folder}:{run_id}`.
 *   **Path:** defined in the script header (e.g., `scoreboard/A1-scoreboard.txt`).
 
@@ -211,7 +250,9 @@ update_scoreboard(
 
 ## 7. Agent Loading & Execution
 
-Match runners follow a standardized modular pattern for loading agents and assembling the final executable game script.
+Match runners load saved agent source and assemble a standalone executable
+script. Their template layout varies: A1 uses a formatted game template;
+other runners split engine, match, and/or human-play code into string blocks.
 
 ### 7.1 Standardized Agent Extraction (`load_stored_agent`)
 To ensure isolation and compatibility with renaming, agents are not loaded via standard Python imports. Instead, a `load_stored_agent` utility function is used to:
@@ -220,22 +261,26 @@ To ensure isolation and compatibility with renaming, agents are not loaded via s
 3.  Discard any top-level executable code, `if __name__ == "__main__":` blocks, or initialization logic that relies on the local environment.
 
 ### 7.2 Standardized Script Assembly (`build_game_code`)
-Every match runner must use a `build_game_code` function to assemble the temporary execution script. This function combines five distinct string components:
+Each runner uses `build_game_code` to assemble its temporary execution script.
+A common layout combines these components:
 1.  **`GAME_ENGINE_CODE`**: The core logic of the game (shared with the human mode code).
 2.  **`extra_imports`**: Combined and deduplicated imports from both agents.
 3.  **`Agent-1 Code`** and **`Agent-2 Code`**: The extracted and renamed agent classes.
 4.  **`MATCH_RUNNER_CODE`**: The script block that instantiates the agents and runs the loops/rounds defined by `NUM_GAMES_PER_MATCH`.
 
-This separation ensures that game logic is never duplicated and that agent code is strictly isolated from the match management logic.
+The exact blocks differ by runner. Some human-play modes contain separate
+reference engine code, so inspect both paths when changing game rules.
 
 ---
 
 ## 8. Human Play Modes
 
-Scripts must support interactive modes for testing.
-*   `--humanvsbot`: Human vs Random Bot.
-*   `--humanvshuman`: Hotseat multiplayer.
-*   `--humanvsagent`: Human vs Stored Agent (requires 1 agent arg).
+Available human-play flags depend on the game:
+
+- A1, A3, A4, A6, A7, A8: `--humanvsbot`, `--humanvshuman`, and
+  `--humanvsagent` (with one stored `--agent` spec).
+- A2: `--humanvsbot`.
+- A5: `--human` for human versus random bot.
 
 Standardized Board Visualization for Humans: To maintain a consistent experience across different games (Battleship, Mancala, Morris), runners should implement a print_state() method for human modes that uses a standard coordinate system (e.g., $(0,0)$ at the top-left).
 
@@ -257,7 +302,11 @@ This is how to determine the name of the log file explicitly:
 
 Logs should be directly placed in the RESULTS_DIR. There is no intermediate folder after it.
 
-Each log records information for a single match, though it may contain multiple games within that match. However, only one match is represented per log. So, if the matchmaker runs two matches—such as mistral vs. opus—the number of log files will correspond to the number of agents involved. For example, if there are two agents, one log file will be generated for mistral:1 vs. opus:1 and another for mistral:2 vs. opus:2.
+Each log records a single match and may contain multiple games. There is one
+log per match execution. For example, the two-player matchmaker schedules all
+four cross-model run pairings for two models with two agents each, then
+repeats those pairings according to `--same_opponent_match`. Direct match
+runners pair the two supplied run lists by position.
 
 
 ## 10. Metadata Injection (Agent Renaming)
@@ -269,7 +318,9 @@ Imports: Duplicate imports must be merged and deduplicated before being placed i
 
 
 ## 11. Per-Game Log Format
-Every game match runner must print the final board position in the logs of each game. The standardized per-game log block format is:
+Board-game runners print the final board position in each game's log. The
+two-player board-game block format is shown below. LieOnce logs guesses and
+responses; Wizard logs rounds, tricks, and rankings instead of a board.
 
 ```text
 ============================================================
@@ -306,116 +357,32 @@ Agent-2: -5
 | **Cleanup**  | Raw subprocess stdout should be processed in memory **or** stored in a `.tmp` file and deleted after the filtered log is written. |
 
 ## 13. Log Examples
-These examples demonstrate how the standardized headers, separators, and machine-readable tags are implemented in practice.
 
-### A1 Battleship Example
+These are illustrative format examples. `MODEL_A` through `MODEL_F` are
+placeholders, not recorded participants or benchmark results.
+
+### Two-player match summary
+
 ```text
 Match Contenders:
-qwen-qwen3-max-thinking:1
-google-gemini-3-pro-preview:1
+MODEL_A:1
+MODEL_B:1
 
-Result:
-qwen-qwen3-max-thinking:1 : Pts: 93 - Score: -239.0
-google-gemini-3-pro-preview:1 : Pts: 207 - Score: 239.0
-
-============================================================
-Game 1
-Agent-1: qwen-qwen3-max-thinking
-Agent-2: google-gemini-3-pro-preview
-------------------------------------------------------------
-Final Position:
-BOARD: qwen-qwen3-max-thinking Ships:
-BOARD:    0 1 2 3 4 5 6 7
-BOARD: 0  O O O O O O O O
-...
-BOARD: 7  O O O O O O O O
-
-BOARD: google-gemini-3-pro-preview Ships:
-BOARD:    0 1 2 3 4 5 6 7
-...
-----------------------------------------
-Final Result: qwen-qwen3-max-thinking wins by Elimination.
-----------------------------------------
-Points:
-Agent-1: 3
-Agent-2: 0
-----------------------------------------
-Scores:
-Agent-1: 2
-Agent-2: -2
-============================================================
-============================================================
-Agent-1: qwen-qwen3-max-thinking
-Agent-2: google-gemini-3-pro-preview
-RESULT:Agent-1=93.0,Agent-2=207.0
-SCORE:Agent-1=-239.0,Agent-2=239.0
-WINS:Agent-1=31,Agent-2=69
+RESULT:Agent-1=3.0,Agent-2=0.0
+SCORE:Agent-1=12.0,Agent-2=-12.0
+WINS:Agent-1=1,Agent-2=0
 DRAWS:0
-STATS:Agent-1={'wins': 31, 'losses': 69, 'draws': 0, 'points': 93, 'score': -239.0, 'make_move_crash': 0, 'other_crash': 0, 'crash': 0, 'timeout': 0, 'invalid': 0}
-STATS:Agent-2={'wins': 69, 'losses': 31, 'draws': 0, 'points': 207, 'score': 239.0, 'make_move_crash': 0, 'other_crash': 0, 'crash': 0, 'timeout': 0, 'invalid': 0}
-
---- MATCH STATISTICS ---
-Agent-1 make_move_crash: 0
-Agent-2 make_move_crash: 0
-Agent-1 other_crash: 0
-Agent-2 other_crash: 0
-Agent-1 crash (total): 0
-Agent-2 crash (total): 0
-Agent-1 Timeouts: 0
-Agent-2 Timeouts: 0
-Agent-1 Invalid: 0
-Agent-2 Invalid: 0
-
-------------------------------------------------------------
 ```
 
-### A8 Surround Morris Example
+### Wizard match summary
+
+Wizard emits six entries in its result and score lines, followed by per-agent
+placement and error statistics. A three-way tie or other tied placement can
+produce fractional placement points.
+
 ```text
-Match Contenders:
-anthropic-claude-opus-4.6:1
-google-gemini-3-pro-preview:1
-
-Result:
-anthropic-claude-opus-4.6:1 : Pts: 5 - Score: 6.0
-google-gemini-3-pro-preview:1 : Pts: 2 - Score: -6.0
-
-============================================================
-Game 1
-Agent-1: anthropic-claude-opus-4.6:1 (W)
-Agent-2: google-gemini-3-pro-preview:1 (B)
-------------------------------------------------------------
-
-Final Position:
-BOARD:  .----------B----------.
-BOARD:  |           |           |
-...
-BOARD:  .----------B----------B
-Pieces: B=7 W=4
-----
-Final Result: Draw by Repetition
-----------------------------------------
-Points:
-Agent-1: 1
-Agent-2: 1
-----------------------------------------
-Scores:
-Agent-1: 0
-Agent-2: 0
-============================================================
-============================================================
-Agent-1: anthropic-claude-opus-4.6:1
-Agent-2: google-gemini-3-pro-preview:1
-RESULT:Agent-1=5,Agent-2=2
-SCORE:Agent-1=6.0,Agent-2=-6.0
-WINS:Agent-1=1,Agent-2=0
-DRAWS:2
-STATS:Agent-1={...},Agent-2={...}
-
---- MATCH STATISTICS ---
-Agent-1 make_move_crash: 0
-Agent-2 make_move_crash: 0
-...
-------------------------------------------------------------
+RESULT:Agent-1=5.0,Agent-2=4.0,Agent-3=3.0,Agent-4=2.0,Agent-5=1.0,Agent-6=0.0
+SCORE:Agent-1=100.0,Agent-2=80.0,Agent-3=60.0,Agent-4=40.0,Agent-5=20.0,Agent-6=0.0
 ```
 
 ---
@@ -428,4 +395,3 @@ To ensure agents are portable and compatible with the dynamic extraction process
 *   **Zero Structural Dependency:** Code must not make assumptions regarding the project's file or directory hierarchy.
 *   **Single Class Implementation:** Models must not implement any other class than the class present in the given code piece.
 *   **Class-Only Focus:** The agent file should be restricted to the agent class definition and its necessary standard library imports. The runner extracts the class text for isolated execution.
-

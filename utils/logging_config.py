@@ -12,12 +12,12 @@ def setup_logging(name: str | None = None) -> logging.Logger:
     Set up and return a logger with standard formatting.
     
     Args:
-        name: Logger name. Defaults to "battleship-match" if None.
+        name: Logger name. Defaults to "competitive-llm-agents" if None.
         
     Returns:
         Configured logger instance.
     """
-    logger = logging.getLogger(name or "battleship-match")
+    logger = logging.getLogger(name or "competitive-llm-agents")
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
         formatter = logging.Formatter(

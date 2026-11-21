@@ -1,8 +1,9 @@
 """
-This script parses game logs to aggregate failure statistics across agents.
-It reads through all text logs for a specified game, extracting 'timeout', 
+This script parses two-player game logs to aggregate failure statistics.
+It reads through all text logs for a specified game, extracting 'timeout',
 'invalid', 'make_move_crash', and 'crash' counts for each agent, and prints 
 the sorted aggregated results, skipping any agents with zero occurrences.
+It reads Agent-1 and Agent-2; it does not aggregate all six Wizard players.
 
 Usage examples:
     uv run utils/find_timeouts.py --game battleship

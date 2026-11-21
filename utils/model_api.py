@@ -27,7 +27,8 @@ class ModelAPI:
         
         Args:
             env_path: Optional path to the .env file.
-            models_path: Path to the models.txt file.
+            models_path: Path to model names, one per line. Names are sent to
+                the configured API endpoint unchanged.
         """
         # Load environment variables from .env file
         load_dotenv(dotenv_path=env_path)
@@ -133,10 +134,6 @@ class ModelAPI:
             **kwargs
         )
 
-        # Simplified handling for non-streaming response
-        # The response object is directly compatible with what main.py expects
-        # We just need to attach our custom 'reasoning_details' attribute to the message
-        
         choice = response.choices[0]
         message = choice.message
         
@@ -147,19 +144,8 @@ class ModelAPI:
         elif hasattr(message, "reasoning_content"):
              reasoning_text = message.reasoning_content
              
-        # Monkey-patch the message object to include reasoning_details
-        # Use setattr to avoid type checking issues or read-only errors if it's a Pydantic model
-        # But ChatCompletionMessage is usually Pydantic. Safer to just return the response
-        # and letting the caller handle it, BUT main.py expects `message.reasoning_details`.
-        # Since response objects might be immutable, let's wrap or modify carefully.
-        # Actually, main.py expects:
-        # response.choices[0].message.content
-        # response.choices[0].message.reasoning_details
-        
-        # Let's create a SimpleNamespace wrapper if needed, or just set the attribute if allowed.
-        # OpenRouter/OpenAI Pydantic models might effectively be immutable.
-        # Safer approach: Create the mock structure we used before, but populated from the full response.
-        
+        # Return the compact response consumed by populate_agents.prompt_model,
+        # including a consistent reasoning_details field across providers.
         content = message.content
         usage = response.usage
         

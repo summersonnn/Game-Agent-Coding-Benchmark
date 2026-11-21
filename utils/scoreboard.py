@@ -3,7 +3,8 @@ Global scoreboard persistence for cross-match score accumulation.
 
 Reads/writes pipe-delimited scoreboard files with file-level locking
 (fcntl.flock) for safe concurrent access from parallel match runners.
-Supports both 2-player (7-column) and 6-player (10-column) formats.
+Supports current 2-player (7-column) and Wizard (10-column) formats,
+with legacy 6-column rows accepted by the 2-player updater.
 """
 
 import fcntl

@@ -100,6 +100,7 @@ When a move is valid, the game calculates which cells are cleared:
 The game ends when:
 1.  **No Valid Moves:** No two adjacent non-empty cells exist on the board.
 2.  **6 Consecutive Passes:** If players (combined) generate 6 PASS results (or invalid/crash/timeout events) in a row. This doesn't mean it's a draw. Player with the higher score still wins.
+3.  **Turn Cap:** The configured `MAX_TURNS_PER_GAME` limit (default 100) is reached. The player with the higher score wins; equal scores are a draw.
 
 ---
 
@@ -154,6 +155,7 @@ class WordMatrixAgent:
         # Example Implementation:
         # return ([(0,0), (0,1), (0,2)], "coat")
         return "PASS"
+```
 
 ### Agent Coding Requirements
 - **No Internal Imports**: Do not import any game engine files, match runners, or project-specific modules. Use only standard library imports.

@@ -1,7 +1,7 @@
 [project]
-name = "kubis-benchmark"
+name = "competitive-llm-agents"
 version = "0.1.0"
-description = "Add your description here"
+description = "Benchmark generated LLM agents across competitive games."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

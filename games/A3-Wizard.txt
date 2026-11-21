@@ -29,12 +29,12 @@ Each round has three phases:
 After dealing, the top card of the remaining deck is revealed:
 - If it's a **standard card**: That suit becomes trump for this round
 - If it's a **Jester**: No trump suit this round (only Wizards are trump)
-- If it's a **Wizard**: The dealer chooses the trump suit
+- If it's a **Wizard**: The engine chooses a trump suit uniformly at random
 - If there are **no cards left** after dealing: No trump suit this round
 
 ## Bidding Phase
 
-The dealer rotates one seat clockwise each round: in round 1 the dealer is seat 0, in round 2 seat 1, and so on (modulo 6). Bidding starts with the player immediately after the dealer and proceeds clockwise, so the dealer bids last.
+The first bidder rotates one seat clockwise each round: round 1 starts at seat 0, round 2 at seat 1, and so on (modulo 6). Bidding proceeds clockwise. The last bidder is the dealer for the hook rule: seat 5 in round 1, seat 0 in round 2, and so on.
 
 The `turn_order` field in the game state gives the exact seat sequence for the current round (e.g. `[2, 3, 4, 5, 0, 1]` means seat 2 bids first, seat 1 bids last). You can use this to know your position in the bidding order.
 
@@ -64,15 +64,13 @@ Players take turns playing one card per trick. The player who played the highest
 
 **Following Suit Rules** (CRITICAL - READ CAREFULLY):
 
-1. **If the first card played is a Wizard**:
-   - No suit requirement - all players may play any card
-   
-2. **If the first card played is a Jester**:
-   - The first **standard card** played determines the suit that must be followed
-   - If all cards are Jesters, no suit requirement
-   
-3. **If the first card is a standard card**:
-   - That card's suit must be followed if possible
+1. **Before any standard card has been played**:
+   - There is no suit requirement; players may play any card.
+   - This applies while the trick contains only Wizards and/or Jesters.
+
+2. **Once the first standard card is played**:
+   - Its suit must be followed if possible by subsequent players.
+   - This engine applies that rule even if a Wizard was played earlier in the trick.
    - **MUST FOLLOW SUIT**: If you have any standard cards in that suit, you must play one
    - **Wizards and Jesters can ALWAYS be played** regardless of your hand
    - If you have no cards in the led suit (and no Wizards/Jesters), you may play any card
@@ -80,7 +78,7 @@ Players take turns playing one card per trick. The player who played the highest
 **LEGAL PLAYS**:
 - If suit was led and you have cards in that suit: Must play a card in that suit OR a Wizard/Jester
 - If suit was led and you have NO cards in that suit: May play any card
-- If no suit requirement (first card is Wizard or all Jesters): May play any card
+- If no standard card has been played yet: May play any card
 
 **ILLEGAL PLAYS** (will be replaced with random valid card):
 - Playing an off-suit standard card when you have cards in the led suit
@@ -199,7 +197,7 @@ class WizardAgent:
                 "tricks_won": [int, ...] (length 6, tricks won by each player this round),
                 "scores": [int, ...] (length 6, total scores across all rounds),
                 "round_start_player": int (seat index of the first bidder this round),
-                "turn_order": [int, ...] (length 6, seat indices in bid/play order for this round),
+                "turn_order": [int, ...] (length 6, seat indices in bidding order; trick play starts at the trick leader),
                 "played_tricks": [{"winner": int, "cards": [(player_idx, Card), ...]}, ...] (completed tricks this round, in order),
             }
         

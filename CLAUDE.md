@@ -19,19 +19,19 @@ utils/            # Core logic - API client, agent generation, scoreboard
 **Agent Generation:**
 ```bash
 uv run utils/populate_agents.py --all                           # All models, all games
-uv run utils/populate_agents.py --model mistral gpt             # Specific models
+uv run utils/populate_agents.py --model Terra Opus             # Specific models
 uv run utils/populate_agents.py --game A1,A5 --runs 3           # Specific games
 ```
 
 **Running Individual Matches:**
 ```bash
-uv run game_scripts/A1-battleship_match.py --agent model1:1 model2:1
-uv run game_scripts/A2-lie_once_match.py --agent model1:1 model2:1
-uv run game_scripts/A4-backgammon_match.py --agent model1:1 model2:1
-uv run game_scripts/A5-connect4_match.py --agent model1:1 model2:1
-uv run game_scripts/A6-word_matrix_match.py --agent model1:1 model2:1
-uv run game_scripts/A7-mancala_match.py --agent model1:1 model2:1
-uv run game_scripts/A8-surround_morris_match.py --agent model1:1 model2:1
+uv run game_scripts/A1-battleship_match.py --agent Terra:1 Opus:1
+uv run game_scripts/A2-lie_once_match.py --agent Terra:1 Opus:1
+uv run game_scripts/A4-backgammon_match.py --agent Terra:1 Opus:1
+uv run game_scripts/A5-connect4_match.py --agent Terra:1 Opus:1
+uv run game_scripts/A6-word_matrix_match.py --agent Terra:1 Opus:1
+uv run game_scripts/A7-mancala_match.py --agent Terra:1 Opus:1
+uv run game_scripts/A8-surround_morris_match.py --agent Terra:1 Opus:1
 ```
 
 > Individual match runners also accept `--update-scoreboard` to persist results to the scoreboard file. Omit it for ad-hoc test matches; the matchmaker appends it automatically for tournament runs.
@@ -40,8 +40,8 @@ uv run game_scripts/A8-surround_morris_match.py --agent model1:1 model2:1
 ```bash
 uv run game_scripts/matchmaker.py --game A8 --same_opponent_match 4
 uv run game_scripts/matchmaker.py --game A8 --dry-run
-uv run game_scripts/matchmaker.py --game A8 --new-model new-model-folder --health
-uv run game_scripts/matchmaker.py --game A8 --mini --agent GPT-6.1-Sol-Ultra:1 GPT-6.1-Sol-Ultra:2 Gemini-4-Argon-High:1 Gemini-4-Argon-High:2 Opus-5.5-Max:1 Opus-5.5-Max:2 --same_opponent_match 4
+uv run game_scripts/matchmaker.py --game A8 --new-model GPT-6.2-Astra-Extrahigh --health
+uv run game_scripts/matchmaker.py --game A8 --mini --agent GPT-6.1-Terra-Extrahigh:1 GPT-6.1-Terra-Extrahigh:2 Gemini-Hydrogen-Extrahigh:1 Gemini-Hydrogen-Extrahigh:2 Opus-5.5-Max:1 Opus-5.5-Max:2 --same_opponent_match 4
 uv run game_scripts/matchmaker.py --game A8 --mini --agent Opus-5.5-Max   # all runs of one model
 ```
 
@@ -49,8 +49,8 @@ uv run game_scripts/matchmaker.py --game A8 --mini --agent Opus-5.5-Max   # all 
 
 **Agent Enhancement:**
 ```bash
-uv run utils/try_enhancing_agents.py --model mistral --game A5        # Single model, single game
-uv run utils/try_enhancing_agents.py --model mistral minimax --game A1,A5  # Multiple
+uv run utils/try_enhancing_agents.py --model Terra --game A5        # Single model, single game
+uv run utils/try_enhancing_agents.py --model Terra Opus --game A1,A5  # Multiple
 uv run utils/try_enhancing_agents.py --model all --game all           # All 2-player combos
 ```
 
@@ -59,6 +59,7 @@ uv run utils/try_enhancing_agents.py --model all --game all           # All 2-pl
 | File | Purpose |
 |------|---------|
 | `utils/model_api.py` | Async OpenRouter API client |
+| `utils/game_config.py` | Independent per-game match counts and Wizard phase settings |
 | `utils/populate_agents.py` | LLM-based agent code generation |
 | `utils/try_enhancing_agents.py` | Agent quality improvement via same-model benchmarking |
 | `game_scripts/*_match.py` | Game-specific match orchestrators |
@@ -76,10 +77,17 @@ uv run utils/try_enhancing_agents.py --model all --game all           # All 2-pl
 - `MODEL_TEMPERATURE` - Sampling temperature (0.7)
 - `MODEL_API_TIMEOUT` - Per-request timeout for OpenRouter API calls in seconds (600)
 - `MAX_WORKERS` - Concurrency limit for agent generation (default 16)
-- `NUM_RUNS` - Default agent runs per model/game (default 4)
-- `NUM_OF_GAMES_IN_A_MATCH` - Games per match pairing (default 100; A5–A8 divide it by 10, see [Matchmaker](#matchmaker-tournament-scheduler))
+- `NUM_RUNS` - Default agent runs per model/game (default 2)
+- `A1_GAMES_PER_MATCH` (default 20), `A2_GAMES_PER_MATCH` (default 50), `A3_GAMES_PER_MATCH` (default 24) - Independent match counts
+- `A3_QUALIFIER_GAMES_PER_MATCH` (default 402), `A3_MAIN_EVENT_GAMES_PER_MATCH` (default 6) - Independent Wizard tournament phase counts; all Wizard defaults are multiples of six for equal seat coverage
+- `A4_MAX_GAMES_PER_MATCH` - Backgammon game cap (default 30; race to five points)
+- `A5_GAMES_PER_MATCH` (default 10), `A6_GAMES_PER_MATCH` (default 10), `A7_GAMES_PER_MATCH` (default 12), `A8_GAMES_PER_MATCH` (default 20) - Independent match counts
+- `utils/game_config.py` defines each game's own default; invalid or non-positive counts fall back to that default
 
-**config/models.txt:** One model per line. All non-empty lines are treated as active models. (The `!` prefix to disable models was removed; see commit `27748a8`.)
+**config/models.txt:** Lists the 12 current benchmark model names, exactly matching `agents/` folders. All non-empty lines are active. Generation sends names unchanged to the configured API endpoint; saved agents contain no provider-ID mapping. Verify that the endpoint accepts these names before generation. Matchmaking discovers saved files independently of this list.
+
+For a fresh Wizard roster, generate two runs per model. Population appends runs
+to existing agents, while the Wizard tournament requires exactly two.
 
 ## Games Overview
 
@@ -190,7 +198,7 @@ A piece is captured when it satisfies BOTH conditions:
 - **Mate Win:** Winner gets +7, loser gets -7
 - **Draw:** Each player gets 0
 
-**Example:** Agent wins 5-2 elimination → +3 points, +5 score. Loser → 0 points, -5 score.
+**Example:** Agent wins by elimination with five pieces remaining → +3 points, +5 score. Loser → 0 points, -5 score.
 
 #### Leaderboard
 
@@ -221,12 +229,12 @@ The match runner uses a multi-layer architecture:
 2. **Middle Layer (`run_match`):**
    - Generates temporary Python file with embedded code
    - Spawns the subprocess with a hard kill at `MATCH_TIME_LIMIT` + 60s (`MATCH_KILL_GRACE`), where `MATCH_TIME_LIMIT` = `GAME_TIME_LIMIT` × games; normally the subprocess finishes by itself thanks to time-limit draws
-   - Parses stdout for structured results (`RESULT:`, `POINTS:`, `WINS:`, `DRAWS:`)
+   - Parses stdout for structured results (`RESULT:`, `SCORE:`, `WINS:`, `DRAWS:`)
    - Returns result dict
 
 3. **Inner Layer (Embedded `MATCH_RUNNER_CODE`):**
    - Executed inside subprocess
-   - Runs `NUM_GAMES_PER_MATCH` games (default 10: `NUM_OF_GAMES_IN_A_MATCH / 10`)
+   - Runs `NUM_GAMES_PER_MATCH` games (configured directly via `A8_GAMES_PER_MATCH`, default 20)
    - Tracks match statistics (wins, points, scores, errors)
    - Emits structured output lines for outer parsing
 
@@ -268,27 +276,21 @@ class SurroundMorrisAgent:
 }
 ```
 
-**Feedback Dictionary (on invalid move):**
-```python
-{
-    "error_code": str,            # "INVALID_SPOT_OOB", "INVALID_OUTPUT", etc.
-    "error_message": str,         # Human-readable description
-    "attempted_move": Any,        # What agent returned
-    "attempt_number": int,        # 1, 2, or 3
-}
-```
+**Feedback:** The runner passes `None`. It calls the agent once per turn and
+uses a random legal move on failure; there is no retry or invalid-move
+feedback dictionary.
 
 #### Constants and Configuration
 
 **Environment Variables:**
-- `NUM_OF_GAMES_IN_A_MATCH` (default: 100) — Base games per match pairing; A8 divides this by 10 (effective default: 10 games per match) to keep match durations reasonable given board evaluation overhead
+- `A8_GAMES_PER_MATCH` (default: 20) — Games per match pairing, read directly
 - `A8_MAX_TURNS_PER_GAME` (default: 200) — Movement phase turn limit, independent of Word Matrix's `MAX_TURNS_PER_GAME`
 - `MOVE_TIME_LIMIT` (default: 1.0s) — Per-move timeout
 
 **Hardcoded:**
 - `GAME_TIME_LIMIT`: 150 × `MOVE_TIME_LIMIT` (see Draw by Time Limit). A match only fails if an agent hangs inside a single move and the hard kill at `GAME_TIME_LIMIT` × games + 60s fires; the runner then exits non-zero so the matchmaker counts it as failed
 - Pieces per player: 7
-- Max placement/movement attempts: 3 (fallback to random)
+- One placement/movement attempt per turn; failure falls back to a random legal move
 - Board size: 24 spots
 
 **Error Handling:**
@@ -310,14 +312,14 @@ class SurroundMorrisAgent:
 
 **Single match (2 agents):**
 ```bash
-uv run game_scripts/A8-surround_morris_match.py --agent model1:1 model2:2
+uv run game_scripts/A8-surround_morris_match.py --agent Terra:1 Opus:2
 ```
 
 **Human play modes:**
 ```bash
 uv run game_scripts/A8-surround_morris_match.py --humanvsbot       # vs random
 uv run game_scripts/A8-surround_morris_match.py --humanvshuman    # local 2P
-uv run game_scripts/A8-surround_morris_match.py --humanvsagent --agent model:1
+uv run game_scripts/A8-surround_morris_match.py --humanvsagent --agent Terra:1
 ```
 
 **Tournament (all cross-model pairings):**
@@ -329,13 +331,17 @@ uv run game_scripts/matchmaker.py --game A8 --same_opponent_match 4 --workers 4
 
 **Subprocess stdout includes:**
 ```
-RESULT:Agent-1=<score1>,Agent-2=<score2>
-POINTS:Agent-1=<pts1>,Agent-2=<pts2>
+RESULT:Agent-1=<pts1>,Agent-2=<pts2>
+SCORE:Agent-1=<score1>,Agent-2=<score2>
 WINS:Agent-1=<wins1>,Agent-2=<wins2>
 DRAWS:<draw_count>
 --- MATCH STATISTICS ---
-Agent-1 Crashes: <count>
-Agent-2 Crashes: <count>
+Agent-1 make_move_crash: <count>
+Agent-2 make_move_crash: <count>
+Agent-1 other_crash: <count>
+Agent-2 other_crash: <count>
+Agent-1 crash (total): <count>
+Agent-2 crash (total): <count>
 Agent-1 Captures: <count>
 Agent-2 Captures: <count>
 Agent-1 Stalemates: <count>
@@ -357,11 +363,11 @@ Time-limit Draws: <count>
 
 **Overview:** Classic Battleship on an 8x8 grid. Ships: [5, 4, 3]. Two phases — placement then bombing. Players call shots until all opponent ships are sunk.
 
-**Agent Interface:** `class BattleshipAgent` with `place_ships(board_size, ships)` returning placement coordinates and `make_move(state, feedback)` returning a target cell.
+**Agent Interface:** `class BattleshipAgent` with `__init__(name, board_size, ships)` and `make_move(state, feedback)` for both phases. Placement returns a dictionary with `ship_length`, `start`, and `orientation`; bombing returns `{'target': (row, col)}`.
 
 **Scoring:** Winner gets +remaining_ship_cells, loser gets -remaining_ship_cells.
 
-**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
+**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent Terra:1`
 
 ---
 
@@ -394,7 +400,7 @@ Agents see ONLY their own state. The runner does not replay history — agents t
 
 **Tie-Attempt:** If the starter wins on turn N (N < 100), the non-starter gets one final guess on turn N+1. Starter responds. If non-starter's guess is genuinely correct AND starter says "Correct" truthfully → DRAW. If starter lies (says "Up"/"Down" with lie still available), the lie is consumed and starter wins (the lie acts as a joker to deny the tie). Second-lie or invalid response in tie → starter forfeits, non-starter wins.
 
-**Starter alternation:** Agent-1 starts game 1, Agent-2 starts game 2, alternating thereafter. Over 100 games each agent starts equally often.
+**Starter alternation:** Agent-1 starts game 1, Agent-2 starts game 2, alternating thereafter. Over the default 50 games each agent starts 25 times.
 
 **Scoring:**
 - Win = 3 points; tiebreaker score = `100 - winner_guess_count`.
@@ -409,7 +415,7 @@ Agents see ONLY their own state. The runner does not replay history — agents t
 - `guess` non-integer / crash / timeout → lose turn (no feedback exchanged); play passes to opponent.
 - `respond` invalid string / crash / timeout / second lie → immediate forfeit, opponent treated as having guessed correctly on this turn.
 
-**Game count:** Loads `NUM_OF_GAMES_IN_A_MATCH` directly (no division). Default 100 games per match.
+**Game count:** Loads `A2_GAMES_PER_MATCH` directly. Default 50 games per match to sample secret choices and tie-attempt outcomes.
 
 **Human mode:** `--humanvsbot` plays interactively against a random bot.
 
@@ -418,6 +424,30 @@ Agents see ONLY their own state. The runner does not replay history — agents t
 ### A3: Wizard
 
 **Status: Playable.**
+
+**Game:** Six players play 10 card rounds. One game includes all 10 rounds.
+Placements earn 5/4/3/2/1/0 points; tied players share the points for their positions.
+`A3_GAMES_PER_MATCH` controls directly invoked matches (default 24).
+
+**Tournament qualifiers:** Requires exactly two agents per model. Three models
+contribute both agents to a six-player table. Each table plays
+`A3_QUALIFIER_GAMES_PER_MATCH` games (default 402), then each model keeps its
+higher-scoring agent. Every model advances one representative; qualifiers
+select agent implementations rather than eliminating models.
+
+**Main event:** Requires at least six models. Each combination of six
+representatives plays `A3_MAIN_EVENT_GAMES_PER_MATCH` games (default 6).
+For 12 models: four qualifier tables and 924 main-event tables. Each
+representative plays 2,772 games across 462 main-event tables. In total the
+defaults schedule 1,608 qualifier games and 5,544 main-event games. Seating
+rotates within each table across games; all three default counts are multiples
+of six, covering each seat equally. Only main-event results
+update the global scoreboard. `--dry-run` displays each phase's games per
+table and total games; `--auto-yes` skips the prompt between phases.
+
+The two phase counts are independent settings, with no multiplication of a
+base count. The current defaults spend many games selecting representatives
+at a few qualifier tables and fewer games at each of the many main-event tables.
 
 ---
 
@@ -437,7 +467,7 @@ Agents see ONLY their own state. The runner does not replay history — agents t
 - League (per match): Match Win (first to 5) = 3 points, Match Draw = 1 each, Match Loss = 0.
 - Tie-break score = ±(in-game-points diff). E.g., 5–1 in-game → +4/-4.
 
-**Constants (hardcoded):** `MAX_TURNS_PER_GAME = 300`, `POINTS_TO_WIN_MATCH = 5`, `MAX_GAMES_PER_MATCH = 30`. The framework's `NUM_OF_GAMES_IN_A_MATCH` env var is ignored — game count is variable per race.
+**Constants:** `MAX_TURNS_PER_GAME = 300`, `POINTS_TO_WIN_MATCH = 5`. `MAX_GAMES_PER_MATCH` reads `A4_MAX_GAMES_PER_MATCH` (default 30); the number of games is variable per race.
 
 **Error handling:** Move crashes, timeouts, and invalid moves are replaced by a random legal turn of exactly `max_dice_usable` sub-moves, using a shared engine planner that backtracks past choices that would leave dice unused. Invalid sequences are rolled back in full before the fallback. The turn counter increments once as usual. Stats track each failure mode separately (`make_move_crash`, `timeout`, `invalid`); hits and dice used include fallback moves. Human modes and the built-in random bot use the same planner. Initialization crashes still forfeit the game (Gammon-equivalent +2 to the opponent).
 
@@ -445,7 +475,7 @@ Agents see ONLY their own state. The runner does not replay history — agents t
 
 **Color/turn assignment:** Within each game, White is randomly determined; turn order alternates by color across games (Agent-1 is W in odd-numbered games, B in even).
 
-**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
+**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent Terra:1`
 
 **Subprocess output extras:** `GAMES_PLAYED:<int>` line is parsed by the outer layer for scoreboard `games_played` (variable per match).
 
@@ -458,13 +488,13 @@ Agents see ONLY their own state. The runner does not replay history — agents t
 **Game Prompt:** `games/A5-Connect4RandomStart.txt`
 **Scoreboard:** `scoreboard/A5-scoreboard.txt`
 
-**Overview:** Standard Connect4 on a 6x7 board with one twist: one disc is pre-placed at a random column before each match to break standard opening theory. Colors alternate between odd/even games.
+**Overview:** Standard Connect4 on a 6x7 board with one twist: one Red disc is pre-placed at a random column before each game. Yellow makes the first agent decision. Colors alternate between odd/even games.
 
-**Agent Interface:** `class Connect4Agent` with `make_move(state, feedback)` returning a column index (0–6).
+**Agent Interface:** `class Connect4Agent` with `__init__(name, symbol)` and `make_move(board)` returning a column index (0–6).
 
-**Scoring:** Score = empty cells remaining at win (min 3). Forfeit score: 41 cells.
+**Scoring:** Score = empty cells remaining at win (min 3). Initialization-forfeit score: +35/-35.
 
-**Game count:** Loads `NUM_OF_GAMES_IN_A_MATCH` from the environment and divides by 10. Effective default: 10 games per match.
+**Game count:** Loads `A5_GAMES_PER_MATCH` directly. Default 10 games per match.
 
 **Human mode:** `--human` plays interactively against a random bot.
 
@@ -477,13 +507,13 @@ Agents see ONLY their own state. The runner does not replay history — agents t
 **Game Prompt:** `games/A6-WordMatrixGame.txt`
 **Scoreboard:** `scoreboard/A6-scoreboard.txt`
 
-**Overview:** 4x4 letter grid. Each turn a player traces a path through adjacent cells (min 2) to form a valid word. Matched cells are cleared and replaced with new letters. 6 consecutive passes end the game.
+**Overview:** 4x4 letter grid. A path uses at least two distinct cells connected horizontally or vertically. Its letters must be a subsequence of a dictionary word, with `len(path) <= len(word) <= 2 * len(path)`. Extra word letters are shuffled back into path cells; the other path cells become empty. Six consecutive passes/failures, no adjacent non-empty cells, or the configured turn cap ends normal play.
 
-**Agent Interface:** `class WordMatrixAgent` with `make_move(state, feedback)` returning a list of cell indices forming the path.
+**Agent Interface:** `class WordMatrixAgent` with `__init__(name)` and `make_move(board, scores, total_passes)`, returning `(path, word)` or `"PASS"`. A path is a list of `(row, col)` coordinates. The runner supplies `load_words()` for dictionary access.
 
 **Scoring:** 10 base + 10 per cleared cell per word. Invalid move penalty: -10 (no fallback to random). Forfeit score: ±(10 × configured turn cap + 160), or ±1160 at the default 100-turn cap.
 
-**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
+**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent Terra:1`
 
 ---
 
@@ -499,7 +529,7 @@ Agents see ONLY their own state. The runner does not replay history — agents t
 - **Free turn:** last stone in your own Mancala → you move again (no limit on chaining).
 - **Capture:** last stone in an empty pocket on your own side → that stone and the opposite pocket go to your Mancala. This happens even when the opposite pocket is empty (only your last stone moves). Sowing exactly 13 lands back in the emptied starting pocket and captures.
 - **End:** checked after every move. When either row is empty the game ends at once (a pending free turn is cancelled), each player sweeps their own remaining stones into their Mancala, and the bigger Mancala wins. 24-24 is a draw.
-- No move limit: every game provably ends. In simulation (random, greedy and alpha-beta agents, random openings) games averaged 28-40 sowings (13-68 range), and one agent never made more than 35 decisions in a game. A typical game fits well inside its 90s time share even at a full 1s per move.
+- No move-count cap. The tournament runner enforces its separate per-game time limit.
 
 **Random opening and seats:** Before any agent moves, the engine sows a random P1 pocket (logged as `Random opening: P1 pocket N`). It counts as P1's move, so pocket 2 gives P1 a free turn and P1's agent moves next; otherwise P2 does. Agent-1 is P1 in odd games, Agent-2 in even games, and each pair of games (1-2, 3-4, ...) shares one opening, so both agents play both sides of it. With 6 possible openings, a deterministic pair of agents can produce at most 12 distinct games.
 
@@ -523,25 +553,25 @@ The engine stores an absolute board (0-5 P1, 6 P1 Mancala, 7-12 P2, 13 P2 Mancal
 
 **Match statistics extras:** `Captures`, `Extra Turns` per agent, `Total Moves`, `Time-limit Draws`.
 
-**Results:** `results/mancala/`. Game count: `NUM_OF_GAMES_IN_A_MATCH / 10` (10 by default).
+**Results:** `results/mancala/`. Game count: `A7_GAMES_PER_MATCH` (12 by default), giving six shared-opening pairs with seats swapped. Openings are sampled with replacement, so this does not guarantee all six openings appear.
 
-**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
+**Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent Terra:1`
 
 ---
 
 ## Agent File Convention
 
-Generated agents saved to: `agents/<sanitized_model_name>/<game_id>_<run_id>.py`
+Generated agents saved to: `agents/<sanitized_model_name>/<game_name>_<run_id>.py`
 
-Example: `agents/openai-gpt-5-mini/A1-Battleship_1.py`
+Example: `agents/GPT-6.1-Terra-Extrahigh/A1-Battleship_1.py`
 
-**Model name sanitization** (`utils/populate_agents.py:sanitize_model_name()`): Converts an OpenRouter model ID into a valid folder name.
+**Model name sanitization** (`utils/populate_agents.py:sanitize_model_name()`): Converts a configured model name into a valid folder name. Current roster names already use valid filename characters and are preserved exactly. Provider-style identifiers, when configured, use these rules:
 1. Strip everything after `@` (preset/flavor suffix removed)
 2. If the third path segment exists and is not already part of the base name, append it with a hyphen
 3. Replace `/` with `-`
 4. Replace remaining invalid filesystem characters with `_`
 
-Example: `deepseek/deepseek-v3@preset/fp8` → `deepseek-deepseek-v3-fp8`
+Example: `DeepSeekV4.1-Flash-1017-Max` → `DeepSeekV4.1-Flash-1017-Max`.
 
 **Run ID collision avoidance**: `get_next_run_ids()` scans existing files for the highest run number already present and allocates from `max + 1` onward. Re-running `populate_agents.py` for a model that already has runs will never overwrite them.
 
@@ -556,19 +586,19 @@ Example: `deepseek/deepseek-v3@preset/fp8` → `deepseek-deepseek-v3-fp8`
 | Argument | Type | Default | Description |
 |---|---|---|---|
 | `--game` | str | required | Game ID: A1 through A8 |
-| `--same_opponent_match` | int | 8 | Exact number of times each pairing plays (see below) |
+| `--same_opponent_match` | int | 8 | Exact match repetitions for each two-player agent pair |
 | `--workers` | int | 24 | Max concurrent match subprocesses |
-| `--dry-run` | flag | false | Print fixture list without executing |
-| `--new-model` | str | — | Comma-separated model folder names; restrict fixtures to those involving these models. Not allowed with `--mini` |
+| `--dry-run` | flag | false | Preview schedule size and match settings without executing |
+| `--new-model` | str | — | Two-player games: comma-separated model folder names; restrict fixtures to those involving these models. Not allowed with `--mini` |
 | `--health` | flag | false | Run syntax + broad-except checks on all agents before execution |
 | `--random16` | flag | false | Run a random sample of up to 16 matches (2-player games) |
 | `--mini` | flag | false | Run a mini league among the agents named in `--agent`, including same-model pairs. Not supported for A3 |
-| `--agent` | list | — | Required with `--mini`. `MODEL:RUN` specs (e.g. `GPT-6.1-Sol-Ultra:1`), or a single model substring to take all of that model's runs |
+| `--agent` | list | — | Required with `--mini`. `MODEL:RUN` specs (e.g. `GPT-6.1-Terra-Extrahigh:1`), or a single model substring to take all of that model's runs |
 | `--auto-yes` | flag | false | Skip confirmation prompts (e.g. A3 Phase 2 start) |
 
 **How `--same_opponent_match` works:**
 
-Each cross-model pair plays exactly `same_opponent_match` matches against each other (the pairing list is repeated N times; it is not a minimum). With 20 models x 2 runs = 40 agents, there are 760 cross-model pairs, so `--same_opponent_match 4` produces 3040 matches. Mini leagues apply the same count to every pair, including same-model pairs.
+For two-player games, each cross-model agent pair plays exactly `same_opponent_match` matches. The current 12 models x 2 runs = 24 agents produce 264 cross-model pairings, so `--same_opponent_match 4` schedules 1,056 matches. Mini leagues include same-model pairs. Wizard uses its own two-phase tournament and ignores this option.
 
 **Mini league (`--mini --agent`):**
 
@@ -578,57 +608,78 @@ Runs a league among only the agents you name, instead of every agent in `agents/
 
 ```bash
 uv run game_scripts/matchmaker.py --game A8 --mini \
-  --agent GPT-6.1-Sol-Ultra:1 GPT-6.1-Sol-Ultra:2 \
-          Gemini-4-Argon-High:1 Gemini-4-Argon-High:2 \
+  --agent GPT-6.1-Terra-Extrahigh:1 GPT-6.1-Terra-Extrahigh:2 \
+          Gemini-Hydrogen-Extrahigh:1 Gemini-Hydrogen-Extrahigh:2 \
           Opus-5.5-Max:1 Opus-5.5-Max:2 \
   --same_opponent_match 4
 ```
 
-**Incremental tournaments (`--new-model`):** When new models are added, pass their folder names (comma-separated) to generate only the fixtures where at least one side is a new model. Avoids replaying all existing cross-model pairs.
+**Incremental tournaments (`--new-model`):** For two-player games, pass model folder names (comma-separated) to generate only fixtures involving those folders. Wizard's separate tournament path does not apply this filter.
 
 **Agent health checks (`--health`):** Before executing, validates every discovered agent for:
 1. Syntax validity (`ast.parse`).
 2. Broad exception handlers in `make_move` (`except Exception`, `except BaseException`, bare `except:`) — these swallow `MoveTimeoutException` and disable per-move time limits.
 
-**Agent discovery:** Scans `agents/*/` for files matching `{game_name}_{run}.py`. In tournament mode only cross-model pairings are generated — agents from the same model folder never face each other (mini leagues include them).
+**Agent discovery:** Scans `agents/*/` for files matching `{game_name}_{run}.py`. Two-player tournaments generate only cross-model pairings; mini leagues include same-model pairs. Wizard qualifiers seat both runs from each model together, then advance one representative per model.
 
 **Execution:** Each match is a subprocess calling the game's match runner with `--update-scoreboard` appended automatically in tournament mode (mini leagues omit it). The match runner handles game execution, result parsing, scoreboard updates, and log writing internally. The matchmaker only orchestrates scheduling and reports success/failure counts.
 
-**Game-count scaling:** A5, A6, A7, and A8 match runners divide `NUM_OF_GAMES_IN_A_MATCH` by 10 internally, yielding 10 games per match by default rather than 100. This keeps match durations reasonable. A1, A2, and A3 use `NUM_OF_GAMES_IN_A_MATCH` directly (100 by default). A4 plays races to a fixed points target and ignores it.
+**Match counts:** Every game has a dedicated environment variable and independent default in `utils/game_config.py`: A1 20, A2 50, A3 direct 24, A5 10, A6 10, A7 12, A8 20. Wizard qualifiers use 402 games per table and the main event uses six. A4 reads its own cap (default 30) and stops when an agent reaches five points. Counts are read directly with no shared base or division. Dry runs display the effective match counts.
+
+Counts account for draws, randomness, and opening/seat coverage; see README.md
+for the rationale. The two-player matchmaker defaults to eight matches per
+agent pairing, so total samples per pairing are eight times the configured
+count (eight races for Backgammon). Under current scoring each Backgammon race
+ends within ten completed games; increasing its cap does not add samples.
+Surround Morris has no randomized opening: extra games sample stochastic
+agent behavior, but deterministic agents replay the same two seat-swapped
+games. More games cannot resolve fixed draws or compensate for restrictive
+turn/time limits. These defaults are starting budgets, not measured precision
+guarantees for the current agents.
 
 **Timeout:** The matchmaker sets no timeout of its own; it waits for each match subprocess to finish. Each match runner limits every game to its `GAME_TIME_LIMIT` and ends an overrunning game as a draw, so the match still produces a result (see [Game Time Limits](#game-time-limits)). Only a match killed for hanging fails. A7 and A8 then exit non-zero so the matchmaker lists it under Failed; A1-A6 still exit 0.
 
 ## Game Time Limits
 
-Every runner gives each game the same fixed time limit, `GAME_TIME_LIMIT`. It is hardcoded per runner as a multiple of `MOVE_TIME_LIMIT`, so it scales if the move limit changes. The clock starts with the game (agent setup included) and is checked before every move. A game still running at its limit ends as a **time-limit draw**: 1 point each and 0 score. In A3 all six players tie (2.5 points each, 0 score); in A4 it counts like a turn-limit draw (0.5 in-game points each). Agents are not told about it. Each match log reports `Time-limit Draws: <count>`.
+Each runner defines its own `GAME_TIME_LIMIT` as a multiple of
+`MOVE_TIME_LIMIT`. The game clock includes agent setup. During play the runner
+checks the clock and ends a game that exceeds its budget as a time-limit draw.
+Two-player draws receive 1 league point each and zero tie-breaker score;
+Wizard ties all six players (2.5 placement points each); Backgammon awards
+0.5 in-game points each. Logs report `Time-limit Draws`.
 
-The match limit is derived, not configured: `MATCH_TIME_LIMIT = GAME_TIME_LIMIT × games in the match` (A4: × `MAX_GAMES_PER_MATCH` = 30). Each runner hard-kills the match subprocess at `MATCH_TIME_LIMIT` + 60s (`MATCH_KILL_GRACE`), which only happens if an agent hangs inside a single move. Because the match limit grows with the game count, enhancement runs (10× games) automatically get 10× the time. The `MATCH_TIME_LIMIT` environment variable is no longer read.
+The table shows source defaults with `MOVE_TIME_LIMIT=1.0`. Environment
+settings can override match counts and the move limit.
 
-**Calibration rule:** about 95% of games should finish without reaching the limit, at the pace real agents play.
+| Game | Time budget per game | Default games per match | Derived match budget |
+|---|---|---|---|
+| A1 | 55s | 20 | 1,100s |
+| A2 | 35s | 50 | 1,750s |
+| A3 direct match | 310s | 24 | 7,440s |
+| A3 qualifier | 310s | 402 | 124,620s |
+| A3 main event | 310s | 6 | 1,860s |
+| A4 | 55s | up to 30 | 1,650s |
+| A5 | 30s | 10 | 300s |
+| A6 | 15s | 10 | 150s |
+| A7 | 25s | 12 | 300s |
+| A8 | 150s | 20 | 3,000s |
 
-| Game | Agent calls per game (median / 95th pct) | Est. game time (95th pct) | `GAME_TIME_LIMIT` | Finish rate at real pace | Finish rate if every move took 1s | Games per match | Match limit |
-|---|---|---|---|---|---|---|---|
-| A1 | 64 / 82 | 53s | 55s | 96% | 27% | 100 | 5,500s |
-| A2 | 42 / 50 | 34s | 35s | 95% | 32% | 100 | 3,500s |
-| A3 | 390 / 390 | 307s | 310s | 97% | 0% | 100 | 31,000s |
-| A4 | 59 / 95 | 54s | 55s | 96% | 38% | up to 30 | 1,650s |
-| A5 | 38 / 41 | 29s | 30s | 97% | 36% | 10 | 300s |
-| A6 | 9 / 10 | 7s + setup | 15s | ~100% | 100% | 10 | 150s |
-| A7 | 29 / 40 | 25s | 25s | 96% | 31% | 10 | 250s |
-| A8 | 107 / 214 | 151s (measured) | 150s | 95% (measured) | 64% | 10 | 1,500s |
+The match subprocess is killed after the derived match budget plus
+`MATCH_KILL_GRACE` (60s). The matchmaker sets no additional timeout. Match
+budgets follow the actual game count, including enhancement overrides;
+Backgammon uses its configured maximum-game cap. There is no match-timeout
+environment setting.
 
-How the numbers were found (2026-11-05):
-- **Pace:** 60 A8 games between the six real agents (GPT-6.1-Sol-Ultra, Gemini-4-Argon-High, Opus-5.5-Max; two runs each), timed with the time limit off. They averaged 0.19-0.81s per agent call (median 0.46s); real agents budget well under the 1s move limit.
-- **Calls per game:** A8 from 1,180 logged games between those agents. A3 is fixed: 10 rounds × 6 players gives 60 bids + 330 card plays. The rest were simulated through each runner's own match code with reasonable synthetic agents: A1 hunt/target, A2 lie-aware candidate search, A4 sampling heuristic, A5 win/block, A6 longest exact word, A7 alpha-beta and greedy.
-- **Limit:** game time = calls × pace, with each simulated game paired with the pace of a randomly drawn real A8 game; the limit is the 95th percentile rounded up to 5s. A6 gets extra room because its agents preprocess the dictionary in `__init__` every game (about 1-2s for both).
-- **Caveats:** the pace comes from three models on a search game, so lighter games (A1, A2, A6) will usually finish much faster than this. A limit binds a game, not an agent: a pair of agents that use nearly the full second on every move hits it far more often (the 1s column). Re-check these values against `Time-limit Draws` in real logs once each game has agents.
+These are configured limits, not measured completion rates for the current
+agents. Human modes have game-specific timeout behavior; this table describes
+stored-agent benchmark matches.
 
 ## Agent Enhancement
 
 `utils/try_enhancing_agents.py` automates iterative improvement of agent quality. For each selected model/game combo, it:
 
 1. Generates 1 new agent (using the same `prompt_model` / `extract_agent_code` pipeline as `populate_agents.py`)
-2. Runs same-model matches with 10x the base game count (e.g. 1000 games instead of 100)
+2. Runs same-model matches with 10x that game's configured count (e.g. A1: 200 instead of 20; A5: 100 instead of 10). Backgammon keeps its race-to-five format and configured game cap.
 3. Evaluates performance based on match points
 4. Prunes the worst agent (new or existing) and renames files to keep run IDs contiguous
 
@@ -645,7 +696,7 @@ How the numbers were found (2026-11-05):
 - Enhancement matches do not update scoreboards (`--update-scoreboard` is not passed)
 - No match timeout of its own: runner limits are per game, so they scale with the 10× game count
 
-**Biweekly cycle:** Every two weeks, all models across all games go through enhancement. This accounts for upstream API model changes (weight updates, quantization tweaks) and eliminates luck from one-shot code generation.
+**Scheduling:** Enhancement is invoked manually. The repository has no scheduler that automatically runs it every two weeks; Wizard is excluded from enhancement.
 
 ## Development Notes
 
