@@ -24,6 +24,7 @@ sys.path.append(str(Path(__file__).parent.parent / "utils"))
 
 from model_api import ModelAPI
 from logging_config import setup_logging
+from game_config import games_per_match
 from scoreboard import update_scoreboard
 from agent_loader import load_stored_agent, consolidate_imports, COMMON_HEADER_IMPORTS
 
@@ -38,11 +39,10 @@ except (ValueError, TypeError):
 
 MAX_TURNS_PER_GAME = 300
 POINTS_TO_WIN_MATCH = 5
-MAX_GAMES_PER_MATCH = 30
+MAX_GAMES_PER_MATCH = games_per_match("A4")
 
-# Time limit for one game, agent setup included. Set so ~95% of games finish
-# at the pace real agents play (see CLAUDE.md, Game Time Limits); it scales
-# with MOVE_TIME_LIMIT. A game still running when it is used up ends as a draw.
+# Time limit for one game, agent setup included. This runner has its own
+# fixed limit, scaled by MOVE_TIME_LIMIT (see CLAUDE.md, Game Time Limits). A game still running when it is used up ends as a draw.
 GAME_TIME_LIMIT = 55 * MOVE_TIME_LIMIT
 
 # So a match takes at most GAME_TIME_LIMIT per game, for up to
@@ -837,7 +837,6 @@ class RandomAgent:
 
 MAX_TURNS_PER_GAME = 300
 POINTS_TO_WIN_MATCH = 5
-MAX_GAMES_PER_MATCH = 30
 
 MODE_TITLES = {
     'humanvsbot': 'Human vs Random Bot',
@@ -1081,7 +1080,10 @@ def build_game_code(
 def build_human_game_code(
     mode: str, agent_code: str = "", agent_imports: str = ""
 ) -> str:
-    mode_header = f'GAME_MODE = "{mode}"\nMOVE_TIMEOUT = {MOVE_TIME_LIMIT}\n'
+    mode_header = (
+        f'GAME_MODE = "{mode}"\nMOVE_TIMEOUT = {MOVE_TIME_LIMIT}\n'
+        f"MAX_GAMES_PER_MATCH = {MAX_GAMES_PER_MATCH}\n"
+    )
     parts = [mode_header]
     if mode == "humanvsagent" and agent_imports:
         parts.append(agent_imports)
@@ -1198,7 +1200,7 @@ async def main_async():
     parser = argparse.ArgumentParser(description="Run Backgammon matches")
     parser.add_argument(
         "--agent", nargs="+",
-        help="Agent specs: model1[:run1:run2] model2[:run3:run4]",
+        help="Agent specs: MODEL_A[:RUN_A:RUN_B] MODEL_B[:RUN_C:RUN_D]",
     )
     human_group = parser.add_mutually_exclusive_group()
     human_group.add_argument(
@@ -1235,7 +1237,7 @@ async def main_async():
         if human_mode == "humanvsagent":
             if not args.agent or len(args.agent) != 1:
                 print("ERROR: --humanvsagent requires exactly 1 --agent spec.")
-                print("Example: --humanvsagent --agent mistral:1")
+                print("Example: --humanvsagent --agent Terra:1")
                 sys.exit(1)
             model_pattern, runs = parse_agent_spec(args.agent[0])
             folder = find_model_folder(model_pattern)
@@ -1277,7 +1279,7 @@ async def main_async():
 
     if not args.agent or len(args.agent) != 2:
         print("ERROR: Need exactly 2 agent specifications.")
-        print("Example: --agent mistral:1 gpt-5-mini:1")
+        print("Example: --agent Terra:1 Opus:1")
         sys.exit(1)
 
     model1_pattern, runs1 = parse_agent_spec(args.agent[0])

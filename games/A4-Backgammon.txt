@@ -134,7 +134,7 @@ A match is a "race to 5 in-game points":
 - Players play multiple games, accumulating in-game points.
 - The first player to reach 5 in-game points wins the match.
 - If both reach 5 simultaneously (only possible after consecutive draws), the match is a draw.
-- Safety cap: 30 games per match. If the cap is hit without anyone reaching 5, the higher in-game total wins; tie is a match draw.
+- Safety cap: `A4_MAX_GAMES_PER_MATCH` games (default 30). If the cap is hit without anyone reaching 5, the higher in-game total wins; tie is a match draw.
 
 ## Scoring
 

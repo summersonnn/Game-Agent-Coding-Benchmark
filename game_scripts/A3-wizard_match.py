@@ -24,6 +24,7 @@ sys.path.append(str(Path(__file__).parent.parent / "utils"))
 
 from model_api import ModelAPI
 from logging_config import setup_logging
+from game_config import games_per_match
 from scoreboard import update_scoreboard_6p
 
 logger = setup_logging(__name__)
@@ -34,19 +35,15 @@ load_dotenv()
 NUM_PLAYERS = 6
 NUM_ROUNDS = 10
 
-try:
-    NUM_GAMES_PER_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
-except (ValueError, TypeError):
-    NUM_GAMES_PER_MATCH = 100
+NUM_GAMES_PER_MATCH = games_per_match("A3")
 
 try:
     MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
-# Time limit for one game, agent setup included. Set so ~95% of games finish
-# at the pace real agents play (see CLAUDE.md, Game Time Limits); it scales
-# with MOVE_TIME_LIMIT. A game still running when it is used up ends with all six players tied.
+# Time limit for one game, agent setup included. This runner has its own
+# fixed limit, scaled by MOVE_TIME_LIMIT (see CLAUDE.md, Game Time Limits). A game still running when it is used up ends with all six players tied.
 GAME_TIME_LIMIT = 310 * MOVE_TIME_LIMIT
 
 # So a match takes at most GAME_TIME_LIMIT per game. The hard kill waits
@@ -983,7 +980,7 @@ async def main_async():
     parser = argparse.ArgumentParser(description="Run Wizard matches between AI agents")
     parser.add_argument(
         "--agent", nargs="+",
-        help="Agent specs: model1:run1 model2:run2 ... (exactly 6 for match mode)",
+        help="Agent specs: MODEL:RUN ... (exactly 6 for match mode)",
     )
     human_group = parser.add_mutually_exclusive_group()
     human_group.add_argument(
@@ -1021,7 +1018,7 @@ async def main_async():
         if human_mode == "humanvsagent":
             if not args.agent or len(args.agent) != 1:
                 print("ERROR: --humanvsagent requires exactly 1 --agent spec.")
-                print("Example: --humanvsagent --agent mistral:1")
+                print("Example: --humanvsagent --agent Terra:1")
                 sys.exit(1)
             model_pattern, run_num = parse_agent_spec(args.agent[0])
             folder = find_model_folder(model_pattern)
@@ -1067,7 +1064,7 @@ async def main_async():
     # --- Agent match mode ---
     if not args.agent or len(args.agent) != NUM_PLAYERS:
         print(f"ERROR: Need exactly {NUM_PLAYERS} agent specifications.")
-        print("Example: --agent model1:1 model2:1 model3:1 model4:1 model5:1 model6:1")
+        print("Example: --agent Terra:1 Astra:1 Opus:1 Sonnet:1 Hydrogen:1 Neon:1")
         sys.exit(1)
 
     # Parse and resolve all 6 agent specs

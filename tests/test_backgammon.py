@@ -29,7 +29,7 @@ def load_script_definitions():
             and any(isinstance(t, ast.Name) and t.id in names for t in node.targets))
         or (isinstance(node, ast.FunctionDef) and node.name in builders)
     ]
-    namespace = {"MOVE_TIME_LIMIT": 1.0}
+    namespace = {"MOVE_TIME_LIMIT": 1.0, "MAX_GAMES_PER_MATCH": 30}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(RUNNER_PATH), "exec"), namespace)
     return types.SimpleNamespace(**namespace)
 

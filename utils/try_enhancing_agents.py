@@ -29,6 +29,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "utils"))
 sys.path.insert(0, str(PROJECT_ROOT / "game_scripts"))
 
 from logging_config import setup_logging
+from game_config import games_per_match, match_count_env_var
 from matchmaker import GAME_REGISTRY, discover_agents
 from model_api import ModelAPI
 from populate_agents import (
@@ -44,11 +45,6 @@ logger = setup_logging(__name__)
 
 load_dotenv()
 
-try:
-    BASE_NUM_GAMES = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
-except (ValueError, TypeError):
-    BASE_NUM_GAMES = 100
-
 ENHANCEMENT_MULTIPLIER = 10
 # No match timeout of our own: each runner's limit is its per-game limit times
 # the number of games, so it already scales with the 10x game count and the
@@ -57,6 +53,12 @@ MAX_MATCH_WORKERS = 24
 
 AGENTS_DIR = PROJECT_ROOT / "agents"
 SCRIPT_DIR = PROJECT_ROOT / "game_scripts"
+
+
+def enhancement_games_per_match(game_id: str) -> int:
+    """Extend this game's match count; Backgammon keeps its race cap."""
+    count = games_per_match(game_id)
+    return count if game_id == "A4" else count * ENHANCEMENT_MULTIPLIER
 
 
 # ---------------------------------------------------------------------------
@@ -186,12 +188,12 @@ async def run_enhancement_match(
 ) -> dict:
     """
     Run a single same-model match between two agents.
-    Overrides NUM_OF_GAMES_IN_A_MATCH in the subprocess environment to 10x.
+    Overrides only this game's count setting. Backgammon keeps its race cap.
     """
     game_info = GAME_REGISTRY[game_id]
     match_script = SCRIPT_DIR / game_info["script"]
 
-    enhanced_games = BASE_NUM_GAMES * ENHANCEMENT_MULTIPLIER
+    enhanced_games = enhancement_games_per_match(game_id)
     cmd = [
         sys.executable,
         str(match_script),
@@ -204,7 +206,7 @@ async def run_enhancement_match(
 
     # Override env var for the subprocess
     env = os.environ.copy()
-    env["NUM_OF_GAMES_IN_A_MATCH"] = str(enhanced_games)
+    env[match_count_env_var(game_id)] = str(enhanced_games)
 
     async with match_semaphore:
         print(f"  {tag} Starting match: {label}")
@@ -456,9 +458,10 @@ async def run_combo_pipeline(
     print(f"  {tag} Agent saved: {output_file.name}")
 
     # --- 2. Matches: new agent vs each existing (all at once) ---
-    enhanced_games = BASE_NUM_GAMES * ENHANCEMENT_MULTIPLIER
+    enhanced_games = enhancement_games_per_match(game_id)
     total_matches = len(existing_runs)
-    print(f"  {tag} Running {total_matches} matches ({enhanced_games} games each)...")
+    count_label = "up to " if game_id == "A4" else ""
+    print(f"  {tag} Running {total_matches} matches ({count_label}{enhanced_games} games each)...")
 
     match_tasks = [
         run_enhancement_match(
@@ -608,7 +611,6 @@ async def main_async() -> None:
         sys.exit(1)
 
     # Compute stats for summary
-    enhanced_games = BASE_NUM_GAMES * ENHANCEMENT_MULTIPLIER
     worst_case_subprocesses = sum(len(c["existing_runs"]) for c in combos)
 
     print(f"\n{'=' * 60}")
@@ -621,7 +623,15 @@ async def main_async() -> None:
     for gid in game_ids:
         print(f"  - {GAME_REGISTRY[gid]['name']}")
     print(f"Combos: {len(combos)}")
-    print(f"Games per match: {enhanced_games} (base {BASE_NUM_GAMES} x {ENHANCEMENT_MULTIPLIER})")
+    print("Games per enhancement match:")
+    for gid in game_ids:
+        if gid == "A4":
+            print(f"  {gid}: race to 5 points, up to {enhancement_games_per_match(gid)} games")
+        else:
+            print(
+                f"  {gid}: {enhancement_games_per_match(gid)} "
+                f"({games_per_match(gid)} x {ENHANCEMENT_MULTIPLIER})"
+            )
     print(f"API calls: {len(combos)}")
     print(f"Match subprocesses: {worst_case_subprocesses} needed, max {MAX_MATCH_WORKERS} concurrent")
     print(f"{'=' * 60}")

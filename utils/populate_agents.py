@@ -6,7 +6,7 @@ agents/ directory, organized by model and game with numbered runs.
 
 Usage:
     uv run utils/populate_agents.py --all            # All models, all games
-    uv run utils/populate_agents.py --model mistral  # Specific models by substring
+    uv run utils/populate_agents.py --model Terra    # Specific models by substring
     uv run utils/populate_agents.py --game A1,A3     # Specific games by prefix
 """
 
@@ -28,9 +28,9 @@ load_dotenv()
 
 # Configuration
 try:
-    DEFAULT_NUM_RUNS = int(os.getenv("NUM_RUNS", "4"))
+    DEFAULT_NUM_RUNS = int(os.getenv("NUM_RUNS", "2"))
 except (ValueError, TypeError):
-    DEFAULT_NUM_RUNS = 4
+    DEFAULT_NUM_RUNS = 2
 
 try:
     MAX_WORKERS = int(os.getenv("MAX_WORKERS", "16"))
@@ -373,7 +373,7 @@ def main():
         "--model",
         type=str,
         nargs="+",
-        help="Model names or substrings to use (e.g., --model mistral gpt-5)"
+        help="Model names or substrings to use (e.g., --model Terra Opus)"
     )
     parser.add_argument(
         "--games", "--game",

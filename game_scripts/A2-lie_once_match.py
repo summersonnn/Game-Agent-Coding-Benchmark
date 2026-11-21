@@ -25,6 +25,7 @@ sys.path.append(str(Path(__file__).parent.parent / "utils"))
 
 from model_api import ModelAPI
 from logging_config import setup_logging
+from game_config import games_per_match
 from scoreboard import update_scoreboard
 from agent_loader import load_stored_agent, consolidate_imports
 
@@ -32,19 +33,15 @@ logger = setup_logging(__name__)
 
 load_dotenv()
 
-try:
-    NUM_GAMES_PER_MATCH = int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100"))
-except (ValueError, TypeError):
-    NUM_GAMES_PER_MATCH = 100
+NUM_GAMES_PER_MATCH = games_per_match("A2")
 
 try:
     MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
-# Time limit for one game, agent setup included. Set so ~95% of games finish
-# at the pace real agents play (see CLAUDE.md, Game Time Limits); it scales
-# with MOVE_TIME_LIMIT. A game still running when it is used up ends as a draw.
+# Time limit for one game, agent setup included. This runner has its own
+# fixed limit, scaled by MOVE_TIME_LIMIT (see CLAUDE.md, Game Time Limits). A game still running when it is used up ends as a draw.
 GAME_TIME_LIMIT = 35 * MOVE_TIME_LIMIT
 
 # So a match takes at most GAME_TIME_LIMIT per game. The hard kill waits
@@ -780,7 +777,7 @@ async def run_match_async(
 
 async def main_async():
     parser = argparse.ArgumentParser(description="Run LieOnce matches between stored AI agents")
-    parser.add_argument("--agent", nargs="+", help="Agent specs: model1[:run1:run2] model2[:run3:run4]")
+    parser.add_argument("--agent", nargs="+", help="Agent specs: MODEL_A[:RUN_A:RUN_B] MODEL_B[:RUN_C:RUN_D]")
     parser.add_argument("--humanvsbot", action="store_true", help="Play interactively against a random bot")
     parser.add_argument(
         "--update-scoreboard", action="store_true",
@@ -805,7 +802,7 @@ async def main_async():
 
     if not args.agent or len(args.agent) != 2:
         print("ERROR: Need exactly 2 agent specifications.")
-        print("Example: --agent mistral:1:2 gpt-5-mini:1:4")
+        print("Example: --agent Terra:1:2 Opus:1:2")
         sys.exit(1)
 
     model1_pattern, runs1 = parse_agent_spec(args.agent[0])

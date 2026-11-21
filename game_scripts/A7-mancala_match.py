@@ -26,6 +26,7 @@ sys.path.append(str(Path(__file__).parent.parent / "utils"))
 
 from model_api import ModelAPI
 from logging_config import setup_logging
+from game_config import games_per_match
 from scoreboard import update_scoreboard
 from agent_loader import load_stored_agent, consolidate_imports
 
@@ -34,19 +35,15 @@ logger = setup_logging(__name__)
 load_dotenv()
 
 # Configuration
-try:
-    NUM_GAMES_PER_MATCH = int(int(os.getenv("NUM_OF_GAMES_IN_A_MATCH", "100")) / 10)
-except (ValueError, TypeError):
-    NUM_GAMES_PER_MATCH = 10
+NUM_GAMES_PER_MATCH = games_per_match("A7")
 
 try:
     MOVE_TIME_LIMIT = float(os.getenv("MOVE_TIME_LIMIT", "1.0"))
 except (ValueError, TypeError):
     MOVE_TIME_LIMIT = 1.0
 
-# Time limit for one game, agent setup included. Set so ~95% of games finish
-# at the pace real agents play (see CLAUDE.md, Game Time Limits); it scales
-# with MOVE_TIME_LIMIT. A game still running when it is used up ends as a draw.
+# Time limit for one game, agent setup included. This runner has its own
+# fixed limit, scaled by MOVE_TIME_LIMIT (see CLAUDE.md, Game Time Limits). A game still running when it is used up ends as a draw.
 GAME_TIME_LIMIT = 25 * MOVE_TIME_LIMIT
 
 # So a match takes at most GAME_TIME_LIMIT per game. The hard kill waits
@@ -774,7 +771,7 @@ def run_human_mode(human_mode: str, agent_specs: list[str] | None) -> None:
     if human_mode == "humanvsagent":
         if not agent_specs or len(agent_specs) != 1:
             print("ERROR: --humanvsagent requires exactly 1 --agent spec.")
-            print("Example: --humanvsagent --agent mistral:1")
+            print("Example: --humanvsagent --agent Terra:1")
             sys.exit(1)
         model_pattern, runs = parse_agent_spec(agent_specs[0])
         folder = find_model_folder(model_pattern)
@@ -817,7 +814,7 @@ async def main_async():
     parser = argparse.ArgumentParser(description="Run Mancala matches between stored AI agents")
     parser.add_argument(
         "--agent", nargs="+",
-        help="Agent specs: model1[:run1:run2] model2[:run3:run4]",
+        help="Agent specs: MODEL_A[:RUN_A:RUN_B] MODEL_B[:RUN_C:RUN_D]",
     )
     human_group = parser.add_mutually_exclusive_group()
     human_group.add_argument(
@@ -849,7 +846,7 @@ async def main_async():
 
     if not args.agent or len(args.agent) != 2:
         print("ERROR: Need exactly 2 agent specifications.")
-        print("Example: --agent mistral:1 gpt-5-mini:1")
+        print("Example: --agent Terra:1 Opus:1")
         sys.exit(1)
 
     model1_pattern, runs1 = parse_agent_spec(args.agent[0])

@@ -16,9 +16,16 @@ import time
 from collections import Counter
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 AGENTS_DIR = PROJECT_ROOT / "agents"
+sys.path.insert(0, str(PROJECT_ROOT / "utils"))
+
+from game_config import games_per_match, match_count_env_var, wizard_phase_games_per_match
+
+load_dotenv()
 
 GAME_REGISTRY: dict[str, dict] = {
     "A1": {"name": "A1-Battleship", "script": "A1-battleship_match.py", "players": 2},
@@ -597,6 +604,12 @@ async def run_tournament(
         print(f"Fixture: {total_matches} matches (6-player groups, greedy coverage)")
         print(f"Workers: {workers}")
 
+    match_games = games_per_match(game_id)
+    if game_id == "A4":
+        print(f"Games per match: race to 5 points, up to {match_games} games")
+    else:
+        print(f"Games per match: {match_games}")
+
     if dry_run:
         print("\n--- DRY RUN (no matches executed) ---")
         print(f"Total Matches: {total_matches}")
@@ -673,7 +686,6 @@ async def run_a3_tournament(
     health_check: bool = False,
     auto_yes: bool = False,
 ) -> None:
-    import os
     import math
 
     game = GAME_REGISTRY.get(game_id)
@@ -706,9 +718,13 @@ async def run_a3_tournament(
     models = sorted(agents.keys())
     num_models = len(models)
 
-    if num_models < 3:
-        print(f"ERROR: A3 requires at least 3 models for 6-player games. Found {num_models}.")
+    if num_models < 6:
+        print(f"ERROR: A3 requires at least 6 models for the main event. Found {num_models}.")
         sys.exit(1)
+
+    qualifier_games = wizard_phase_games_per_match("qualifier")
+    main_event_games = wizard_phase_games_per_match("main_event")
+    count_env_var = match_count_env_var("A3")
 
     print(f"\nMATCHMAKER A3 - PHASE 1: Qualifiers")
     print(f"Models: {num_models} (Total Agents: {num_models * 2})")
@@ -740,6 +756,8 @@ async def run_a3_tournament(
         
     num_p1 = len(commands_p1)
     print(f"Fixture: {num_p1} matches (Qualifiers)")
+    print(f"Games per qualifier match: {qualifier_games}")
+    print(f"Total qualifier games: {num_p1 * qualifier_games}")
     
     if dry_run:
         print("\n--- DRY RUN (Phase 1) ---")
@@ -750,13 +768,12 @@ async def run_a3_tournament(
         combinations_count = math.comb(num_models, 6)
         print(f"\n--- DRY RUN (Phase 2) ---")
         print(f"Expected Matches: {combinations_count} combinations of winning agents")
+        print(f"Games per main-event match: {main_event_games}")
+        print(f"Total main-event games: {combinations_count * main_event_games}")
         return
 
     # Execute Phase 1
-    # NUM_OF_GAMES_IN_A_MATCH is typically an env var. We bump it x10 for A3 Phase 1.
-    base_games = int(os.environ.get("NUM_OF_GAMES_IN_A_MATCH", "50"))
-    env_vars_p1 = {"NUM_OF_GAMES_IN_A_MATCH": str(base_games * 10)}
-    print(f"Config: {env_vars_p1['NUM_OF_GAMES_IN_A_MATCH']} games per Match (Phase 1 only)")
+    env_vars_p1 = {count_env_var: str(qualifier_games)}
 
     semaphore = asyncio.Semaphore(workers)
     start_time = time.time()
@@ -839,6 +856,8 @@ async def run_a3_tournament(
     print(f"\nMATCHMAKER A3 - PHASE 2: Main Event")
     print(f"Selected Agents: {len(chosen_agents)}")
     print(f"Combinations: {num_p2} matches")
+    print(f"Games per main-event match: {main_event_games}")
+    print(f"Total main-event games: {num_p2 * main_event_games}")
     
     if not auto_yes:
         while True:
@@ -855,7 +874,7 @@ async def run_a3_tournament(
         cmd = [sys.executable, str(match_script), "--agent"]
         cmd.extend(f"{f}:{r}" for f, r in group)
         cmd.append("--update-scoreboard")
-        # Keep label short since there are 134k 
+        # Keep labels compact; the number of six-model combinations grows quickly.
         label = f"Match_{count_idx+1}"
         commands_p2.append((cmd, label))
 
@@ -863,9 +882,7 @@ async def run_a3_tournament(
     semaphore_p2 = asyncio.Semaphore(workers)
     start_time_p2 = time.time()
     
-    # Phase 2: Hardcode to 1 game per match
-    env_vars_p2 = {"NUM_OF_GAMES_IN_A_MATCH": "1"}
-    print(f"Config: 1 game per Match (Phase 2 only)")
+    env_vars_p2 = {count_env_var: str(main_event_games)}
     
     tasks_p2 = [
         run_match_subprocess(cmd, i + 1, num_p2, label, semaphore_p2, start_time_p2, env_vars=env_vars_p2)
@@ -929,7 +946,7 @@ def main() -> None:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print fixture list without executing matches",
+        help="Preview schedule size and match settings without executing matches",
     )
     parser.add_argument(
         "--new-model",

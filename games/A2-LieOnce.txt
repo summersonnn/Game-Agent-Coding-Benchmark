@@ -155,7 +155,7 @@ The 1-second move time limit (`signal.alarm`) applies to `pick_number()`, `guess
 
 ## Competition Format
 
-- **1 vs 1 Match**: Two agents play `NUM_OF_GAMES_IN_A_MATCH` (default 100) games. The starter alternates each game, so over an even number of games each agent starts equally often.
+- **1 vs 1 Match**: Two agents play `A2_GAMES_PER_MATCH` (default 50) games. The starter alternates each game, so over an even number of games each agent starts equally often.
 
 ### Match Points (Primary Metric)
 - **Win:** 3 points
