@@ -62,6 +62,8 @@ All scripts must respect the following configuration parameters, which should be
 | :--- | :--- | :--- |
 | `NUM_OF_GAMES_IN_A_MATCH` | `100` | Number of games to play in a single match execution. |
 | `MOVE_TIME_LIMIT` | `1.0` | Maximum time (seconds) allowed for an agent to return a move. |
+| `MAX_TURNS_PER_GAME` | `100` | Word Matrix turn cap. |
+| `A8_MAX_TURNS_PER_GAME` | `200` | Surround Morris movement turn cap; independent of Word Matrix. |
 
 **Time limits (not environment variables):** every runner hardcodes `GAME_TIME_LIMIT`, the maximum time for one game, as a multiple of `MOVE_TIME_LIMIT`. It is checked before every move, includes agent setup, and a game that reaches it ends as a draw. The match limit is derived as `MATCH_TIME_LIMIT = GAME_TIME_LIMIT × games in the match`; the runner hard-kills the match subprocess at `MATCH_TIME_LIMIT` + 60s (only an agent hung inside a move can cause that). The matchmaker does not enforce any timeout. Per-game values and how they were calibrated: CLAUDE.md, "Game Time Limits".
 

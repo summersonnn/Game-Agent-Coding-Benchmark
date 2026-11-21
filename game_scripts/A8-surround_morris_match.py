@@ -41,7 +41,9 @@ except (ValueError, TypeError):
     NUM_GAMES_PER_MATCH = 10
 
 try:
-    MAX_TURNS_PER_GAME = int(os.getenv("MAX_TURNS_PER_GAME", "200"))
+    MAX_TURNS_PER_GAME = int(os.getenv("A8_MAX_TURNS_PER_GAME", "200"))
+    if MAX_TURNS_PER_GAME <= 0:
+        MAX_TURNS_PER_GAME = 200
 except (ValueError, TypeError):
     MAX_TURNS_PER_GAME = 200
 
@@ -126,7 +128,9 @@ class SurroundMorrisGame:
         return empty_count == 0 and opp_count > friendly_count
 
     def validate_placement(self, spot, color):
-        if not isinstance(spot, int) or spot < 0 or spot > 23:
+        if isinstance(spot, bool) or not isinstance(spot, int):
+            return False, "Spot must be an integer", "INVALID_OUTPUT"
+        if spot < 0 or spot > 23:
             return False, f"Spot {spot} out of range [0, 23]", "INVALID_SPOT_OOB"
         if self.board[spot] != '':
             return False, f"Spot {spot} is occupied by '{self.board[spot]}'", "INVALID_SPOT_OCCUPIED"
@@ -137,9 +141,11 @@ class SurroundMorrisGame:
     def validate_movement(self, from_spot, to_spot, color):
         if self.phase != 'movement':
             return False, "Not in movement phase", "INVALID_WRONG_PHASE"
-        if not isinstance(from_spot, int) or from_spot < 0 or from_spot > 23:
+        if any(isinstance(spot, bool) or not isinstance(spot, int) for spot in (from_spot, to_spot)):
+            return False, "Source and destination must be integers", "INVALID_OUTPUT"
+        if from_spot < 0 or from_spot > 23:
             return False, f"Source {from_spot} out of range [0, 23]", "INVALID_SPOT_OOB"
-        if not isinstance(to_spot, int) or to_spot < 0 or to_spot > 23:
+        if to_spot < 0 or to_spot > 23:
             return False, f"Destination {to_spot} out of range [0, 23]", "INVALID_DEST_OOB"
         if self.board[from_spot] != color:
             actual = self.board[from_spot]
@@ -482,15 +488,6 @@ def play_game(game_num, match_stats):
 
         valid = False
         if move is not None:
-            if not isinstance(move, int):
-                try:
-                    move = int(move)
-                except (ValueError, TypeError):
-                    match_stats[agent_name]["invalid"] += 1
-                    print(f"{agent_name} ({color}): INVALID OUTPUT '{move}'")
-                    move = None
-
-        if move is not None:
             ok, msg, error_code = game.validate_placement(move, color)
             if ok:
                 valid = True
@@ -577,14 +574,7 @@ def play_game(game_num, match_stats):
                 move = None
 
         if move is not None:
-            try:
-                from_spot, to_spot = int(move[0]), int(move[1])
-            except (ValueError, TypeError):
-                match_stats[agent_name]["invalid"] += 1
-                print(f"{agent_name} ({color}): INVALID non-int move {move}")
-                move = None
-
-        if move is not None:
+            from_spot, to_spot = move
             ok, msg, error_code = game.validate_movement(from_spot, to_spot, color)
             if ok:
                 valid = True

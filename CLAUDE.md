@@ -170,7 +170,7 @@ A piece is captured when it satisfies BOTH conditions:
 - Checked before move execution
 
 **Draw by Turn Limit:**
-- 200 movement turns reached (configurable: `MAX_TURNS_PER_GAME`)
+- 200 movement turns reached (configurable: `A8_MAX_TURNS_PER_GAME`)
 - Checked after move execution
 
 **Draw by Time Limit:**
@@ -282,7 +282,7 @@ class SurroundMorrisAgent:
 
 **Environment Variables:**
 - `NUM_OF_GAMES_IN_A_MATCH` (default: 100) — Base games per match pairing; A8 divides this by 10 (effective default: 10 games per match) to keep match durations reasonable given board evaluation overhead
-- `MAX_TURNS_PER_GAME` (default: 200) — Movement phase turn limit
+- `A8_MAX_TURNS_PER_GAME` (default: 200) — Movement phase turn limit, independent of Word Matrix's `MAX_TURNS_PER_GAME`
 - `MOVE_TIME_LIMIT` (default: 1.0s) — Per-move timeout
 
 **Hardcoded:**
@@ -481,7 +481,7 @@ Agents see ONLY their own state. The runner does not replay history — agents t
 
 **Agent Interface:** `class WordMatrixAgent` with `make_move(state, feedback)` returning a list of cell indices forming the path.
 
-**Scoring:** 10 base + 10 per cleared cell per word. Invalid move penalty: -10 (no fallback to random). Forfeit score: 12.
+**Scoring:** 10 base + 10 per cleared cell per word. Invalid move penalty: -10 (no fallback to random). Forfeit score: ±(10 × configured turn cap + 160), or ±1160 at the default 100-turn cap.
 
 **Human modes:** `--humanvsbot`, `--humanvshuman`, `--humanvsagent --agent model:1`
 

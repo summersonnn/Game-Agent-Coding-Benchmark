@@ -81,7 +81,7 @@ The game can end during **either phase** for elimination, and during the **movem
 
 1. **Elimination (both phases):** A player has **0 pieces on board** (and during placement, also **0 pieces in hand**) -> Opponent wins. If a move harms both sides, the mover is checked first (self-harm priority), so the mover loses.
 2. **Mate:** A player has **no legal moves** -> The stuck player **LOSES**. The other player wins.
-3. **Turn Limit (movement only):** **200 movement turns** have elapsed -> Draw. Move count starts in the movement phase.
+3. **Turn Limit (movement only):** **200 movement turns** have elapsed -> Draw. Move count starts in the movement phase. This limit can be configured with `A8_MAX_TURNS_PER_GAME` (default 200); Word Matrix's `MAX_TURNS_PER_GAME` setting does not affect this game.
 4. **Repetition (movement only):** The exact same board position (pieces + active player) occurs **3 times**.
    * Repetition is checked **before** each move. History is recorded at the start of each turn.
    * **Result:** The game ends immediately in a **DRAW**.
@@ -262,6 +262,10 @@ class SurroundMorrisAgent:
     - Win by Elimination: Score = Winner's remaining pieces (e.g., 5 pieces vs 0 -> Winner +5, Loser -5).
     - Win by Mate: Score = **+7 for Winner, -7 for Loser** (Fixed).
     - Draw (Turn Limit or Repetition): Each player receives 0 score.
+
+## Game Time Limit
+
+In agent-versus-agent matches, each game has a wall-clock budget of `150 * MOVE_TIME_LIMIT` seconds (**150 seconds** at the default 1-second move limit), including agent initialization. The clock is checked before each placement or movement turn. If the budget is exhausted at that check, the game ends as a draw, even if its normal end conditions have not been reached. Both players receive 1 match point and a tie-breaker score of 0. Human play modes do not use this game clock.
 
 ## Strict No-File/External-Lookup Rule
 For this task, you MUST NOT read any of the files in the repo. Take the initial prompt as the only source. Do not even read files like CLAUDE.md or AGENTS.md. Do not read other agent implementations. Nothing!

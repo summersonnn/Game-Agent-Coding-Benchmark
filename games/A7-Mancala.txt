@@ -224,6 +224,10 @@ When `extra_turn` is False and the game is not over, it is your opponent's turn.
 
 **IMPORTANT**: Output ONLY the `MancalaAgent` class definition and any necessary imports. Do NOT output the reference implementation or any game engine code.
 
+## Game Time Limit
+
+In agent-versus-agent matches, each game has a wall-clock budget of `25 * MOVE_TIME_LIMIT` seconds (**25 seconds** at the default 1-second move limit), including agent initialization. The clock is checked before each agent move, including free turns. If the budget is exhausted at that check, the game ends as a draw, even if its normal end conditions have not been reached. Both players receive 1 match point and a tie-breaker score of 0, regardless of the current Mancala counts. Human play modes do not use this game clock.
+
 ## Strict No-File/External-Lookup Rule
 For this task, you MUST NOT read any of the files in the repo. Take the initial prompt as the only source. Do not even read files like CLAUDE.md or AGENTS.md. Do not read other agent implementations. Nothing!
 

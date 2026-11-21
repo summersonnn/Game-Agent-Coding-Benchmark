@@ -355,12 +355,8 @@ class BackgammonGame:
                 self._rollback(color, applied)
                 return False, f"Sub-move {i} not a 2-tuple", 0
             from_p, to_p = sub[0], sub[1]
-            try:
-                if from_p != 'bar':
-                    from_p = int(from_p)
-                if to_p != 'off':
-                    to_p = int(to_p)
-            except (ValueError, TypeError, OverflowError):
+            if ((from_p != 'bar' and (isinstance(from_p, bool) or not isinstance(from_p, int)))
+                    or (to_p != 'off' and (isinstance(to_p, bool) or not isinstance(to_p, int)))):
                 self._rollback(color, applied)
                 return False, f"Sub-move {i} has invalid types: {sub}", 0
             if ((from_p != 'bar' and not 0 <= from_p < 24)

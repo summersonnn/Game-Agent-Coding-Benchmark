@@ -224,6 +224,8 @@ def validate_ship_placement(placement, board, board_size, expected_length):
             return False, 'INVALID_FORMAT', 'Start coordinates must be (row, col)'
 
         row, col = start
+        if any(isinstance(coord, bool) or not isinstance(coord, int) for coord in start):
+            return False, 'INVALID_FORMAT', 'Start coordinates must be integers'
 
         # Check ship length matches expected
         if ship_length != expected_length:
@@ -605,7 +607,8 @@ def play_game(game_num, match_stats):
         else:
             try:
                 row, col = move
-                if not (0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE):
+                if (any(isinstance(coord, bool) or not isinstance(coord, int) for coord in move)
+                        or not (0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE)):
                     move = (random.randint(0, BOARD_SIZE - 1), random.randint(0, BOARD_SIZE - 1))
                     if current_agent.name == AGENT1_NAME: match_stats[AGENT1_NAME]["invalid"] += 1
                     else: match_stats[AGENT2_NAME]["invalid"] += 1

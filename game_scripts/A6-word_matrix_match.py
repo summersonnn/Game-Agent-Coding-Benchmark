@@ -70,8 +70,9 @@ WORDS_FILE = BASE_DIR / "game_scripts" / "words_small.txt"
 # Penalty for invalid move / crash / timeout (no random fallback for this game)
 INVALID_PENALTY = 10
 
-# Max tie-breaker score used for forfeit games
-FORFEIT_SCORE = 250
+# Each turn changes the score margin by at most 10 plus the cleared-cell
+# bonus. The 16 initial cells can contribute at most 160 in total.
+FORFEIT_SCORE = 10 * MAX_TURNS_PER_GAME + 160
 
 MODE_TITLES = {
     "humanvsbot": "Human vs Random Bot",
@@ -148,10 +149,9 @@ class WordMatrixGame:
             if not isinstance(cell, (list, tuple)) or len(cell) != 2:
                 return False, f"Cell {i} is not a valid (row, col) pair"
 
-            try:
-                r, c = int(cell[0]), int(cell[1])
-            except (ValueError, TypeError):
+            if any(isinstance(coord, bool) or not isinstance(coord, int) for coord in cell):
                 return False, f"Cell {i} has non-integer coordinates"
+            r, c = cell
 
             if not (0 <= r < 4 and 0 <= c < 4):
                 return False, f"Cell ({r},{c}) is out of bounds"
@@ -163,7 +163,7 @@ class WordMatrixGame:
                 return False, f"Cell ({r},{c}) is empty"
 
             if i > 0:
-                pr, pc = int(path[i - 1][0]), int(path[i - 1][1])
+                pr, pc = path[i - 1]
                 if abs(r - pr) + abs(c - pc) != 1:
                     return False, f"Cells ({pr},{pc}) and ({r},{c}) are not adjacent"
 
@@ -718,7 +718,7 @@ def build_game_code(
     move_timeout: float,
     words_file_path: str,
     max_turns_per_game: int = 100,
-    forfeit_score: int = FORFEIT_SCORE,
+    forfeit_score: int | None = None,
     game_mode: str = "",
     agent1_name: str = "Agent-1",
     agent2_name: str = "Agent-2",
@@ -745,6 +745,8 @@ def build_game_code(
     )
 
     engine = GAME_ENGINE_CODE.replace("{words_file_path}", str(words_file_path))
+    if forfeit_score is None:
+        forfeit_score = 10 * max_turns_per_game + 160
     runner = MATCH_RUNNER_CODE.replace("{forfeit_score}", str(forfeit_score))
 
     return "\n\n".join([

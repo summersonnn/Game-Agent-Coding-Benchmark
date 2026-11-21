@@ -170,12 +170,15 @@ class WizardGame:
 
         self.round_start_player = (round_num - 1) % self.num_players
         self.current_player = self.round_start_player
+        self.current_trick = []
+        self.trick_leader = self.round_start_player
 
     def record_bid(self, player_idx, bid):
         self.bids[player_idx] = bid
 
     def start_trick(self):
         self.current_trick = []
+        self.trick_leader = self.current_player
 
     def get_game_state(self, player_idx, phase):
         return {

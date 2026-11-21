@@ -72,7 +72,7 @@ Each turn is **one-shot**. There are no retries.
 | Failure Type         | Consequence                                           | Stat Tracked      |
 | -------------------- | ----------------------------------------------------- | ----------------- |
 | make_move() Crash    | -10 penalty; turn ends.                               | make_move_crash   |
-| Initialization Crash | Immediate game forfeit. Opponent wins with max score. | other_crash       |
+| Initialization Crash | Immediate game forfeit. Opponent gets 3 match points and the maximum score margin described below. | other_crash       |
 | Move Timeout         | -10 penalty; turn ends.                               | timeout           |
 | Invalid Move         | -10 penalty; turn ends.                               | invalid           |
 
@@ -111,6 +111,8 @@ Each game within a match awards:
 * **Loss:** 0 match points.
 
 The tie-breaker score is the in-game score differential per game (winner score minus loser score), accumulated across the match.
+
+An initialization forfeit awards a tie-breaker score of `+(10 * MAX_TURNS_PER_GAME + 160)` to the opponent and its negative to the forfeiting agent: **+1160/-1160** at the default 100-turn cap. This is the maximum theoretical score margin: each turn contributes at most 10 through a valid move's base score or an opponent's penalty, and clearing all 16 initial cells contributes at most 160 more.
 
 ---
 
@@ -163,6 +165,10 @@ class WordMatrixAgent:
 
 
 **IMPORTANT**: Output ONLY the `WordMatrixAgent` class definition and any necessary imports. Do NOT output the game engine code.
+
+## Game Time Limit
+
+In agent-versus-agent matches, each game has a wall-clock budget of `15 * MOVE_TIME_LIMIT` seconds (**15 seconds** at the default 1-second move limit), including agent initialization. The clock is checked before each turn. If the budget is exhausted at that check, the game ends as a draw, even if its normal end conditions have not been reached. Both players receive 1 match point and a tie-breaker score of 0, regardless of their current in-game scores. This time-limit draw overrides score-based winner selection. Human play modes do not use this game clock.
 
 ## Strict No-File/External-Lookup Rule
 For this task, you MUST NOT read any of the files in the repo. Take the initial prompt as the only source. Do not even read files like CLAUDE.md or AGENTS.md. Do not read other agent implementations. Nothing!

@@ -167,6 +167,10 @@ The 1-second move time limit (`signal.alarm`) applies to `pick_number()`, `guess
 - **Loss:** the negative of the winner's score.
 - **Draw:** 0 for both players.
 
+## Game Time Limit
+
+In agent-versus-agent matches, each game has a wall-clock budget of `35 * MOVE_TIME_LIMIT` seconds (**35 seconds** at the default 1-second move limit), including agent initialization. The clock is checked before each normal guessing turn. A pending tie-attempt is completed. If the budget is exhausted at that check, the game ends as a draw, even if its normal end conditions have not been reached. Both players receive 1 match point and a tie-breaker score of 0. Human play modes do not use this game clock.
+
 ## Strict No-File/External-Lookup Rule
 For this task, you MUST NOT read any of the files in the repo. Take the initial prompt as the only source. Do not even read files like CLAUDE.md or AGENTS.md. Do not read other agent implementations. Nothing!
 

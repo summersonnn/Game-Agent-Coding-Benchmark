@@ -269,7 +269,7 @@ def play_game(game_num, match_stats):
             continue
 
         guess_int = g_val
-        state_r = make_state(opp, secrets, lies_used, response_count, turn, starter, False)
+        state_r = make_state(opp, secrets, lies_used, response_count, turn, starter, False, last_response[opp])
         r_val, r_err, r_exc = call_with_timeout(agents[opp].respond, state_r, guess_int)
         response_count[opp] += 1
 
@@ -315,7 +315,7 @@ def play_game(game_num, match_stats):
             if current == starter and turn < MAX_TURNS:
                 tie_outcome = run_tie_attempt(
                     turn, secrets, agents, lies_used, response_count, guess_count, match_stats,
-                    starter, non_starter, last_response[non_starter],
+                    starter, non_starter, last_response[non_starter], last_response[starter],
                 )
                 return tie_outcome
             return record_win(current, opp, "correct_guess", guess_count[current], match_stats)
@@ -325,7 +325,7 @@ def play_game(game_num, match_stats):
     return record_draw("turn_cap_reached", match_stats)
 
 
-def run_tie_attempt(prev_turn, secrets, agents, lies_used, response_count, guess_count, match_stats, starter, non_starter, ns_last_response=None):
+def run_tie_attempt(prev_turn, secrets, agents, lies_used, response_count, guess_count, match_stats, starter, non_starter, ns_last_response=None, starter_last_response=None):
     """Non-starter gets one final guess; starter responds. Returns winner name or 'DRAW'."""
     turn = prev_turn + 1
     print(f"-- TIE-ATTEMPT (turn {turn}): {non_starter} gets one final guess --")
@@ -348,7 +348,7 @@ def run_tie_attempt(prev_turn, secrets, agents, lies_used, response_count, guess
         return record_win(starter, non_starter, "tie_attempt_failed", guess_count[starter], match_stats)
 
     guess_int = g_val
-    state_r = make_state(starter, secrets, lies_used, response_count, turn, starter, True)
+    state_r = make_state(starter, secrets, lies_used, response_count, turn, starter, True, starter_last_response)
     r_val, r_err, r_exc = call_with_timeout(agents[starter].respond, state_r, guess_int)
     response_count[starter] += 1
 
@@ -526,6 +526,7 @@ def play(starter, agent_a, agent_b):
     lies_used = {"Agent-1": False, "Agent-2": False}
     guess_count = {"Agent-1": 0, "Agent-2": 0}
     response_count = {"Agent-1": 0, "Agent-2": 0}
+    last_response = {"Agent-1": None, "Agent-2": None}
 
     def step(curr, is_tie):
         opp = "Agent-2" if curr == "Agent-1" else "Agent-1"
@@ -534,6 +535,7 @@ def play(starter, agent_a, agent_b):
             "your_response_count": response_count[curr],
             "turn": guess_count[curr] + guess_count[opp] + 1,
             "you_started": curr == starter, "is_tie_attempt": is_tie,
+            "last_response": last_response[curr],
         }
         g = agents[curr].guess(state_g)
         guess_count[curr] += 1
@@ -545,6 +547,7 @@ def play(starter, agent_a, agent_b):
             "your_response_count": response_count[opp],
             "turn": guess_count[curr] + guess_count[opp],
             "you_started": opp == starter, "is_tie_attempt": is_tie,
+            "last_response": last_response[opp],
         }
         r = agents[opp].respond(state_r, g)
         response_count[opp] += 1
@@ -563,6 +566,7 @@ def play(starter, agent_a, agent_b):
             lies_used[opp] = True
             print(f"  ({opp} lied — lie now used)")
         print(f"  {curr} guesses {g} -> {opp} says '{r}' (truth={truth})")
+        last_response[curr] = r
         if r == "Correct" and truth == "Correct":
             return curr, "win"
         return None, "continue"

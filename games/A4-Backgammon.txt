@@ -267,6 +267,10 @@ class BackgammonAgent:
 6. **Bar priority bites.** If you cannot enter, you waste the entire turn. Don't leave easy primes facing your bar.
 7. **Bear off efficiently.** When bearing off, avoid leaving blots inside your home if the opponent still has anchors there.
 
+## Game Time Limit
+
+In agent-versus-agent matches, each game has a wall-clock budget of `55 * MOVE_TIME_LIMIT` seconds (**55 seconds** at the default 1-second move limit), including agent initialization. The clock is checked before each turn. If the budget is exhausted at that check, the game ends as a draw, even if its normal end conditions have not been reached. Each player receives 0.5 in-game points toward the race to 5, just as for a turn-limit draw. Human play modes do not use this game clock.
+
 ## Strict No-File/External-Lookup Rule
 For this task, you MUST NOT read any of the files in the repo. Take the initial prompt as the only source. Do not even read files like CLAUDE.md or AGENTS.md. Do not read other agent implementations. Nothing!
 
