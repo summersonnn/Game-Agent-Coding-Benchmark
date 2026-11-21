@@ -8,6 +8,8 @@ import io
 import os
 from pathlib import Path
 import random
+import signal
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -148,8 +150,62 @@ class LieOnceStateTests(unittest.TestCase):
         self.assertEqual(result, "DRAW")
         self.assert_feedback(seen)
 
+    def test_turn_99_starter_win_gets_tie_attempt_on_turn_100(self):
+        for game_num in (1, 2):
+            for tie_succeeds in (False, True):
+                with self.subTest(game=game_num, tie_succeeds=tie_succeeds):
+                    ns = runtime("A2")
+                    seen = []
+
+                    class Agent(IdleAgent):
+                        def guess(self, state):
+                            seen.append((self.name, state["turn"], state["is_tie_attempt"]))
+                            if state["turn"] == 99 or (state["is_tie_attempt"] and tie_succeeds):
+                                return 50
+                            return 1
+
+                        def respond(self, state, guess):
+                            return "Correct" if guess == 50 else "Up"
+
+                    ns.update(LieOnceAgent_1=Agent, LieOnceAgent_2=Agent)
+                    match_stats = stats()
+                    result, _ = quiet(ns["play_game"], game_num, match_stats)
+                    starter = "Agent-1" if game_num == 1 else "Agent-2"
+                    non_starter = ns["opp_of"](starter)
+                    self.assertEqual(len(seen), 100)
+                    self.assertEqual(seen[-2:], [(starter, 99, False), (non_starter, 100, True)])
+                    self.assertEqual(result, "DRAW" if tie_succeeds else starter)
+                    self.assertEqual(match_stats[starter]["score"], 0 if tie_succeeds else 50)
+
 
 class WizardStateTests(unittest.TestCase):
+    def test_boolean_bids_use_fallback_but_integer_bids_remain_legal(self):
+        for bid in (False, True, 0, 1):
+            with self.subTest(bid=bid):
+                ns = runtime("A3")
+                ns["NUM_ROUNDS"] = 1
+                recorded_bids = []
+
+                class Game(ns["WizardGame"]):
+                    def record_bid(self, player_idx, value):
+                        recorded_bids.append(value)
+                        super().record_bid(player_idx, value)
+
+                class Agent(IdleAgent):
+                    def make_move(self, phase, state):
+                        return bid if phase == "bid" else state["my_hand"][0]
+
+                ns["WizardGame"] = Game
+                for i in range(1, 7):
+                    ns[f"WizardAgent_{i}"] = Agent
+                match_stats = stats(6)
+                with patch("random.randint", return_value=0):
+                    quiet(ns["play_game"], 1, match_stats)
+                self.assertEqual(recorded_bids, [0 if isinstance(bid, bool) else bid] * 6)
+                self.assertTrue(all(type(value) is int for value in recorded_bids))
+                for agent_stats in match_stats.values():
+                    self.assertEqual(agent_stats["invalid"], int(isinstance(bid, bool)))
+
     def test_new_round_clears_old_trick_and_reports_actual_leader(self):
         ns = runtime("A3")
         game = ns["WizardGame"](6)
@@ -180,6 +236,70 @@ class BackgammonValidationTests(unittest.TestCase):
                 self.assertFalse(ok)
                 self.assertEqual(hits, 0)
                 self.assertEqual((game.board, game.bar, game.borne_off), before)
+
+
+class Connect4TimeoutTests(unittest.TestCase):
+    def winning_position(self):
+        ns = runtime("A5")
+
+        class Game(ns["Connect4Game"]):
+            def __init__(self):
+                super().__init__()
+                self.board = [[self.EMPTY] * self.COLS for _ in range(self.ROWS)]
+                self.board[-1][:3] = [self.YELLOW] * 3
+
+        ns["Connect4Game"] = Game
+        return ns
+
+    def test_subsecond_timeout_plays_fallback_and_clears_timer(self):
+        ns = self.winning_position()
+        ns["MOVE_TIMEOUT"] = 0.05
+
+        class SlowAgent(IdleAgent):
+            def make_move(self, board):
+                time.sleep(0.2)
+                return 3
+
+        ns.update(Connect4Agent_1=SlowAgent, Connect4Agent_2=SlowAgent)
+        match_stats = stats()
+        previous_handler = signal.getsignal(signal.SIGALRM)
+        try:
+            with patch("random.choice", return_value=3):
+                result, _ = quiet(ns["play_game"], 1, match_stats)
+            self.assertEqual(result, "Agent-2")
+            self.assertEqual(match_stats["Agent-2"]["timeout"], 1)
+            self.assertEqual(match_stats["Agent-2"]["invalid"], 0)
+            self.assertEqual(match_stats["Agent-2"]["make_move_crash"], 0)
+            self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous_handler)
+
+    def test_timer_is_cleared_after_success_crash_or_invalid_move(self):
+        for failure in (None, "crash", "invalid"):
+            with self.subTest(failure=failure):
+                ns = self.winning_position()
+                ns["MOVE_TIMEOUT"] = 0.5
+
+                class Agent(IdleAgent):
+                    def make_move(self, board):
+                        if failure == "crash":
+                            raise ValueError("failed move")
+                        return None if failure == "invalid" else 3
+
+                ns.update(Connect4Agent_1=Agent, Connect4Agent_2=Agent)
+                match_stats = stats()
+                previous_handler = signal.getsignal(signal.SIGALRM)
+                try:
+                    with patch("random.choice", return_value=3):
+                        result, _ = quiet(ns["play_game"], 1, match_stats)
+                    self.assertEqual(result, "Agent-2")
+                    self.assertEqual(match_stats["Agent-2"]["make_move_crash"], int(failure == "crash"))
+                    self.assertEqual(match_stats["Agent-2"]["invalid"], int(failure == "invalid"))
+                    self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
+                finally:
+                    signal.setitimer(signal.ITIMER_REAL, 0)
+                    signal.signal(signal.SIGALRM, previous_handler)
 
 
 class WordMatrixTests(unittest.TestCase):

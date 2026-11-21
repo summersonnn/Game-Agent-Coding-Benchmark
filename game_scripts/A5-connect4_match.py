@@ -251,11 +251,11 @@ def play_game(game_num, match_stats):
 
         try:
             signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(int(MOVE_TIMEOUT))
+            signal.setitimer(signal.ITIMER_REAL, MOVE_TIMEOUT)
             try:
                 move = current_agent.make_move(board_copy)
             finally:
-                signal.alarm(0)
+                signal.setitimer(signal.ITIMER_REAL, 0)
         except MoveTimeoutException:
             match_stats[current_name]["timeout"] += 1
             error_type = "timeout"

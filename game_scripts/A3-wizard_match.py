@@ -389,7 +389,7 @@ def play_game(game_num, match_stats):
             game_state = game.get_game_state(seat_idx, "bid")
             bid = call_agent_with_timeout(agent, "bid", game_state, label, match_stats)
 
-            if not isinstance(bid, int) or bid < 0 or bid > game.cards_this_round:
+            if isinstance(bid, bool) or not isinstance(bid, int) or bid < 0 or bid > game.cards_this_round:
                 match_stats[label]["invalid"] += 1
                 bid = random.randint(0, game.cards_this_round)
 
@@ -652,7 +652,7 @@ if __name__ == "__main__":
             agent = agents[seat_idx]
             game_state = game.get_game_state(seat_idx, "bid")
             bid = agent.make_move("bid", game_state)
-            if not isinstance(bid, int) or bid < 0 or bid > game.cards_this_round:
+            if isinstance(bid, bool) or not isinstance(bid, int) or bid < 0 or bid > game.cards_this_round:
                 bid = random.randint(0, game.cards_this_round)
             # Hook rule for last bidder
             if i == NUM_PLAYERS - 1:
